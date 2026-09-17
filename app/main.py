@@ -1047,40 +1047,65 @@ def dbtest(request: Request):
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
 
 
-@app.post("/konfiguration/anzahlungscodes")
-def anzahlungscodes(request: Request):
-    """Zeigt, welche Umsatzcodes im eigenen Haus auf Anzahlungsbelegen stehen.
+@app.get("/einrichtung/anzahlungen", response_class=HTMLResponse)
+def einrichtung_anzahlungen(request: Request, pruefen: str = "", meldung: str = ""):
+    """Einrichtungsseite fuer die Anzahlungserkennung.
 
-    Zum Nachpruefen der Erkennung: Entschieden wird ueber den Belegstatus,
-    nicht ueber Codes. Findet diese Abfrage nichts, stimmt die Annahme fuer
-    dieses Haus nicht — dann gehoeren die Codes von Hand in die Konfiguration
-    (auswahl.anzahlungscodes)."""
+    Sie beantwortet die Frage, die sich in jedem Haus anders beantwortet:
+    Fuehrt dieses Haus Anzahlungen als eigene Belege — dann erkennt die
+    Anwendung sie am Belegstatus und braucht keine Codes — oder bucht es sie
+    innerhalb desselben Belegs um? Im zweiten Fall greift die Statusregel
+    nicht, und dann muessen die Umsatzcodes hier hinein.
+
+    Fruher stand dahinter ein Knopf, der das Ergebnis in eine Meldungszeile
+    schrieb. Eine Zeile ist der falsche Ort fuer eine Auswahl: Man kann sie
+    nicht lesen, nicht vergleichen und nichts daraus uebernehmen."""
+    cfg = config.laden()
+    zeilen: list = []
+    fehler = ""
+    if pruefen:
+        try:
+            zeilen = opera.anzahlungscodes_ermitteln(cfg)
+        except Exception as e:
+            log.exception("Anzahlungscodes nicht ermittelbar")
+            fehler = str(e)
+    gewaehlt = [str(c).upper() for c in ((cfg.get("auswahl") or {}).get("anzahlungscodes") or [])]
+    # Zahlungsarten getrennt: Sie stehen zwar auf dem Anzahlungsbeleg, sind
+    # aber das MITTEL, mit dem gezahlt wurde — Karte, Ueberweisung, PayPal.
+    # Genau diese Vermischung liess die frueher fest verdrahtete Codeliste
+    # unbrauchbar werden.
+    echte = [z for z in zeilen if str(z.get("zahlungsart") or "N").upper() != "J"]
+    zahlarten = [z for z in zeilen if str(z.get("zahlungsart") or "N").upper() == "J"]
+    return seiten.TemplateResponse(request, "einrichtung_anzahlungen.html", _kontext(
+        request, echte=echte, zahlarten=zahlarten, fehler=fehler,
+        geprueft=bool(pruefen), gewaehlt=gewaehlt, meldung=meldung,
+        status=opera.anzahlung_status(cfg)))
+
+
+@app.post("/einrichtung/anzahlungen")
+async def einrichtung_anzahlungen_speichern(request: Request):
     if not _darf_verwalten(request):
-        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
-    if automatik.laeuft_gerade():
-        return RedirectResponse("/konfiguration?meldung=" + BESCHAEFTIGT, status_code=303)
+        return RedirectResponse("/einrichtung/anzahlungen?meldung=Keine Berechtigung",
+                                status_code=303)
+    form = await request.form()
+    codes = [w.strip().upper() for w in form.getlist("code") if w.strip()]
+    # Von Hand ergaenzte Codes: Ein Haus kann einen benutzen, der im
+    # gemessenen Zeitraum nicht vorkam.
+    for w in re.split(r"[\s,;]+", form.get("eigene", "") or ""):
+        if w.strip() and w.strip().upper() not in codes:
+            codes.append(w.strip().upper())
+    cfg = config.laden()
+    cfg.setdefault("auswahl", {})["anzahlungscodes"] = codes
     try:
-        cfg = config.laden()
-        zeilen = opera.anzahlungscodes_ermitteln(cfg)
-        if not zeilen:
-            meldung = (f"Keine Belege mit Status {opera.anzahlung_status(cfg)} im letzten "
-                       "Jahr. Entweder gibt es hier keine Anzahlungen, oder dieses Haus "
-                       "fuehrt sie anders — dann die Codes unter auswahl.anzahlungscodes "
-                       "eintragen.")
-        else:
-            # Zahlungsarten getrennt nennen: Sie stehen zwar auf dem
-            # Anzahlungsbeleg, sind aber das Mittel, mit dem gezahlt wurde —
-            # sie gehoeren nicht in eine Anzahlungsliste.
-            echte = [z for z in zeilen if str(z.get("zahlungsart") or "N").upper() != "J"]
-            zahlarten = [z for z in zeilen if str(z.get("zahlungsart") or "N").upper() == "J"]
-            def _text(liste):
-                return ", ".join(f"{z['trx_code']} ({z['buchungen']}x)" for z in liste[:12])
-            meldung = f"Anzahlungsbuchungen: {_text(echte)}"
-            if zahlarten:
-                meldung += f" · Zahlungsarten (gehoeren NICHT in die Liste): {_text(zahlarten)}"
-    except Exception as e:
-        meldung = f"Fehler: {e}"
-    return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+        config.speichern(cfg)
+    except config.KonfigFehler as e:
+        return RedirectResponse(f"/einrichtung/anzahlungen?meldung=Fehler: {e}", status_code=303)
+    store.protokoll("konfiguration", "Anzahlungscodes gesetzt: "
+                    + (", ".join(codes) if codes else "keine (nur Belegstatus)"),
+                    benutzer=request.state.benutzer)
+    hinweis = (f"{len(codes)} Umsatzcode(s) uebernommen: " + ", ".join(codes)) if codes else \
+              "Keine Codes — es gilt allein der Belegstatus. Das ist der Normalfall."
+    return RedirectResponse(f"/einrichtung/anzahlungen?meldung={hinweis}", status_code=303)
 
 
 @app.post("/konfiguration/mailtest")

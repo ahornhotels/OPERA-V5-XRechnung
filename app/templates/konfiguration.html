@@ -212,16 +212,11 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Verbindung prüfen</h2>
     <form method="post" action="/konfiguration/dbtest"><button>Datenbank testen</button></form>
-    {# Nachpruefen, ob die Anzahlungserkennung im eigenen Haus aufgeht.
-       Entschieden wird ueber den Belegstatus, nicht ueber Umsatzcodes —
-       dieser Knopf zeigt, was dabei im eigenen Bestand zusammenkommt. #}
-    <form method="post" action="/konfiguration/anzahlungscodes">
-      <button>Anzahlungscodes nachsehen</button>
-    </form>
-    <p class="hinweis">Zeigt, welche Umsatzcodes im letzten Jahr auf
-    Anzahlungsbelegen standen — und welche davon bloße Zahlungsarten sind.
-    Findet die Abfrage nichts, führt dieses Haus Anzahlungen anders; dann
-    gehören die Codes unter <code>auswahl.anzahlungscodes</code>.</p>
+    {# Die Anzahlungserkennung hat eine eigene Seite: Dort steht, was das
+       eigene Haus tut, und die Codes lassen sich auswaehlen statt abtippen. #}
+    <p class="hinweis"><a href="/einrichtung/anzahlungen">Anzahlungen einrichten</a> —
+    nachsehen, wie Ihr Haus Anzahlungen führt, und die Umsatzcodes übernehmen,
+    falls die Erkennung über den Belegstatus bei Ihnen nicht greift.</p>
   </section>
   <section class="karte">
     <h2>Aktualisierung prüfen</h2>

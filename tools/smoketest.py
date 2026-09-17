@@ -2496,6 +2496,37 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                f"(gespeichert: '{_ist}')")
     klient.post("/einrichtung/leitweg", data={"feld": ""}, follow_redirects=False)
 
+    # Einrichtungsseite fuer die Anzahlungen. Sie ersetzt einen Knopf, der das
+    # Ergebnis in eine Meldungszeile schrieb — eine Zeile ist der falsche Ort
+    # fuer eine Auswahl: nicht lesbar, nicht vergleichbar, nichts uebernehmbar.
+    _az = klient.get("/einrichtung/anzahlungen")
+    pruefe(_az.status_code == 200, "die Einrichtungsseite fuer Anzahlungen laedt")
+    for _muss in ("Belegstatus", "DEPOSIT", "Kopfbetrag", "Nullbeleg"):
+        pruefe(_muss in _az.text, f"sie erklaert {_muss}")
+    pruefe("Normalfall ist hier nichts einzustellen" in _az.text,
+           "und sagt, dass im Normalfall nichts zu tun ist")
+    # Ohne Datenbank darf die Abfrage die Seite nicht mitreissen.
+    _az2 = klient.get("/einrichtung/anzahlungen?pruefen=1")
+    pruefe(_az2.status_code == 200 and "ging nicht" in _az2.text,
+           "ohne Datenbank meldet die Abfrage das, statt abzustuerzen")
+    # Uebernehmen: Auswahl und Freitext, gross geschrieben, ohne Doppelte.
+    klient.post("/einrichtung/anzahlungen",
+                data={"code": ["8990", "8997"], "eigene": "dep1, 8997 dep2"},
+                follow_redirects=False)
+    _ist = config.laden()["auswahl"]["anzahlungscodes"]
+    pruefe(_ist == ["8990", "8997", "DEP1", "DEP2"],
+           f"Auswahl und Freitext werden zusammengefuehrt, ohne Doppelte ({_ist})")
+    # Und die Codes wirken auch wirklich in der Abfrage.
+    _mit = opera._mit_anzahlungscodes(opera._sql("invoice_guard.sql", config.laden()),
+                                      config.laden())
+    pruefe("'8990', '8997', 'DEP1', 'DEP2'" in _mit,
+           "die uebernommenen Codes stehen danach in der Abfrage")
+    # Leeres Formular heisst: nur der Belegstatus. Das muss sich zuruecknehmen
+    # lassen, sonst ist die Seite eine Einbahnstrasse.
+    klient.post("/einrichtung/anzahlungen", data={}, follow_redirects=False)
+    pruefe(config.laden()["auswahl"]["anzahlungscodes"] == [],
+           "und die Auswahl laesst sich wieder leeren")
+
     seite = klient.get("/rechnung/1400003")
     pruefe(seite.status_code == 200, "/rechnung/... laedt auch ohne Datenbank")
     pruefe("Datenbankverbindung" in seite.text or "Rechnung 1400003" in seite.text,
@@ -3670,9 +3701,9 @@ pruefe((BASE / "sql" / "opera" / "anzahlungscodes.sql").exists()
        and ":anzahlung_status" in _sql_ohne_kommentar("anzahlungscodes.sql")
        and "zahlungsart" in _sql_ohne_kommentar("anzahlungscodes.sql"),
        "OE3: die Abfrage zum Nachsehen liegt bereit und trennt die Zahlungsarten ab")
-pruefe("/konfiguration/anzahlungscodes" in
+pruefe("/einrichtung/anzahlungen" in
        (BASE / "app" / "templates" / "konfiguration.html").read_text(encoding="utf-8"),
-       "OE3: der Knopf zum Nachsehen steht in der Konfiguration")
+       "OE3: die Konfiguration verweist auf die Einrichtungsseite")
 
 # --- xml_build --------------------------------------------------------------
 _neg = json.loads(json.dumps(rechnung))

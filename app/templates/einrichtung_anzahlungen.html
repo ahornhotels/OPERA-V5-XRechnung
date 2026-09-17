@@ -1,0 +1,138 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Anzahlungen einrichten</h1>
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="/konfiguration">&#8592; Zur Konfiguration</a>
+  </div>
+</div>
+
+<section class="karte">
+  <h2>Worum es geht</h2>
+  <p>Wird eine Rechnung im Voraus angezahlt, steht am Ende oft ein
+  <strong>Kopfbetrag von 0,00</strong> — die Leistung ist bereits bezahlt. So eine
+  Rechnung ist trotzdem geschuldet und muss hinaus. Eine Rechnung über 0,00 <em>ohne</em>
+  Anzahlung ist dagegen ein Nullbeleg und gehört zurückgelegt.</p>
+
+  <p>Die Anwendung muss die beiden unterscheiden können. Sie tut das am
+  <strong>Belegstatus</strong>: Anzahlungen sind in OPERA eigene Belege am selben Folio,
+  gekennzeichnet mit <code>{{ status }}</code>. Diese Regel braucht keine Umsatzcodes und
+  gilt in jedem Haus gleich.</p>
+
+  <div class="pruefhinweis">
+    <strong>Im Normalfall ist hier nichts einzustellen.</strong> Diese Seite ist für den
+    Fall gedacht, dass Ihr Haus Anzahlungen <em>nicht</em> als eigene Belege führt, sondern
+    innerhalb desselben Belegs umbucht. Dann greift die Statusregel nicht, und die
+    Umsatzcodes müssen von Hand dazu.
+  </div>
+</section>
+
+<section class="karte">
+  <h2>Schritt 1: Was macht Ihr Haus?</h2>
+  <p class="klein">Die Prüfung sieht nach, welche Umsatzcodes im letzten Jahr auf
+  Anzahlungsbelegen standen. Sie läuft über ein Jahr und braucht einen Moment.</p>
+  <form method="get" action="/einrichtung/anzahlungen">
+    <input type="hidden" name="pruefen" value="1">
+    <button class="haupt">In der Datenbank nachsehen</button>
+  </form>
+
+  {% if fehler %}
+  <p class="fehler">Die Prüfung ging nicht: {{ fehler }}</p>
+  {% endif %}
+
+  {% if geprueft and not fehler %}
+    {% if echte or zahlarten %}
+    <p class="gut"><strong>Ihr Haus führt Anzahlungen als eigene Belege.</strong>
+    Die Statusregel greift — Sie müssen unten nichts auswählen. Die Liste steht
+    hier zum Nachsehen, nicht zum Eintragen.</p>
+    {% else %}
+    <p class="warnung"><strong>Keine Belege mit Status <code>{{ status }}</code> im letzten
+    Jahr gefunden.</strong> Entweder gibt es in Ihrem Haus keine Anzahlungen — dann ist
+    hier nichts zu tun — oder es führt sie anders. Im zweiten Fall tragen Sie die
+    Umsatzcodes unten von Hand ein.</p>
+    {% endif %}
+  {% endif %}
+</section>
+
+{% if geprueft and (echte or zahlarten) %}
+<form method="post" action="/einrichtung/anzahlungen">
+<section class="karte">
+  <h2>Schritt 2: Anzahlungsbuchungen</h2>
+  <p class="klein">Diese Umsatzcodes standen auf Anzahlungsbelegen. Ankreuzen müssen Sie
+  hier nur etwas, wenn die Statusregel bei Ihnen <em>nicht</em> greift.</p>
+  <table class="liste">
+    <thead>
+      <tr><th></th><th>Code</th><th>Bezeichnung</th><th>Gruppe</th><th class="zahl">Buchungen</th></tr>
+    </thead>
+    <tbody>
+      {% for z in echte %}
+      <tr>
+        <td><label class="wahl"><input type="checkbox" name="code" value="{{ z.trx_code }}"
+            {% if z.trx_code|string|upper in gewaehlt %}checked{% endif %}></label></td>
+        <td><code>{{ z.trx_code }}</code></td>
+        <td>{{ z.bezeichnung or "—" }}</td>
+        <td class="klein">{{ z.untergruppe or z.gruppe or "—" }}</td>
+        <td class="zahl">{{ z.buchungen }}</td>
+      </tr>
+      {% endfor %}
+      {% if not echte %}
+      <tr><td colspan="5" class="klein">Keine — auf den Anzahlungsbelegen stehen nur
+      Zahlungsarten.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</section>
+
+{% if zahlarten %}
+<section class="karte">
+  <h2>Nicht auswählen: Zahlungsarten</h2>
+  <p class="klein">Diese Codes stehen ebenfalls auf Anzahlungsbelegen, sind aber das
+  <strong>Mittel</strong>, mit dem gezahlt wurde — nicht die Anzahlung selbst. Genau diese
+  Vermischung hat eine früher fest eingetragene Codeliste unbrauchbar gemacht. Sie
+  stehen hier, damit man sie erkennt und stehen lässt.</p>
+  <table class="liste gedaempft">
+    <thead>
+      <tr><th>Code</th><th>Bezeichnung</th><th>Gruppe</th><th class="zahl">Buchungen</th></tr>
+    </thead>
+    <tbody>
+      {% for z in zahlarten %}
+      <tr>
+        <td><code>{{ z.trx_code }}</code></td>
+        <td>{{ z.bezeichnung or "—" }}</td>
+        <td class="klein">{{ z.untergruppe or z.gruppe or "—" }}</td>
+        <td class="zahl">{{ z.buchungen }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="karte">
+  <h2>Schritt 3: Übernehmen</h2>
+  <p class="klein">Zusätzlich von Hand, durch Komma oder Leerzeichen getrennt — für einen
+  Code, der im gemessenen Jahr nicht vorkam:</p>
+  <p><input type="text" name="eigene" placeholder="z. B. 8990, 8997" style="max-width:24rem"></p>
+  <div class="knoepfe">
+    <button class="haupt">Auswahl übernehmen</button>
+    <a class="knopf" href="/einrichtung/anzahlungen">Verwerfen</a>
+  </div>
+  <p class="klein">Nichts angekreuzt und nichts eingetippt bedeutet: <strong>es gilt allein
+  der Belegstatus</strong>. Das ist der Normalfall und die Vorgabe.</p>
+</section>
+</form>
+{% endif %}
+
+<section class="karte">
+  <h2>Was jetzt eingestellt ist</h2>
+  {% if gewaehlt %}
+  <p>Zusätzlich zum Belegstatus gelten diese Umsatzcodes als Anzahlung:
+  {% for c in gewaehlt %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+  <p class="klein">Eine Rechnung gilt damit auch dann als angezahlt, wenn sie eine Buchung
+  mit einem dieser Codes trägt — zusätzlich, nicht anstelle der Statusregel.</p>
+  {% else %}
+  <p>Es gilt allein der Belegstatus <code>{{ status }}</code>. <span class="klein">Das ist
+  der Normalfall.</span></p>
+  {% endif %}
+</section>
+{% endblock %}
