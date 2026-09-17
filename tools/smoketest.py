@@ -4182,6 +4182,37 @@ pruefe(_betrieb.returncode == 0,
        f"tools/smoketest_betrieb.py laeuft durch ({_betrieb.stdout.strip().splitlines()[-1] if _betrieb.stdout.strip() else _betrieb.stderr[:200]})")
 
 import subprocess as _sp12
+# Jede Einstellung muss beschrieben sein.
+#
+# Anlass: Beim Nachzaehlen waren neun Einstellungen in KEINER Dokumentation
+# erklaert, darunter drei am selben Tag dazugekommene. Eine Einstellung, die
+# niemand erklaert, wird entweder nie benutzt oder falsch — und bei einer
+# Anwendung, die in fremden Haeusern laufen soll, ist das Zweite das
+# Wahrscheinlichere.
+#
+# Die Uebersicht ist docs/15_EINSTELLUNGEN.md. Wer eine Einstellung ergaenzt,
+# ergaenzt sie dort — sonst wird dieser Punkt rot.
+_vorlage_cfg = json.loads((BASE / "config" / "app.example.json").read_text(encoding="utf-8"))
+_uebersicht = (BASE / "docs" / "15_EINSTELLUNGEN.md").read_text(encoding="utf-8")
+_unbeschrieben = []
+for _abschnitt, _werte in _vorlage_cfg.items():
+    if not isinstance(_werte, dict):
+        continue
+    for _k in _werte:
+        if _k.startswith("_"):
+            continue
+        if f"`{_k}`" not in _uebersicht:
+            _unbeschrieben.append(f"{_abschnitt}.{_k}")
+pruefe(not _unbeschrieben,
+       f"jede Einstellung steht in docs/15_EINSTELLUNGEN.md ({_unbeschrieben[:5]})")
+# Und andersherum: keine Beschreibung fuer etwas, das es nicht mehr gibt.
+_alle = {_k for _a, _w in _vorlage_cfg.items() if isinstance(_w, dict)
+         for _k in _w if not _k.startswith("_")}
+_erfunden = [_n for _n in _re.findall(r"^\| `([a-z_]+)`", _uebersicht, _re.M)
+             if _n not in _alle]
+pruefe(not _erfunden,
+       f"die Uebersicht beschreibt nichts, was es nicht gibt ({_erfunden[:5]})")
+
 print("12) Nichts Echtes im Repository")
 # Diese Anwendung soll oeffentlich werden. Echte Daten Dritter — Kundennamen,
 # Gastnamen, Belegnummern, Hausadressen, interne Hostnamen — haben im
