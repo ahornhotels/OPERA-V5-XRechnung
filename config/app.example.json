@@ -137,7 +137,7 @@
   },
   "update": {
     "aktiv": true,
-    "repo": "ahornhotels/XRechnungOPERA",
+    "repo": "ahornhotels/OPERA-V5-XRechnung",
     "zweig": "main",
     "_token_hinweis": "Wird beim ersten Laden verschluesselt und in der Oberflaeche nur als 'gesetzt' angezeigt. Fuer den Betrieb genuegt die Berechtigung Contents:Read.",
     "token": "",

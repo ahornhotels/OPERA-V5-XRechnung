@@ -1700,12 +1700,20 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     pruefe(config.laden()["update"]["token"] == "github_pat_FRISCH_EINGETRAGEN",
            "und er ist zur Laufzeit weiterhin brauchbar")
 
-    # Und ein Speichern anderer Felder darf sie nicht loeschen
+    # Und ein Speichern anderer Felder darf sie nicht loeschen.
+    #
+    # Verglichen wird gegen den Stand DIREKT VOR dem Speichern, nicht gegen
+    # die Konfiguration von Testbeginn. Vorher stand hier cfg von ganz oben —
+    # die Pruefung wurde damit rot, sobald irgendwo anders ein Wert geaendert
+    # wurde, und zeigte auf die falsche Ursache. Derselbe Fehler steckte in
+    # der Pruefung der Konfigurationsseite.
+    _vorher_repo = config.laden()["update"]["repo"]
     klient.post("/konfiguration", data={"mail.bcc": "test@beispiel.de"},
                 follow_redirects=False)
     danach = config.laden()
-    pruefe(danach["update"]["repo"] == cfg["update"]["repo"],
-           "Speichern eines anderen Feldes loescht das Repository nicht")
+    pruefe(danach["update"]["repo"] == _vorher_repo,
+           f"Speichern eines anderen Feldes loescht das Repository nicht "
+           f"(vorher {_vorher_repo!r}, danach {danach['update']['repo']!r})")
     pruefe(danach["update"]["zweig"] == cfg["update"]["zweig"],
            "Speichern eines anderen Feldes loescht den Zweig nicht")
     # Versionsschalter auf der Konfigurationsseite: angeboten wird, was es
@@ -2368,8 +2376,43 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     pruefe(not _re2.search(r"(?i)@import|url\(\s*https?:", _css.text)
            and "fonts.googleapis" not in _css.text and "fonts.gstatic" not in _css.text,
            "das Stylesheet laedt nichts von aussen nach")
-    pruefe("--akzent" in _css.text and "--kopf" in _css.text and "--schrift" in _css.text,
-           "die Farben und Schriften stehen als Variablen bereit, sind also ersetzbar")
+    # Geprueft wird die WIRKUNG, nicht der Text: Kommentare raus, dann muss
+    # jede Variable noch da sein.
+    #
+    # Anlass: Ein Skript sollte den Variablenblock ersetzen, suchte ":root{"
+    # und fand das BEISPIEL im Kopfkommentar. Es ersetzte die falsche Stelle,
+    # verschluckte dabei das Kommentarende — und die ganze Palette lag stumm
+    # im Kommentar. Die Oberflaeche verlor Kartenhintergrund und die Farben
+    # fuer Fehler, Warnung und Erfolg. Aufgefallen ist es im Betrieb, nicht
+    # hier: Die alte Pruefung suchte die Variablennamen im Rohtext, und dort
+    # standen sie ja — nur eben auskommentiert.
+    _ohne_kommentar = _re2.sub(r"/\*.*?\*/", "", _css.text, flags=_re2.S)
+    pruefe(":root{" in _ohne_kommentar,
+           "der Variablenblock steht ausserhalb jedes Kommentars")
+    _fehlende = [_v for _v in ("--rand", "--grund", "--karte", "--text", "--gedaempft",
+                               "--akzent", "--akzent-hell", "--kopf",
+                               "--warn", "--fehler", "--ok",
+                               "--schrift", "--schrift-titel")
+                 if f"{_v}:" not in _ohne_kommentar]
+    pruefe(not _fehlende,
+           f"jede Vorgabevariable ist wirklich definiert ({_fehlende})")
+    # Und was die Vorlagen benutzen, muss es auch geben.
+    _benutzt = set(_re2.findall(r"var\((--[a-z-]+)\)", _css.text))
+    _unbekannt = sorted(_v for _v in _benutzt if f"{_v}:" not in _ohne_kommentar)
+    pruefe(not _unbekannt,
+           f"keine Variable wird benutzt, die nirgends definiert ist ({_unbekannt})")
+    # Nicht nur die Variablen: Beim Kommentarfehler lagen auch die
+    # Grundregeln still — Kopfzeile ohne Hintergrund, Seite ohne Grundfarbe.
+    # branding/ konnte das nicht auffangen, weil es nur Variablen setzt und
+    # die Regeln sie nicht mehr verwendeten.
+    _tote = [_s for _s in ("*{box-sizing", "body{", "header{", ".marke{", ".pille{",
+                           ".karte{", "table{", ".knopf")
+             if _s not in _ohne_kommentar]
+    pruefe(not _tote, f"die Grundregeln stehen ausserhalb der Kommentare ({_tote})")
+    # Ein grober Zaehler gegen genau diesen Fehlertyp: Ein verlorenes
+    # Kommentarende verschluckt Dutzende Regeln auf einmal.
+    _regeln = _ohne_kommentar.count("{")
+    pruefe(_regeln >= 60, f"das Stylesheet hat noch seine Regeln ({_regeln})")
     pruefe("/static/schriften/" not in _css.text,
            "keine Schriften des Hauses im Programm — die liegen im Bestand")
     # Die Statusfarben sind Bedeutung, keine Gestaltung. Wer sie ans Branding

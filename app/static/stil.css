@@ -4,16 +4,38 @@
 
    DAS EIGENE ERSCHEINUNGSBILD kommt nicht hierher, sondern in den Bestand:
 
-       branding/stil.css          wird NACH dieser Datei geladen
-       branding/schriften/*.woff2 erreichbar unter /branding/schriften/...
+       branding/stil.css             wird NACH dieser Datei geladen
+       branding/schriften/<name>.woff2   unter /branding/schriften/ erreichbar
 
    Der Grund ist nicht Geschmack, sondern Betrieb: Das Verzeichnis liegt
    ausserhalb des Programms und ueberlebt jede Aktualisierung. Wer seine
    Farben hier hineinschriebe, haette sie beim naechsten Update verloren.
 
-   Zu ueberschreiben sind die Variablen unten — mehr braucht es meist nicht:
+   Zu ueberschreiben sind die Variablen unten — meist genuegen drei:
+   --akzent, --akzent-hell und --kopf.
 
-       :root{--rand:#dcdcdc;--grund:#f5f5f5;--karte:#fff;--text:#1f1f1f;--gedaempft:#6b6b6b;
+   Die Statusfarben (gesendet, Fehler, Pruefung) folgen absichtlich KEINEM
+   Markenton: Sie sind Bedeutung, keine Gestaltung. Wer sie umfaerbt, nimmt
+   der Liste die Lesbarkeit.
+
+   Zum Kontrast, falls doch jemand einen hellen Markenton nimmt: Fuer Text
+   braucht es ein Verhaeltnis von 4,5 zu Weiss. Ein heller Goldton liegt bei
+   knapp 3 und taugt fuer Raender und Flaechen, nicht fuer Buchstaben.
+   Deshalb gibt es zwei Variablen — --akzent traegt Text, --akzent-hell
+   Linien und Flaechen.
+
+   Der Arbeitsbereich bleibt hell. Eine Hotelseite darf dunkel und
+   grosszuegig sein; eine Arbeitsliste, die jemand acht Stunden am Tag
+   ansieht, braucht Ruhe und Kontrast.
+
+   ACHTUNG beim Bearbeiten: In diesem Kommentar darf kein Beispiel mit
+   ":root{" stehen. Genau daran ist diese Datei einmal zerbrochen — ein
+   Skript suchte den Variablenblock, fand das Beispiel im Kommentar und
+   ersetzte die falsche Stelle. Das Kommentarende ging dabei verloren, und
+   die ganze Palette lag stumm im Kommentar. Der Selbsttest prueft deshalb
+   die Datei OHNE Kommentare. */
+
+:root{--rand:#dcdcdc;--grund:#f5f5f5;--karte:#fff;--text:#1f1f1f;--gedaempft:#6b6b6b;
       --akzent:#3a5a78;--akzent-hell:#7d9cb8;--kopf:#22282e;
       --warn:#8a4b12;--fehler:#a02020;--ok:#1f5c3d;
       --schrift:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
