@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titel %}OPERA XRechnung{% endblock %}</title>
+  <link rel="stylesheet" href="/static/stil.css">
+  {# Erscheinungsbild des Hauses aus dem Bestand — ueberschreibt die
+     mitgelieferten Farben und Schriften, siehe branding/stil.css. #}
+  {% if eigenes_branding %}<link rel="stylesheet" href="/branding/stil.css">{% endif %}
+</head>
+<body class="{% block koerper %}{% endblock %}">
+<header>
+  <a class="marke" href="/">
+    {% if haus %}<span class="haus">{{ haus }}</span>{% endif %}XRechnung</a>
+  <nav>
+    <a href="/">Rechnungen</a>
+    <a href="/protokoll">Protokoll</a>
+    <a href="/konfiguration">Konfiguration</a>
+    <a href="/benutzer">Benutzer</a>
+    <a href="/hilfe">Handbuch</a>
+  </nav>
+  <div class="rechts">
+    <span class="pille {{ 'arbeitet' if automatik.arbeitet else ('an' if automatik.aktiv else 'aus') }}">
+      {% if automatik.arbeitet %}Automatik arbeitet …{% else %}Automatik {{ 'an' if automatik.aktiv else 'aus' }}{% endif %}
+      {%- if automatik.testlauf %} · Testlauf{% endif %}
+    </span>
+    <span class="benutzer">{{ benutzer }} ({{ rolle }})</span>
+    <a href="/logout">Abmelden</a>
+  </div>
+</header>
+{% if automatik.arbeitet or automatik.neustart_steht %}
+{# Waehrend ein Lauf arbeitet, fuehrt jeder weitere Anstoss ins Leere: Der
+   Versand ist gesperrt, und ein zweites Einlesen brauchte niemand. Das gehoert
+   sichtbar gesagt, nicht als haengende Seite. #}
+<div class="pruefhinweis arbeitet">
+  {% if automatik.arbeitet %}<strong>Ein Automatiklauf arbeitet gerade.</strong>
+  Einlesen, Versenden und „Durchlauf starten“ sind so lange gesperrt — in der Regel
+  sind es einige Sekunden bis wenige Minuten. Die Seite lässt sich einfach neu laden.
+  {% else %}<strong>Ein Neustart steht an.</strong> Es wird kein neuer Automatiklauf
+  mehr begonnen.{% endif %}
+</div>
+{% endif %}
+{% if update_hinweis and verwalten %}
+{# Ein neuerer Stand liegt bereit. Nur nachgesehen, nicht eingespielt — das
+   bleibt ein Knopfdruck. Nur fuer Verwalter, weil nur sie ihn druecken
+   koennen; wer ihn nicht druecken kann, soll nicht daran erinnert werden. #}
+<div class="pruefhinweis">
+  <strong>Eine neuere Fassung liegt bereit.</strong>
+  {{ update_hinweis.text }}
+  <a href="/konfiguration">Unter „Konfiguration“ ansehen und einspielen.</a>
+</div>
+{% endif %}
+{% if meldung %}<div class="meldung">{{ meldung }}</div>{% endif %}
+<main>{% block inhalt %}{% endblock %}</main>
+{# Die GPL verlangt, dass ein Programm seine Lizenz nennt. Bei einer
+   Weboberflaeche ist die Fusszeile der Ort dafuer — nicht ein Startbanner,
+   den niemand sieht. Sie nennt ausserdem den Stand, damit bei einer
+   Rueckfrage nicht geraten werden muss, welche Fassung jemand vor sich hat. #}
+<footer class="fuss">
+  OPERA XRechnung {{ version }} · Freie Software unter der
+  <a href="https://www.gnu.org/licenses/gpl-3.0.html" rel="noopener">GNU GPL v3</a>,
+  ohne Gewähr · © 2026 AHORN Hotels
+</footer>
+</body>
+</html>

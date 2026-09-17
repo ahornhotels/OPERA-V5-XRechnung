@@ -1,0 +1,236 @@
+{#- Kein |e mehr an den Feldern: Die Umgebung maskiert selbst (autoescape),
+    und |e machte aus einem fehlenden Wert die Zeichenkette "None", weil es
+    VOR der None-Behandlung greift. Doppelt maskiert wird dabei nichts. -#}
+<?xml version="1.0" encoding="UTF-8"?>
+<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+             xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+             xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  {# BT-24 kommt aus xml_build.VERSIONEN — an einer Stelle mit Vorlage und Regelwerk. #}
+  <cbc:CustomizationID>{{ customizationid }}</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID>{{ header.id }}</cbc:ID>
+  <cbc:IssueDate>{{ header.issuedate }}</cbc:IssueDate>
+{% if header.duedate %}  <cbc:DueDate>{{ header.duedate }}</cbc:DueDate>
+{% endif %}  <cbc:InvoiceTypeCode>{{ header.invoicetypecode }}</cbc:InvoiceTypeCode>
+{% if header.note %}  <cbc:Note>{{ header.note }}</cbc:Note>
+{% endif %}  <cbc:DocumentCurrencyCode>{{ header.documentcurrencycode }}</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>{{ header.buyerreference }}</cbc:BuyerReference>
+
+  {# UBL 2.1 schreibt die Reihenfolge fest vor:
+     BuyerReference, InvoicePeriod, OrderReference, BillingReference.
+     Ein Tausch dieser beiden Bloecke bricht das Schema (cvc-complex-type.2.4.a)
+     — und zwar erst, sobald eine Anzahlung vorliegt, weil der
+     BillingReference-Block sonst leer bleibt. #}
+  {% if header.startdate and header.enddate %}
+  <cac:InvoicePeriod>
+    <cbc:StartDate>{{ header.startdate }}</cbc:StartDate>
+    <cbc:EndDate>{{ header.enddate }}</cbc:EndDate>
+  </cac:InvoicePeriod>
+  {% endif %}
+
+  {# BG-3: Anzahlungsbelege desselben Folios (OPERA: eigene Belege mit
+     STATUS='DEPOSIT'). Ihre Summe steht als PrepaidAmount in BT-113. #}
+  {% for a in (deposits or []) %}
+  <cac:BillingReference>
+    <cac:InvoiceDocumentReference>
+      <cbc:ID>{{ a.billingreferenceid }}</cbc:ID>
+      <cbc:IssueDate>{{ a.billingreferenceissuedate }}</cbc:IssueDate>
+    </cac:InvoiceDocumentReference>
+  </cac:BillingReference>
+  {% endfor %}
+
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      {% if header.suppliercontactelectronicmail %}
+      <cbc:EndpointID schemeID="EM">{{ header.suppliercontactelectronicmail }}</cbc:EndpointID>
+      {% endif %}
+      <cac:PartyName><cbc:Name>{{ header.suppliername }}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>{{ header.supplierstreetname }}</cbc:StreetName>
+        <cbc:CityName>{{ header.suppliercityname }}</cbc:CityName>
+        <cbc:PostalZone>{{ header.supplierpostalzone }}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>{{ header.supplieridentificationcode }}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>{{ header.suppliercompanyid }}</cbc:CompanyID>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>{{ (header.supplierregistrationname or header.suppliername) }}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+      {# BR-DE-5: cac:Contact (BT-41) ist Pflicht. Mindestens cbc:Name.
+         Fallback auf suppliername wird im invoice_fetcher gesetzt, damit hier
+         immer ein Name vorhanden ist. #}
+      <cac:Contact>
+        <cbc:Name>{{ (header.suppliercontactname or header.suppliername or 'Buchhaltung') }}</cbc:Name>
+        {% if header.suppliercontacttelephone %}<cbc:Telephone>{{ header.suppliercontacttelephone }}</cbc:Telephone>{% endif %}
+        {% if header.suppliercontactelectronicmail %}<cbc:ElectronicMail>{{ header.suppliercontactelectronicmail }}</cbc:ElectronicMail>{% endif %}
+      </cac:Contact>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      {% if header.customerendpointid %}
+      <cbc:EndpointID schemeID="EM">{{ header.customerendpointid }}</cbc:EndpointID>
+      {% endif %}
+      {# BT-46: die Kennung, unter der der Kunde bei UNS gefuehrt wird — die
+         Debitorennummer. UBL-Reihenfolge im Party: EndpointID,
+         PartyIdentification, PartyName, PostalAddress. #}
+      {% if header.debitorennummer %}
+      <cac:PartyIdentification>
+        <cbc:ID>{{ header.debitorennummer }}</cbc:ID>
+      </cac:PartyIdentification>
+      {% endif %}
+      <cac:PartyName><cbc:Name>{{ header.customername }}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>{{ header.customerstreetname }}</cbc:StreetName>
+        <cbc:CityName>{{ header.customercityname }}</cbc:CityName>
+        <cbc:PostalZone>{{ header.customerpostalzone }}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>{{ header.customeridentificationcode }}</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>{{ (header.customerregistrationname or header.customername) }}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+
+  {# BG-13/BT-70: der Gast als Empfaenger der Leistung. BT-22 traegt denselben
+     Namen als lesbaren Satz — beides zusammen, weil das eine auswertbar und
+     das andere sichtbar ist: In vielen Anzeigeprogrammen bleibt BT-70
+     unsichtbar, und BT-22 kann kein System auswerten.
+     UBL-Reihenfolge: nach AccountingCustomerParty, vor PaymentMeans. #}
+  {% if header.gastname %}
+  <cac:Delivery>
+    <cac:DeliveryParty>
+      <cac:PartyName>
+        <cbc:Name>{{ header.gastname }}</cbc:Name>
+      </cac:PartyName>
+    </cac:DeliveryParty>
+  </cac:Delivery>
+  {% endif %}
+
+  <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+    {# BT-83: der Verwendungszweck, den der Kunde bei der Ueberweisung angibt.
+       Rechnungsnummer und Debitorennummer zusammen — damit laesst sich die
+       Zahlung zuordnen, ohne im Betreff zu suchen. #}
+    {% if header.verwendungszweck %}
+    <cbc:PaymentID>{{ header.verwendungszweck }}</cbc:PaymentID>
+    {% endif %}
+    <cac:PayeeFinancialAccount>
+      <cbc:ID>{{ header.payeefinancialaccountid }}</cbc:ID>
+      <cbc:Name>{{ (header.payeefinancialaccountname or header.suppliername) }}</cbc:Name>
+      {% if header.payeefinancialaccountbic %}
+      <cac:FinancialInstitutionBranch>
+        <cbc:ID>{{ header.payeefinancialaccountbic }}</cbc:ID>
+      </cac:FinancialInstitutionBranch>
+      {% endif %}
+    </cac:PayeeFinancialAccount>
+  </cac:PaymentMeans>
+
+  {# Document-Level-Allowances (Pfand-Rueckgabe / Gutschrift / Storno-Verrechnung).
+     Werden in xml_builder._split_negative_lines_to_allowances aus negativen
+     Invoice-Lines gemappt, damit BR-27 (no negative line) und BR-S-01
+     (category-mismatch) nicht ausgeloest werden. #}
+  {% for al in (allowances or []) %}
+  <cac:AllowanceCharge>
+    <cbc:ChargeIndicator>false</cbc:ChargeIndicator>
+    <cbc:AllowanceChargeReason>{{ al.reason }}</cbc:AllowanceChargeReason>
+    <cbc:Amount currencyID="{{ header.documentcurrencycode }}">{{ al.amount|fmt }}</cbc:Amount>
+    <cac:TaxCategory>
+      <cbc:ID>{{ al.category }}</cbc:ID>
+      <cbc:Percent>{{ al.percent|fmt }}</cbc:Percent>
+      <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+    </cac:TaxCategory>
+  </cac:AllowanceCharge>
+  {% endfor %}
+
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.invoicetaxtotal|fmt }}</cbc:TaxAmount>
+    {% for t in tax_breakdown %}
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="{{ header.documentcurrencycode }}">{{ t.taxableamount|fmt }}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="{{ header.documentcurrencycode }}">{{ t.taxamount|fmt }}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>{{ t.taxcategoryid }}</cbc:ID>
+        <cbc:Percent>{{ t.taxcategorypercent|fmt }}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>
+    {% endfor %}
+  </cac:TaxTotal>
+
+  <cac:LegalMonetaryTotal>
+    {# UBL erzwingt feste Reihenfolge der Total-Bloecke:
+       LineExt (BT-106) → TaxExcl (BT-109) → TaxIncl (BT-112) →
+       AllowanceTotal (BT-107) → ChargeTotal (BT-108) → Prepaid (BT-113) →
+       Rounding (BT-114) → Payable (BT-115). #}
+    <cbc:LineExtensionAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.invoicenet|fmt }}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="{{ header.documentcurrencycode }}">{{ (totals.taxexclusiveamount if totals.taxexclusiveamount is defined else totals.invoicenet)|fmt }}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.invoicegross|fmt }}</cbc:TaxInclusiveAmount>
+    {# BT-107: Summe der Document-Level-Allowances (Pflicht wenn BG-20 vorhanden,
+       siehe BR-CO-11). Nur wenn > 0 emittieren. #}
+    {% if (totals.allowancetotalamount|default(0)|float) > 0 %}
+    <cbc:AllowanceTotalAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.allowancetotalamount|fmt }}</cbc:AllowanceTotalAmount>
+    {% endif %}
+    {% set _gross = totals.invoicegross|float %}
+    {# BT-113 ist ein BRUTTO-Betrag. header.prepaidamount enthaelt bereits
+       CASHPAY + CCPAY + DEPOSIT des Kopfes UND die Bruttosummen der
+       DEPOSIT-Belege desselben Folios (siehe invoice_header.sql). #}
+    {% set _prepaid = (header.get('prepaidamount') or 0)|float %}
+    {# BT-114: gleicht den Cent aus, der entsteht, weil jede Steuergruppe
+       einzeln gerundet wird. Ohne ihn forderte die Rechnung einen anderen
+       Betrag als die Forderung im Haus. #}
+    {% set _ausgleich = (totals.roundingamount|default(0))|float %}
+    {% set _payable = (_gross - _prepaid + _ausgleich) %}
+    {# Auch eine NEGATIVE Anzahlung wird ausgewiesen: Sie wird unten vom
+       Zahlbetrag abgezogen, und fehlt sie im Dokument, geht BR-CO-16 nicht auf. #}
+    {% if _prepaid|float != 0 %}
+    <cbc:PrepaidAmount currencyID="{{ header.documentcurrencycode }}">{{ _prepaid|fmt }}</cbc:PrepaidAmount>
+    {% endif %}
+    {% if _ausgleich != 0 %}
+    <cbc:PayableRoundingAmount currencyID="{{ header.documentcurrencycode }}">{{ _ausgleich|fmt }}</cbc:PayableRoundingAmount>
+    {% endif %}
+    <cbc:PayableAmount currencyID="{{ header.documentcurrencycode }}">{{ _payable|fmt }}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+
+  {% for line in lines %}
+  <cac:InvoiceLine>
+    <cbc:ID>{{ loop.index }}</cbc:ID>
+    {# BT-127: Bemerkung zur einzelnen Buchung. UBL-Reihenfolge: ID, Note,
+       InvoicedQuantity, LineExtensionAmount. #}
+    {% if line.bemerkung %}
+    <cbc:Note>{{ line.bemerkung }}</cbc:Note>
+    {% endif %}
+    <cbc:InvoicedQuantity unitCode="C62">{{ line.invoicedquantity }}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="{{ header.documentcurrencycode }}">{{ (line.lineextensionamountnet or line.lineextensionamount)|fmt }}</cbc:LineExtensionAmount>
+    {# BG-26 / BT-134, BT-135: der Aufenthalt des Gastes an der Position —
+       nur bei der Darstellung je Gast (C). UBL-Reihenfolge:
+       LineExtensionAmount, AccountingCost, InvoicePeriod, ..., Item. #}
+    {% if line.zeitraum_beginn and line.zeitraum_ende %}
+    <cac:InvoicePeriod>
+      <cbc:StartDate>{{ line.zeitraum_beginn }}</cbc:StartDate>
+      <cbc:EndDate>{{ line.zeitraum_ende }}</cbc:EndDate>
+    </cac:InvoicePeriod>
+    {% endif %}
+    <cac:Item>
+      <cbc:Name>{{ line.itemname }}</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>{{ line.classifiedtaxcategoryid }}</cbc:ID>
+        <cbc:Percent>{{ line.classifiedtaxcategorypercent|fmt }}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="{{ header.documentcurrencycode }}">{{ (line.priceamount or line.lineextensionamount)|preis }}</cbc:PriceAmount>
+      {# BT-149: nur, wenn vier Nachkommastellen den Positionsbetrag nicht
+         genau treffen. Dann steht im Preis der volle Betrag und die Menge als
+         Bezugsmenge — die Nachrechnung geht damit ohne Rundung auf. #}
+      {% if line.pricebasequantity %}
+      <cbc:BaseQuantity unitCode="C62">{{ line.pricebasequantity }}</cbc:BaseQuantity>
+      {% endif %}
+    </cac:Price>
+  </cac:InvoiceLine>
+  {% endfor %}
+</ubl:Invoice>

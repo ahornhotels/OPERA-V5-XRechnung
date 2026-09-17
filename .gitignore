@@ -1,0 +1,30 @@
+# Zugangsdaten und Betriebsdaten — gehoeren nie ins Repository
+config/app.json
+config/users.json
+config/secret.key
+config/ERSTES_PASSWORT.txt
+data/
+logs/
+# Erscheinungsbild des Hauses — gehoert dem Haus, nicht der Anwendung.
+# Liegt im Bestand und ueberlebt Aktualisierungen; die Anwendung laedt
+# branding/stil.css nach der mitgelieferten, wenn sie da ist.
+branding/
+
+# Laufzeitumgebung
+.venv/
+__pycache__/
+*.pyc
+
+# Vom Installer geladen, nicht Teil des Programms
+validation/
+install/nssm.exe
+
+# reference/ bleibt aussen vor:
+#  - Oracle Data Dictionary (PDF und daraus geparste JSON) ist Oracle-Doku,
+#    nicht unser Material
+#  - das Live-Data-Dictionary ist ein Auszug aus der Produktivdatenbank
+#    mit internen Objekt- und Hostnamen
+#  - XRechnung_Slim ist ein eigenes Repository (GPLv3)
+# Zusammen 14 MB, die im Programm-Repository nichts zu suchen haben.
+reference/
+.DS_Store

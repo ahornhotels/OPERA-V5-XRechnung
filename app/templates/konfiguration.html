@@ -1,0 +1,262 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<h1>Konfiguration</h1>
+{% if not schreibbar %}
+<div class="pruefhinweis"><strong>Achtung: Änderungen lassen sich nicht
+  speichern.</strong><br>{{ schreibgrund }}<br>
+  Bitte erst die Rechte richten — sonst gehen Ihre Eingaben beim Speichern
+  verloren.</div>
+{% endif %}
+<p class="hinweis">Passwörter werden verschlüsselt gespeichert und hier nie
+angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
+
+<form method="post" action="/konfiguration">
+{# Ein nicht angehakter Schalter wird vom Browser gar nicht mitgeschickt.
+   Damit das Speichern nur die Schalter zurücksetzt, die dieses Formular
+   auch zeigt, steht hier ihre Liste. Ohne sie schaltet ein Formular mit
+   Teilinhalt alles ab, was es nicht kennt — lautlos. #}
+<input type="hidden" name="_schalter" value="{{ schalter|join(',') }}">
+<div class="spalten">
+
+  <section class="karte">
+    <h2>Datenbank (nur lesend)</h2>
+    <label>Host<input name="datenbank.host" value="{{ cfg.datenbank.host }}"></label>
+    <label>Port<input name="datenbank.port" value="{{ cfg.datenbank.port }}"></label>
+    <label>Service<input name="datenbank.service_name" value="{{ cfg.datenbank.service_name }}"></label>
+    <label>Benutzer<input name="datenbank.benutzer" value="{{ cfg.datenbank.benutzer }}"></label>
+    <label>Passwort <span class="klein">({{ cfg.datenbank.passwort or 'nicht gesetzt' }})</span>
+      <input name="datenbank.passwort" type="password" placeholder="unverändert lassen"></label>
+    <label class="schalter"><input type="checkbox" name="datenbank.thick_mode" value="1"
+      {{ 'checked' if cfg.datenbank.thick_mode }}> Thick-Modus (nur bei Fehler DPY-3015)</label>
+  </section>
+
+  <section class="karte">
+    <h2>Haus</h2>
+    <label>Resort<input name="property.resort" value="{{ cfg.property.resort }}"></label>
+    <label>USt-IdNr. (BT-31)<input name="property.ust_id" value="{{ cfg.property.ust_id }}"></label>
+    <label>Kontakt (BR-DE-5)<input name="property.kontakt_name" value="{{ cfg.property.kontakt_name }}"></label>
+    <label>Telefon (geht vor OPERA)<input name="property.kontakt_telefon" value="{{ cfg.property.kontakt_telefon }}"></label>
+    <label>E-Mail (geht vor OPERA)<input name="property.kontakt_email" value="{{ cfg.property.kontakt_email }}"></label>
+    <p class="klein">Stehen Telefon oder E-Mail hier, kommen sie so auf die Rechnung.
+       Leer lassen nimmt die Angabe am Resort in OPERA.</p>
+    <label>IBAN<input name="property.iban" value="{{ cfg.property.iban }}"></label>
+    <label>BIC<input name="property.bic" value="{{ cfg.property.bic }}"></label>
+    <label>Kontoinhaber<input name="property.kontoinhaber" value="{{ cfg.property.kontoinhaber }}"></label>
+    <label>Zahlungsziel (Tage)<input name="property.zahlungsziel_tage" value="{{ cfg.property.zahlungsziel_tage }}"></label>
+    <label>Mitgliedschaftstyp Leitweg-ID<input name="property.mitgliedschaftstyp_leitweg" value="{{ cfg.property.mitgliedschaftstyp_leitweg }}"></label>
+    <label>Käuferreferenz (BT-10), wenn keine hinterlegt ist
+      <select name="property.buyerreference_ersatz">
+        {# Die Vorgabe 'reservierungsnummer' fehlte in der Liste — beim Speichern
+           der Seite wurde sie stillschweigend zur Rechnungsnummer. #}
+        {% for w, b in [('reservierungsnummer','Reservierungsnummer'), ('rechnungsnummer','Rechnungsnummer'), ('debitorennummer','Debitorennummer'), ('kundenname','Kundenname')] %}
+        <option value="{{ w }}" {{ 'selected' if cfg.property.buyerreference_ersatz == w }}>{{ b }}</option>
+        {% endfor %}
+      </select>
+      <span class="klein">Pflichtfeld ohne Leitweg-ID: Vorrang haben immer eine
+      hinterlegte Leitweg-ID, eine vereinbarte Referenz am Profil und die
+      Kundenreferenz aus der Buchung.</span></label>
+  </section>
+
+  <section class="karte">
+    <h2>Mailversand</h2>
+    <label class="schalter"><input type="checkbox" name="mail.aktiv" value="1"
+      {{ 'checked' if cfg.mail.aktiv }}> Versand aktiv</label>
+    <label>SMTP-Server<input name="mail.smtp_host" value="{{ cfg.mail.smtp_host }}"></label>
+    <label>Port<input name="mail.smtp_port" value="{{ cfg.mail.smtp_port }}"></label>
+    <label>Verschlüsselung
+      <select name="mail.verschluesselung">
+        {% for v in ['starttls','ssl','keine'] %}
+        <option value="{{ v }}" {{ 'selected' if cfg.mail.verschluesselung == v }}>{{ v }}</option>
+        {% endfor %}
+      </select></label>
+    <label>Benutzer<input name="mail.benutzer" value="{{ cfg.mail.benutzer }}"></label>
+    <label>Passwort <span class="klein">({{ cfg.mail.passwort or 'nicht gesetzt' }})</span>
+      <input name="mail.passwort" type="password" placeholder="unverändert lassen"></label>
+    <label>Absender<input name="mail.absender" value="{{ cfg.mail.absender }}"></label>
+    <label>Absendername<input name="mail.absender_name" value="{{ cfg.mail.absender_name }}"></label>
+    <label class="hervor">BCC (immer mitgesendet)
+      <input name="mail.bcc" value="{{ cfg.mail.bcc }}"></label>
+    <label class="hervor">BCC nur für City Ledger (zusätzlich)
+      <input name="mail.bcc_city_ledger" value="{{ cfg.mail.bcc_city_ledger }}">
+      <span class="klein">Geht zusätzlich mit, wenn die Rechnung über das
+      Debitorenkonto ausgecheckt wurde — diese Rechnungen sind nicht bezahlt,
+      sondern stehen beim Debitor offen. Leer lassen, wenn nicht gewünscht.</span></label>
+    <label class="hervor">Erlaubte Empfänger (Komma; leer = keine Beschränkung)
+      <input name="mail.erlaubte_empfaenger" value="{{ cfg.mail.erlaubte_empfaenger|join(', ') }}">
+      <span class="klein">Solange hier etwas steht, geht keine Mail an eine andere
+      Adresse — auch nicht aus der Automatik. Erst leeren, wenn der Versand an
+      echte Kunden freigegeben ist.</span></label>
+    <label>Betreff<input name="mail.betreff" value="{{ cfg.mail.betreff }}"></label>
+    <label>Text<textarea name="mail.text" rows="5">{{ cfg.mail.text }}</textarea></label>
+    <label>PDF-Ordner (optional)<input name="mail.pdf_ordner" value="{{ cfg.mail.pdf_ordner }}"></label>
+    <label>PDF-Dateimuster<input name="mail.pdf_muster" value="{{ cfg.mail.pdf_muster }}"></label>
+  </section>
+
+  <section class="karte">
+    <h2>Auswahl — welche Rechnungen aufgenommen werden</h2>
+    <label>Zeitraum beim Einlesen (Tage)
+      <input name="auswahl.zeitraum_tage" value="{{ cfg.auswahl.zeitraum_tage }}"></label>
+    <label>Höchstens je Lauf einlesen
+      <input name="auswahl.hoechstens" value="{{ cfg.auswahl.hoechstens }}"></label>
+    <label>Profiltypen, die als Firma gelten (Komma)
+      <input name="auswahl.firmenprofile" value="{{ cfg.auswahl.firmenprofile|join(', ') }}"></label>
+    <label class="schalter"><input type="checkbox" name="auswahl.reservierungsfirma_aufnehmen" value="1"
+      {{ 'checked' if cfg.auswahl.reservierungsfirma_aufnehmen }}> auch aufnehmen, wenn die Firma
+      nur an der Reservierung hängt</label>
+    <label class="schalter hervor"><input type="checkbox" name="auswahl.reservierungsfirma_pruefen" value="1"
+      {{ 'checked' if cfg.auswahl.reservierungsfirma_pruefen }}> <strong>diese erst nach
+      Sichtprüfung versenden</strong> — dort zahlt oft eine Privatperson</label>
+    <label class="schalter"><input type="checkbox" name="auswahl.nur_inland" value="1"
+      {{ 'checked' if cfg.auswahl.nur_inland }}> nur inländische Empfänger</label>
+    <label>Inlandskennzeichen (Komma)
+      <input name="auswahl.inlandskennzeichen" value="{{ cfg.auswahl.inlandskennzeichen|join(', ') }}"></label>
+    <label>Mindestbetrag brutto (0 = keine Grenze)
+      <input name="auswahl.mindestbetrag_brutto" value="{{ cfg.auswahl.mindestbetrag_brutto }}"></label>
+  </section>
+
+  <section class="karte">
+    <h2>Automatik</h2>
+    <label class="schalter"><input type="checkbox" name="automatik.aktiv" value="1"
+      {{ 'checked' if cfg.automatik.aktiv }}> Automatik eingeschaltet</label>
+    <label class="schalter hervor"><input type="checkbox" name="automatik.testlauf" value="1"
+      {{ 'checked' if cfg.automatik.testlauf }}> <strong>Testlauf</strong> — alles wird
+      vorbereitet, aber nichts verschickt</label>
+    <label>Takt in Minuten<input name="automatik.poll_minuten" value="{{ cfg.automatik.poll_minuten }}"></label>
+    <label>Wartezeit bis Versand (Minuten)
+      <input name="automatik.wartezeit_minuten" value="{{ cfg.automatik.wartezeit_minuten }}"></label>
+    <label>Höchstens je Lauf<input name="automatik.max_pro_lauf" value="{{ cfg.automatik.max_pro_lauf }}"></label>
+    <label class="schalter"><input type="checkbox" name="automatik.city_ledger_versenden" value="1"
+      {{ 'checked' if cfg.automatik.city_ledger_versenden }}>
+      <span>City-Ledger-Rechnungen automatisch versenden<br>
+      <span class="klein">Aus: Debitorenrechnungen gehen nur von Hand hinaus. Sie sind
+      nicht bezahlt, sondern stehen beim Debitor offen.</span></span></label>
+    <label class="schalter"><input type="checkbox" name="automatik.nur_mit_firmenbezug" value="1"
+      {{ 'checked' if cfg.automatik.nur_mit_firmenbezug }}> nur Rechnungen mit Firmenbezug aufnehmen</label>
+    <label class="schalter"><input type="checkbox" name="automatik.empfaenger_automatisch" value="1"
+      {{ 'checked' if cfg.automatik.empfaenger_automatisch }}> Empfänger automatisch vorbelegen</label>
+  </section>
+
+  <section class="karte">
+    <h2>Validierung (KoSIT)</h2>
+    <p class="klein">Läuft ausschließlich lokal auf diesem Server. Eine fertige
+       XRechnung enthält Kundendaten und gehört in keine Prüfseite im Internet.</p>
+    <label class="schalter"><input type="checkbox" name="validierung.aktiv" value="1"
+      {{ 'checked' if cfg.validierung.aktiv }}> Validierung eingeschaltet</label>
+    <label class="schalter hervor"><input type="checkbox" name="validierung.pflicht" value="1"
+      {{ 'checked' if cfg.validierung.pflicht }}> <strong>Pflicht</strong> — ohne
+      eingerichteten Validator wird nicht versendet</label>
+    <label>Java<input name="validierung.java" value="{{ cfg.validierung.java }}"></label>
+    <label>Validator-JAR<input name="validierung.kosit_jar" value="{{ cfg.validierung.kosit_jar }}"></label>
+    {# Der Versionsschalter steht beim Validator, weil beide zusammengehoeren:
+       Eine Version ohne passendes Regelwerk laesst sich nicht pruefen. #}
+    <label>XRechnung-Version
+      <select name="xrechnung.version">
+        {% for v in xrechnung_versionen %}
+        <option value="{{ v }}" {{ 'selected' if (cfg.xrechnung or {}).version == v }}>{{ v }}</option>
+        {% endfor %}
+      </select></label>
+    <p class="klein">XRechnung 4.0 ist noch nicht veröffentlicht und deshalb nicht wählbar.
+       Steht im Pfad unten <code>{version}</code>, wählt die Version das Regelwerk mit.</p>
+    <label>scenarios.xml<input name="validierung.kosit_szenarien" value="{{ cfg.validierung.kosit_szenarien }}"></label>
+    <div class="{{ 'hinweis' if validator.bereit else 'fehler' }}">
+      {% if validator.bereit %}Eingerichtet — {{ validator.java_version }} ({{ validator.java }})
+      {% else %}Noch nicht einsatzbereit:
+        <ul>{% for f in validator.fehlt %}<li>{{ f }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="karte">
+    {# cfg['update'] und nicht cfg.update: Jinja greift bei der Punktschreibweise
+       zuerst auf Attribute zu, und dict hat eine Methode update(). cfg.update.repo
+       ergaebe deshalb immer einen Leerstring — und weil das Formular ihn
+       zuruecksendet, würde jedes Speichern die Angaben löschen. #}
+  <h2>Aktualisierung</h2>
+    <label class="schalter"><input type="checkbox" name="update.aktiv" value="1"
+      {{ 'checked' if cfg['update'].aktiv }}> Aktualisierung über GitHub erlaubt</label>
+    <p class="hinweis"><a href="/einrichtung/leitweg">Leitweg-ID einrichten</a> —
+      welches Feld der Firmenkartei die Leitweg-ID trägt, mit Anleitung für den
+      Screen Painter.</p>
+    {% if quelle_festgenagelt %}
+    {# Steht die Quelle in der systemd-Unit, gehoert sie root — und dann darf
+       sie hier nicht bearbeitbar sein, sonst suggeriert das Feld eine Wirkung,
+       die es nicht hat. Wer sie aendern will, aendert die Unit. #}
+    <label>Repository<input value="{{ quelle_repo }}" readonly title="Festgelegt in der systemd-Unit"></label>
+    <label>Zweig<input value="{{ quelle_zweig }}" readonly title="Festgelegt in der systemd-Unit"></label>
+    <p class="klein">Repository und Zweig stehen in der systemd-Unit und sind hier
+      nicht änderbar. Das ist Absicht: Die Unit gehört root, <code>config/app.json</code>
+      gehört dem Dienst. Wer den Dienst übernimmt, soll ihn nicht auf ein fremdes
+      Repository richten können.</p>
+    {% else %}
+    <label>Repository<input name="update.repo" value="{{ cfg['update'].repo }}"></label>
+    <label>Zweig<input name="update.zweig" value="{{ cfg['update'].zweig }}"></label>
+    {% endif %}
+    <label>Token (nur bei privatem Repository)
+      <span class="klein">({{ 'gesetzt' if cfg['update'].token else 'nicht gesetzt' }})</span>
+      <input name="update.token" type="password" placeholder="unverändert lassen"></label>
+    <p class="klein">Version {{ version }} · {{ update_stand }}</p>
+  </section>
+
+  <section class="karte">
+    <h2>Netz und Ablage</h2>
+    <label>Erlaubte Netze (Komma)
+      <input name="server.erlaubte_netze" value="{{ cfg.server.erlaubte_netze|join(', ') }}"></label>
+    <label>XML-Ordner<input name="ablage.xml_ordner" value="{{ cfg.ablage.xml_ordner }}"></label>
+    <label>Archiv<input name="ablage.archiv_ordner" value="{{ cfg.ablage.archiv_ordner }}"></label>
+  </section>
+</div>
+<div class="knoepfe"><button class="haupt">Speichern</button></div>
+</form>
+
+<div class="spalten">
+  <section class="karte">
+    <h2>Verbindung prüfen</h2>
+    <form method="post" action="/konfiguration/dbtest"><button>Datenbank testen</button></form>
+    {# Nachpruefen, ob die Anzahlungserkennung im eigenen Haus aufgeht.
+       Entschieden wird ueber den Belegstatus, nicht ueber Umsatzcodes —
+       dieser Knopf zeigt, was dabei im eigenen Bestand zusammenkommt. #}
+    <form method="post" action="/konfiguration/anzahlungscodes">
+      <button>Anzahlungscodes nachsehen</button>
+    </form>
+    <p class="hinweis">Zeigt, welche Umsatzcodes im letzten Jahr auf
+    Anzahlungsbelegen standen — und welche davon bloße Zahlungsarten sind.
+    Findet die Abfrage nichts, führt dieses Haus Anzahlungen anders; dann
+    gehören die Codes unter <code>auswahl.anzahlungscodes</code>.</p>
+  </section>
+  <section class="karte">
+    <h2>Aktualisierung prüfen</h2>
+    <form method="post" action="/update/pruefen"><button>Nach Aktualisierung sehen</button></form>
+    {% if freigaben %}
+    {# Zuruecksetzen heisst hier: den Verweis umhaengen. Deshalb steht die
+       Liste der Staende hier und nicht nur ein Knopf — man soll sehen, wohin
+       man zurueckgeht. #}
+    <div class="freigaben">
+      <h3>Eingespielte Stände</h3>
+      <ul class="klein">
+        {% for f in freigaben %}
+        <li>{{ f }}{% if f == freigabe_aktiv %} <strong>— läuft gerade</strong>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      <form method="post" action="/update/zuruecksetzen"
+            onsubmit="return confirm('Auf den vorigen Stand zurückgehen? Der Dienst startet danach neu.')">
+        <button class="warnung">Auf den vorigen Stand zurück</button>
+      </form>
+    </div>
+    {% endif %}
+    <form method="post" action="/update/anwenden"
+          onsubmit="return confirm('Aktualisierung jetzt einspielen? Danach muss der Dienst neu starten.')">
+      <button class="warnung">Aktualisierung einspielen</button></form>
+    <form method="post" action="/neustart"
+          onsubmit="return confirm('Dienst jetzt neu starten?')">
+      <button>Dienst neu starten</button></form>
+  </section>
+
+  <section class="karte">
+    <h2>Testmail</h2>
+    <form method="post" action="/konfiguration/mailtest">
+      <label>an<input name="an" placeholder="ich@haus.de"></label>
+      <button>Testmail senden</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

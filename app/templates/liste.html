@@ -1,0 +1,170 @@
+{% extends "basis.html" %}
+{% block koerper %}uebersicht{% endblock %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Rechnungen</h1>
+  <div class="knoepfe">
+    {% if verwalten %}
+    <form method="post" action="/einlesen" class="einlesen">
+      <label class="zeitraum">Zeitraum
+        <input name="tage" value="{{ zeitraum }}" size="4" title="Wie viele Tage zurück"> Tage
+      </label>
+      <button {{ 'disabled' if automatik.arbeitet }}>Jetzt einlesen</button>
+    </form>
+    {# Der Knopf verschickt echte Rechnungen. Er stand ausserhalb der
+       Berechtigungspruefung — sichtbar fuer jedes angemeldete Konto. #}
+    <form method="post" action="/automatik/jetzt"
+          onsubmit="return confirm('Ein Durchlauf verschickt alle fälligen Rechnungen. Fortfahren?')">
+      <button {{ 'disabled' if automatik.arbeitet }}>Durchlauf starten</button></form>
+    {% endif %}
+    {% if ohne_adresse %}
+    {# Nur zeigen, wenn es etwas abzuarbeiten gibt — ein Knopf, der immer da
+       ist und meistens eine leere Datei liefert, wird nicht angeklickt. #}
+    <a class="knopf" href="/pflegeliste.csv"
+       title="Firmenprofile ohne hinterlegte E-Mail-Adresse, nach Kunde gebündelt">
+      {{ ohne_adresse }} ohne Adresse</a>
+    {% endif %}
+    {% if verwalten %}
+    <form method="post" action="/automatik">
+      <input type="hidden" name="an" value="{{ '0' if automatik.aktiv else '1' }}">
+      <button class="{{ 'warnung' if automatik.aktiv else 'haupt' }}">
+        Automatik {{ 'ausschalten' if automatik.aktiv else 'einschalten' }}
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<p class="hinweis">
+  Takt {{ automatik.poll_minuten }} min · Wartezeit bis zum Versand
+  {{ automatik.wartezeit_minuten }} min · letzter Lauf {{ automatik.letzter_lauf or 'noch keiner' }}
+  {% if automatik.testlauf %} · <strong>Testlauf: es wird nichts wirklich verschickt</strong>{% endif %}
+</p>
+
+{# Der Filter ist der Knopf, den der Anwender am haeufigsten drueckt. Er sah
+   aus wie eine Fussnote und trug die Statusnamen so, wie sie in der Datenbank
+   stehen — "pruefung" ohne Umlaut. Beides ist jetzt anders: Reiter statt
+   Verweise, mit Anzahl, und die Beschriftung kommt aus store.STATUS_NAMEN. #}
+<nav class="filter" aria-label="Nach Status filtern">
+  <a href="/{% if suche %}?suche={{ suche }}{% endif %}"
+     class="{{ 'aktiv' if not status }}">Alle
+    <span class="anzahl">{{ zaehler.get('', 0) }}</span></a>
+  {% for s in status_reihe %}
+  <a href="/?status={{ s }}{% if suche %}&suche={{ suche }}{% endif %}"
+     class="reiter-{{ s }} {{ 'aktiv' if status == s }}">{{ status_namen[s] }}
+    <span class="anzahl">{{ zaehler.get(s, 0) }}</span></a>
+  {% endfor %}
+</nav>
+
+<form class="suche" method="get" action="/" role="search">
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  <label for="suchfeld">Rechnung suchen</label>
+  <input id="suchfeld" name="suche" value="{{ suche or '' }}" size="26"
+         placeholder="Rechnungsnummer, Kunde oder Empfänger"
+         title="Sucht in der Arbeitsliste. Eine Nummer wird zusätzlich in OPERA gesucht.">
+  <button class="haupt">Suchen</button>
+  {% if suche %}<a class="knopf" href="/{% if status %}?status={{ status }}{% endif %}">Zurücksetzen</a>{% endif %}
+</form>
+
+{% if suche %}
+<p class="hinweis">
+  {{ rechnungen|length }} Treffer in der Arbeitsliste für „{{ suche }}“.
+</p>
+{% endif %}
+
+{% if opera_fehler %}
+<div class="pruefhinweis">In OPERA konnte nicht gesucht werden: {{ opera_fehler }}</div>
+{% endif %}
+
+{% if in_opera %}
+{# Rechnungen, die es in OPERA gibt, aber nicht in der Arbeitsliste: zu alt
+   fuers Zeitfenster, beim Einlesen aussortiert oder nie eingelesen. Genau
+   danach sucht jemand, der eine Nummer vom Kunden bekommen hat. #}
+<section class="karte opera-treffer">
+  <h2>In OPERA gefunden</h2>
+  <table>
+    <tr><th>Rechnung</th><th>Beleg</th><th>Datum</th><th>Kunde</th>
+        <th>Art</th><th class="zahl">Brutto</th><th></th></tr>
+    {% for r in in_opera %}
+    <tr>
+      <td class="fest">{{ r.bill_no }}</td>
+      <td class="fest klein">{{ r.invoice_no or '—' }}</td>
+      <td class="fest">{{ r.issuedate }}</td>
+      <td class="breit">{{ r.kunde or r.company_name or '—' }}</td>
+      <td class="klein">{{ r.document_type }} · {{ r.beleg_status }}
+        {% if r.empfaenger_land %} · {{ r.empfaenger_land }}{% endif %}</td>
+      <td class="zahl">{{ '%.2f'|format(r.total_gross or 0) }}</td>
+      <td>
+        {% if r.bekannt %}
+          <span class="klein">steht schon in der Liste</span>
+        {% elif verwalten %}
+        <form method="post" action="/aufnehmen">
+          <input type="hidden" name="bill_no" value="{{ r.bill_no }}">
+          <input type="hidden" name="suche" value="{{ suche }}">
+          <button>In die Liste holen</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="klein">In OPERA wird nach Rechnungs- und Belegnummer gesucht, nicht
+    nach Namen — dafür fehlt dort der passende Index, und die Suche würde die
+    ganze Tabelle lesen.</p>
+</section>
+{% endif %}
+
+<table>
+  {# Sortierung über Verweise statt JavaScript: ueberlebt das Neuladen, lässt
+     sich als Lesezeichen ablegen und braucht keinen Zustand im Browser.
+     Ein Klick auf die aktive Spalte dreht die Richtung um. #}
+  {% macro kopf(feld, beschriftung, klasse='') %}
+    {% set aktiv = sortieren == feld %}
+    {% set neu = 'auf' if aktiv and richtung == 'ab' else 'ab' %}
+    <th class="{{ klasse }}{% if aktiv %} sortiert{% endif %}">
+      <a href="?sortieren={{ feld }}&richtung={{ neu }}{% if status %}&status={{ status }}{% endif %}">
+        {{ beschriftung }}{% if aktiv %} {{ '▾' if richtung == 'ab' else '▴' }}{% endif %}</a>
+    </th>
+  {% endmacro %}
+  <tr>
+    {{ kopf('bill_no', 'Rechnung') }}
+    {{ kopf('issuedate', 'Datum') }}
+    {{ kopf('kunde', 'Kunde') }}
+    {{ kopf('firmenbezug', 'Firmenbezug') }}
+    {{ kopf('total_net', 'Netto', 'zahl') }}
+    {{ kopf('total_gross', 'Brutto', 'zahl') }}
+    {{ kopf('empfaenger', 'Empfänger') }}
+    {{ kopf('status', 'Status') }}
+    {{ kopf('faellig_ab', 'fällig ab') }}
+  </tr>
+  {% for r in rechnungen %}
+  <tr class="s-{{ r.status }}">
+    {# Die aktuelle Ansicht wandert mit: Wer aus Filter, Suche und Sortierung
+       heraus eine Rechnung oeffnet, kommt dorthin zurueck und nicht auf eine
+       leere Liste. #}
+    <td class="fest"><a href="/rechnung/{{ r.bill_no }}?zurueck={{ zurueck_ziel|urlencode }}">{{ r.bill_no }}</a></td>
+    <td class="fest">{{ r.issuedate or '' }}</td>
+    <td class="breit">{{ r.kunde or '' }}</td>
+    <td class="klein">
+      {% if r.firmenbezug == 'EMPFAENGER' %}Empfänger{% elif r.firmenbezug == 'RESERVIERUNG' %}<span class="pruefung">Reservierung</span>{% else %}—{% endif %}
+      {% if r.empfaenger_typ %} · {{ r.empfaenger_typ }}{% endif %}
+      {% if r.empfaenger_land %} · {{ r.empfaenger_land }}{% endif %}
+      {% if r.leitweg_id %}<br>Leitweg {{ r.leitweg_id }}{% endif %}
+    </td>
+    <td class="zahl">{{ '%.2f'|format(r.total_net or 0) }}</td>
+    <td class="zahl">{{ '%.2f'|format(r.total_gross or 0) }}</td>
+    <td class="klein">{{ r.empfaenger or '—' }}</td>
+    <td><span class="status {{ r.status }}">{{ status_namen.get(r.status, r.status) }}</span>
+        {% if r.fehler %}<div class="klein fehler">{{ r.fehler }}</div>{% endif %}
+        {% if r.pruefbefund and r.status not in ('gesendet', 'ignoriert') %}<div class="klein fehler">Prüfung: {{ r.pruefbefund }}</div>{% endif %}</td>
+    <td class="klein fest">{{ r.faellig_ab or '' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="9" class="leer">
+    {% if suche %}Kein Treffer in der Arbeitsliste für „{{ suche }}“.
+    {% elif status %}Keine Rechnung im Status „{{ status_namen.get(status, status) }}“.
+    {% else %}Noch nichts eingelesen.{% endif %}
+  </td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<h1>Benutzer</h1>
+
+<div class="spalten">
+  <section class="karte">
+    <h2>Eigenes Passwort ändern</h2>
+    <p class="klein">Nach der Änderung werden alle Sitzungen beendet — Sie melden
+       sich einmal neu an. Beim ersten Mal wird dabei die Datei
+       <code>ERSTES_PASSWORT.txt</code> gelöscht.</p>
+    <form method="post" action="/benutzer/passwort">
+      <label>Bisheriges Passwort<input name="alt" type="password" autocomplete="current-password"></label>
+      <label>Neues Passwort (mindestens 10 Zeichen)
+        <input name="neu" type="password" autocomplete="new-password"></label>
+      <label>Neues Passwort wiederholen
+        <input name="wiederholung" type="password" autocomplete="new-password"></label>
+      <button class="haupt">Passwort ändern</button>
+    </form>
+  </section>
+
+  {% if verwalten %}
+  <section class="karte">
+    <h2>Zugang anlegen</h2>
+    <form method="post" action="/benutzer/anlegen">
+      <label>Benutzername<input name="name"></label>
+      <label>Passwort (mindestens 10 Zeichen)<input name="passwort" type="password"></label>
+      <label>Rolle
+        <select name="rolle">
+          <option value="ansehen">ansehen — Rechnungen und Protokoll lesen</option>
+          <option value="verwalten">verwalten — versenden, Konfiguration, Automatik</option>
+        </select></label>
+      <button>Anlegen</button>
+    </form>
+  </section>
+  {% endif %}
+</div>
+
+<section class="karte">
+  <h2>Vorhandene Zugänge</h2>
+  <table>
+    <tr><th>Benutzer</th><th>Rolle</th><th></th></tr>
+    {% for name, daten in benutzerliste.items() %}
+    <tr>
+      <td>{{ name }}{% if name == benutzer %} <span class="klein">(Sie)</span>{% endif %}</td>
+      <td>{{ daten.rolle }}</td>
+      <td>{% if verwalten and name != benutzer %}
+        {# Der Name steht im Attribut, nicht im JavaScript: Dort war er nur
+           HTML-maskiert, und ein Apostroph im Namen brach aus der Zeichenkette aus. #}
+        <form method="post" action="/benutzer/loeschen"
+              data-frage="Zugang {{ name }} wirklich löschen?"
+              onsubmit="return confirm(this.dataset.frage)">
+          <input type="hidden" name="name" value="{{ name }}">
+          <button>Löschen</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

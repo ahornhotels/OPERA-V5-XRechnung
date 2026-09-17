@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="de">
+<head><meta charset="utf-8"><title>Anmeldung — OPERA XRechnung</title>
+<link rel="stylesheet" href="/static/stil.css"></head>
+<body class="anmeldeseite">
+  <form method="post" action="/login" class="karte">
+    <h1>OPERA XRechnung</h1>
+    {% if fehler %}<p class="fehler">{{ fehler }}</p>{% endif %}
+    <label>Benutzer<input name="benutzer" autofocus autocomplete="username"></label>
+    <label>Passwort<input name="passwort" type="password" autocomplete="current-password"></label>
+    <button type="submit">Anmelden</button>
+  </form>
+</body>
+</html>

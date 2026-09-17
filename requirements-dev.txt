@@ -1,0 +1,7 @@
+# Nur fuer den Selbsttest (tools/smoketest.py). Die Anwendung selbst braucht
+# das hier NICHT — auf einer Produktivanlage gehoert es nicht ins venv.
+# Dort daneben installieren:
+#     pip install --target /tmp/testwerkzeug -r requirements-dev.txt
+#     PYTHONPATH=/tmp/testwerkzeug python tools/smoketest.py
+-r requirements.txt
+httpx>=0.27

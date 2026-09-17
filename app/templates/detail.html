@@ -1,0 +1,345 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Rechnung {{ satz.bill_no }}</h1>
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="{{ zurueck }}">&#8592; Zur Liste</a>
+  </div>
+</div>
+{% if fehler %}<p class="fehler">OPERA-Zugriff: {{ fehler }}</p>{% endif %}
+
+<section class="karte aktionsleiste">
+  <h2>XRechnung erzeugen und versenden</h2>
+  {% if blindkopien %}
+  <p class="hinweis">Blindkopie geht an: {{ blindkopien|join(', ') }}{% if satz.city_ledger and satz.city_ledger > 0 %}
+     — die zweite Adresse, weil diese Rechnung über das Debitorenkonto ausgecheckt wurde{% endif %}</p>
+  {% endif %}
+  <div class="knoepfe">
+    {% if satz.status == 'gesendet' %}
+    {# Versendete Rechnung: kein beilaeufiges Neuerzeugen. Die abgelegte Datei
+       ist der Beleg dafuer, was der Kunde bekommen hat. #}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/xml"
+          onsubmit="return confirm('Diese Rechnung ist versendet. Die abgelegte Datei ist der Beleg dafür, was der Kunde bekommen hat. Wirklich ersetzen?')">
+      <input type="hidden" name="ersetzen" value="1">
+      <button class="warnung">Trotzdem neu erzeugen</button>
+    </form>
+    {% else %}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/xml"><button>XML erzeugen</button></form>
+    {% endif %}
+    <a class="knopf" href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">XML ansehen</a>
+    {% if verwalten %}
+    {% if satz.status in ('pruefung', 'fehler') %}
+    {# Eine gewaehlte Adresse gibt nichts frei; das tut nur dieser Knopf. #}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/freigeben">
+      <button {{ 'disabled' if not satz.empfaenger }}>Prüfung abgeschlossen</button>
+    </form>
+    {% endif %}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/senden">
+      {# Bei einer versendeten Rechnung meldet die Pruefung nichts, weil sie aus
+         dem Archiv kommt — der Knopf blieb deshalb aktiv, und ein Doppelklick
+         schickte dem Kunden dieselbe Nummer ein zweites Mal. #}
+      <button class="haupt" {{ 'disabled' if hinweise or not satz.empfaenger
+                               or satz.status in ('gesendet', 'ignoriert')
+                               or automatik.arbeitet }}>
+        Jetzt versenden</button>
+    </form>
+    {% if satz.status == 'ignoriert' %}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/wieder_aufnehmen"><button>Wieder aufnehmen</button></form>
+    {% elif satz.status != 'gesendet' %}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/zuruecklegen"><button>Zurücklegen</button></form>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% if satz.status == 'pruefung' %}
+  <p class="pruefhinweis"><strong>Sichtprüfung nötig.</strong> {{ satz.fehler }}.
+     Diese Rechnung wird <strong>nicht</strong> automatisch versendet. Prüfen Sie,
+     wer Rechnungsempfänger ist, wählen Sie den Empfänger — dann von Hand
+     versenden oder „Prüfung abgeschlossen“ drücken.</p>
+  {% elif satz.status == 'fehler' and satz.fehler %}
+  <p class="fehler"><strong>Fehler:</strong> {{ satz.fehler }}</p>
+  {% endif %}
+  {% if versand_offen and verwalten %}
+  {# Ein Versand mit offenem Ergebnis laesst sich nur von einem Menschen
+     klaeren: Nur er kann im Postfach der Blindkopie nachsehen. #}
+  <div class="pruefhinweis">
+    <strong>Ist die Mail hinausgegangen?</strong> Sehen Sie im Postfach der Blindkopie
+    ({{ blindkopien|join(', ') or '—' }}) nach. Dann hier festhalten:
+    <div class="knoepfe">
+      <form method="post" action="/rechnung/{{ satz.bill_no }}/versand_klaeren">
+        <input type="hidden" name="ergebnis" value="gesendet">
+        <button>Ja — als versendet vermerken</button>
+      </form>
+      <form method="post" action="/rechnung/{{ satz.bill_no }}/versand_klaeren">
+        <input type="hidden" name="ergebnis" value="nicht_gesendet">
+        <button>Nein — nichts ging hinaus</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  {% if satz.empfaenger and not empfaenger_erlaubt %}
+  <p class="fehler">Der gewählte Empfänger steht nicht auf der Liste erlaubter
+     Adressen. Der Versand wird abgelehnt, bis die Liste in der Konfiguration
+     angepasst ist.</p>
+  {% endif %}
+  {% if daten and daten.deposits %}
+  <p class="hinweis">{{ daten.deposits|length }} Anzahlungsbeleg(e) desselben Folios —
+     werden als Rechnungsbezug (BG-3) und Anzahlungsbetrag (BT-113) ausgewiesen.</p>
+  {% endif %}
+</section>
+
+<div class="spalten">
+  <section class="karte">
+    <h2>Beleg</h2>
+    <dl>
+      <dt>Datum</dt><dd>{{ satz.issuedate or '—' }}</dd>
+      <dt>Netto / Brutto</dt><dd>{{ '%.2f'|format(satz.total_net or 0) }} / {{ '%.2f'|format(satz.total_gross or 0) }}</dd>
+      <dt>Status</dt><dd><span class="status {{ satz.status }}">{{ satz.status }}</span></dd>
+      <dt>Leitweg-ID</dt><dd>{{ satz.leitweg_id or 'keine hinterlegt' }}</dd>
+      {% if satz.xrechnung_version %}<dt>Erzeugt als</dt><dd>XRechnung {{ satz.xrechnung_version }}</dd>{% endif %}
+      {% if daten and daten.header %}
+      <dt>Käuferreferenz (BT-10)</dt>
+      <dd>{{ daten.header.buyerreference }}
+        {% set quelle = daten.header.buyerreference_quelle or '' %}
+        {% if quelle.startswith('Ersatzwert') %}
+          <span class="pruefung">— {{ quelle }}</span><br>
+          <span class="klein">Der Kunde hat keine Referenz hinterlegt. Das Feld ist
+          Pflicht, der Wert ist deshalb ein Platzhalter — für eine Behörde wäre er
+          nicht ausreichend.</span>
+        {% else %}<span class="klein">— {{ quelle }}</span>{% endif %}
+      </dd>
+      {% endif %}
+      <dt>Firmenbezug</dt><dd>
+        {% if satz.firmenbezug == 'EMPFAENGER' %}Der Rechnungsempfänger ist eine Firma
+        {% elif satz.firmenbezug == 'RESERVIERUNG' %}<strong>Firma hängt an der Reservierung</strong> —
+          bezahlt hat möglicherweise eine Privatperson
+        {% else %}kein Firmenbezug erkannt{% endif %}
+        {% if satz.empfaenger_typ %} ({{ satz.empfaenger_typ }}{% if satz.empfaenger_land %}, {{ satz.empfaenger_land }}{% endif %}){% endif %}
+      </dd>
+    </dl>
+    {% if pruefung %}
+    <h3>Vorprüfung in OPERA</h3>
+    <dl>
+      <dt>Anzahlung im Folio</dt><dd>{{ pruefung.anzahlung_vorhanden }}</dd>
+      <dt>Positionen = Kopf</dt><dd>{{ pruefung.netto_ok }} / {{ pruefung.brutto_ok }}</dd>
+      <dt>mit Anzahlungen</dt><dd>{{ pruefung.netto_mit_anzahlung_ok }} / {{ pruefung.brutto_mit_anzahlung_ok }}</dd>
+      <dt>Anzahlungsbelege</dt><dd>{{ pruefung.anzahl_deposits or 0 }}</dd>
+    </dl>
+    {% endif %}
+    {% if hinweise %}
+    <div class="fehler"><strong>Vorprüfung:</strong>
+      <ul>{% for h in hinweise %}<li>{{ h }}</li>{% endfor %}</ul>
+      Solange diese Punkte offen sind, wird nicht versendet.
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="karte">
+    <h2>Wer bekommt die Rechnung?</h2>
+    {% if buchung %}
+    <dl>
+      <dt>Zahler</dt><dd>{{ buchung.zahler_typ or '—' }}
+        {% if buchung.zahler_typ == 'D' %}<span class="pruefung">(Privatprofil)</span>{% endif %}</dd>
+      <dt>Firma an der Buchung</dt>
+      <dd>{% if buchung.firma_profil %}<strong>{{ buchung.firma_profil }}</strong>
+            ({{ buchung.firma_typ }}){% else %}keine{% endif %}</dd>
+      {% if buchung.reisebuero %}<dt>Reisebüro</dt><dd>{{ buchung.reisebuero }}</dd>{% endif %}
+      {% if buchung.gruppe %}<dt>Gruppe</dt><dd>{{ buchung.gruppe }}</dd>{% endif %}
+      <dt>Bezahlt über</dt>
+      <dd>{% if buchung.city_ledger and buchung.city_ledger > 0 %}<strong>City Ledger</strong>
+            ({{ '%.2f'|format(buchung.city_ledger) }}) — Debitorenkonto, also die Firma
+          {% elif buchung.karte and buchung.karte > 0 %}Karte ({{ '%.2f'|format(buchung.karte) }})
+          {% elif buchung.bar and buchung.bar > 0 %}bar ({{ '%.2f'|format(buchung.bar) }})
+          {% else %}—{% endif %}</dd>
+    </dl>
+    {% if satz.firmenbezug == 'RESERVIERUNG' %}
+    <p class="hinweis">Der Firmenname auf dem Beleg stammt aus der Buchung, nicht
+       vom Zahler. Ein Debitorenkonto wird keiner Privatperson gestellt — läuft
+       die Zahlung über Karte oder bar, hat der Gast selbst bezahlt und die
+       Rechnung gehört ihm, nicht der Firma.</p>
+    {% endif %}
+    {% else %}<p class="leer">Keine Buchungsdaten gelesen.</p>{% endif %}
+  </section>
+
+  <section class="karte">
+    <h2>Profil des Empfängers</h2>
+    {% if profil %}
+    <dl>
+      <dt>Name</dt><dd>{{ profil.company or profil.name }} {{ profil.first or '' }}</dd>
+      <dt>Firmierung</dt><dd>{{ profil.legal_company or '—' }}</dd>
+      <dt>Typ</dt><dd>{{ profil.name_type or '—' }}</dd>
+      <dt>Anschrift</dt><dd>{{ profil.address1 or '' }}, {{ profil.zip_code or '' }} {{ profil.city or '' }} {{ profil.country or '' }}</dd>
+      <dt>Steuernummern</dt><dd>{{ profil.tax1_no or '—' }} / {{ profil.tax2_no or '—' }}</dd>
+      <dt>Leitweg-ID</dt><dd>{{ profil.leitweg_id or '—' }}</dd>
+      <dt>E-Mail-Adressen</dt><dd>{{ profil.anzahl_mails or 0 }}</dd>
+    </dl>
+    {% else %}<p class="leer">Keine Profildaten gelesen.</p>{% endif %}
+  </section>
+</div>
+
+{# Die beiden Eingaben vor dem Versand stehen nebeneinander: Empfaenger und
+   Kaeuferreferenz. Vorher lagen sie untereinander, und wer beide setzen
+   wollte, scrollte zwischen ihnen hin und her. #}
+<div class="spalten vor-versand">
+<section class="karte">
+  <h2>Wohin soll die Rechnung gehen?</h2>
+  <form method="post" action="/rechnung/{{ satz.bill_no }}/empfaenger">
+    <table class="auswahl">
+      {% for a in adressen %}
+      <tr>
+        <td><input type="radio" name="email" value="{{ a.email }}"
+                   {{ 'checked' if satz.empfaenger == a.email }}></td>
+        <td><strong>{{ a.email }}</strong></td>
+        <td class="klein">{{ a.quelle }} · {{ a.rolle }}{% if a.typ %} · {{ a.typ }}{% endif %}
+            {% if a.primaer == 'Y' %} · primär{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="leer">Am Profil ist keine E-Mail-Adresse hinterlegt.</td></tr>
+      {% endfor %}
+      {% if satz.empfaenger and satz.empfaenger not in adressen|map(attribute='email')|list %}
+      <tr>
+        <td><input type="radio" name="email" value="{{ satz.empfaenger }}" checked></td>
+        <td><strong>{{ satz.empfaenger }}</strong></td>
+        <td class="klein">bisher gewählt</td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td><input type="radio" name="email" value="" {{ 'checked' if not satz.empfaenger }}></td>
+        <td colspan="2" class="klein">keinen Empfänger</td>
+      </tr>
+      {# Das Feld ist bewusst LEER: Vorbelegt mit dem bisherigen Empfaenger
+         ueberstimmte es jede Auswahl darueber. #}
+      <tr>
+        <td></td>
+        <td colspan="2">oder von Hand:
+          <input name="frei" value="" size="40" placeholder="name@firma.de"></td>
+      </tr>
+    </table>
+    <button>Empfänger übernehmen</button>
+  </form>
+</section>
+
+<section class="karte">
+  <h2>Käuferreferenz (BT-10)</h2>
+  <p class="klein">Das Feld, über das die Buchhaltung des Kunden die Rechnung ihrer
+  eigenen Bestellung zuordnet. Gepflegt wird es an der Reservierung
+  („Buyer Reference1") — <strong>vor dem Check-out</strong>. Danach lässt sich
+  die Reservierung nicht mehr ändern; für eine bereits erstellte Rechnung ist
+  dieses Feld hier der einzige Weg.</p>
+  <form method="post" action="/rechnung/{{ satz.bill_no }}/buyerreference">
+    <table class="auswahl">
+      {% for r in referenzen %}
+      <tr>
+        <td><input type="radio" name="wert" value="{{ r.wert }}"
+                   {{ 'checked' if satz.buyerreference == r.wert }}></td>
+        <td><strong>{{ r.wert }}</strong></td>
+        <td class="klein">{{ r.quelle }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="leer">An der Reservierung ist keine Referenz hinterlegt.</td></tr>
+      {% endfor %}
+      {% if satz.buyerreference and satz.buyerreference not in referenzen|map(attribute='wert')|list %}
+      <tr>
+        <td><input type="radio" name="wert" value="{{ satz.buyerreference }}" checked></td>
+        <td><strong>{{ satz.buyerreference }}</strong></td>
+        <td class="klein">bisher von Hand gesetzt</td>
+      </tr>
+      {% endif %}
+      <tr>
+        <td><input type="radio" name="wert" value="" {{ 'checked' if not satz.buyerreference }}></td>
+        <td colspan="2" class="klein">automatisch ermitteln</td>
+      </tr>
+      <tr>
+        <td></td>
+        <td colspan="2">oder von Hand:
+          <input name="frei" value="" size="40"
+                 maxlength="80" placeholder="Bestellnummer des Kunden"></td>
+      </tr>
+    </table>
+    <button>Käuferreferenz übernehmen</button>
+    {% if satz.buyerreference %}
+    <span class="klein">— derzeit von Hand gesetzt; „automatisch ermitteln“
+    stellt die automatische Ermittlung wieder her.</span>
+    {% endif %}
+  </form>
+</section>
+
+</div>
+
+{# Die Positionen stehen neben dem Verlauf: zwei Tabellen, die man
+   nebeneinander vergleicht, statt zwischen ihnen zu scrollen. #}
+<div class="spalten weit">
+<section class="karte">
+  <h2>Positionen</h2>
+  {% if daten %}
+  {% if satz.status == 'gesendet' %}
+  {# Die Tabelle wird bei jedem Aufruf neu aus OPERA gerechnet, mit der
+     heutigen Darstellung. Hinausgegangen ist aber die abgelegte Fassung — bei
+     allem, was vor dem 14.09.2026 versendet wurde, jede Buchung einzeln. #}
+  <p class="pruefhinweis"><strong>Versendet{% if satz.gesendet_am %} am {{ satz.gesendet_am[:10] }}{% endif %}.</strong>
+     Die Tabelle unten ist neu gerechnet und kann anders aussehen als die Rechnung,
+     die der Kunde bekommen hat. Maßgeblich ist die abgelegte Fassung
+     (<a href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">XML ansehen</a>{% if satz.xrechnung_version %}, erzeugt als XRechnung {{ satz.xrechnung_version }}{% endif %}).</p>
+  {% endif %}
+  {# Die Wahl steht direkt ueber der Tabelle, die sie veraendert. #}
+  <form method="post" action="/rechnung/{{ satz.bill_no }}/positionen">
+    <p class="wahl">
+    {% for art, name in positionsarten.items() %}
+      <label><input type="radio" name="art" value="{{ art }}"
+             {{ 'checked' if daten.positionsart == art }}> {{ name }}</label>
+    {% endfor %}
+    <button>Übernehmen</button>
+    </p>
+  </form>
+  {# Eigenes Formular: Im selben Formular kaeme 'art' zweimal an, einmal vom
+     gewaehlten Knopf und einmal leer — und welches gilt, entschiede der Server. #}
+  <form method="post" action="/rechnung/{{ satz.bill_no }}/positionen">
+    <p class="klein">{{ daten.lines|length }} Position(en) aus {{ daten.buchungen }} Buchung(en)
+      — {{ daten.positionsart_quelle }}.
+      {% if satz.positionen %}
+      <input type="hidden" name="art" value="">
+      <button class="klein">Vorbelegung wiederherstellen</button>
+      {% endif %}</p>
+  </form>
+  <table>
+    <tr><th>Pos</th><th>Bezeichnung</th><th class="zahl">Menge</th>
+        <th class="zahl">Preis brutto</th>
+        <th class="zahl">Netto</th><th class="zahl">Satz</th></tr>
+    {# Die Positionen so, wie sie im XML stehen: gerundet, negative Betraege
+       als Abschlag. Vorher zeigte die Tabelle die ungerundeten OPERA-Betraege. #}
+    {% for z in (aufbereitet.lines or daten.lines) %}
+    <tr><td>{{ loop.index }}</td>
+        <td>{{ z.itemname }}
+          {% if z.bemerkung %}<br><span class="klein">{{ z.bemerkung }}</span>{% endif %}
+          {% if z.zeitraum_beginn %}<br><span class="klein">{{ z.zeitraum_beginn }} bis {{ z.zeitraum_ende }}</span>{% endif %}</td>
+        <td class="zahl">{{ z.invoicedquantity }}</td>
+        <td class="zahl">{{ '%.2f'|format(z.get('bruttopreis')) if z.get('bruttopreis') is not none else '—' }}</td>
+        <td class="zahl">{{ '%.2f'|format(z.lineextensionamountnet|float) if z.lineextensionamountnet is not none else '0.00' }}</td>
+        <td class="zahl">{{ z.classifiedtaxcategorypercent }} %</td></tr>
+    {% endfor %}
+    {% for a in (aufbereitet.allowances or []) %}
+    <tr><td>—</td><td>Abschlag: {{ a.reason }}</td><td></td><td></td>
+        <td class="zahl">−{{ '%.2f'|format(a.amount|float) }}</td>
+        <td class="zahl">{{ a.percent }} %</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
+
+<section class="karte">
+  <h2>Verlauf</h2>
+  <table>
+    {% for p in protokoll %}
+    <tr><td class="klein">{{ p.zeit }}</td><td>{{ p.aktion }}</td>
+        <td class="klein">{{ p.benutzer }}</td>
+        <td class="{{ 'fehler' if not p.erfolg }}">{{ p.text }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+</div>
+
+{# Derselbe Weg noch einmal unten: Wer die Positionen und den Verlauf gelesen
+   hat, steht am Ende der Seite und muesste sonst zum Zurueckgehen erst wieder
+   ganz nach oben. #}
+<p class="fusszeile"><a class="knopf zurueck" href="{{ zurueck }}">&#8592; Zur Liste</a></p>
+
+{% endblock %}

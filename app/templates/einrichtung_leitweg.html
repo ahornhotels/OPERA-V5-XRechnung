@@ -1,0 +1,138 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Leitweg-ID einrichten</h1>
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="/konfiguration">&#8592; Zur Konfiguration</a>
+  </div>
+</div>
+
+<section class="karte">
+  <h2>Worum es geht</h2>
+  <p>Eine <strong>Leitweg-ID</strong> ist die Zustelladresse einer Behörde. Ohne sie
+  nimmt keine Behörde eine Rechnung an. Sie gehört an die <strong>Firmenkartei</strong>
+  des Kunden — dort, wo auch Anschrift und USt-IdNr. stehen.</p>
+
+  <p>OPERA hat dafür kein eigenes Feld. Es gibt aber <em>benutzerdefinierte
+  Felder</em>, die jedes Haus selbst beschriften kann. Auf dieser Seite legen Sie
+  fest, welches davon Ihr Haus für die Leitweg-ID benutzt.</p>
+
+  <div class="pruefhinweis">
+    <strong>Der Weg über „Mitgliedschaften" funktioniert nicht.</strong> OPERA bietet
+    Mitgliedschaften nur an der Gastkartei an, nicht an der Firmenkartei. Wer es dort
+    versucht, findet die Karteikarte nicht — und genau deshalb ist der in OPERA
+    vorhandene Typ „LEITWEG" nie benutzt worden.
+  </div>
+</section>
+
+<section class="karte">
+  <h2>Schritt 1: Welches Feld ist frei?</h2>
+  <p class="klein">Die Prüfung sieht in der Datenbank nach, welche Felder an der
+  Firmenkartei sichtbar sind und in welchen schon Werte stehen. Sie läuft über alle
+  Firmenkarteien und braucht einen Moment.</p>
+  <form method="get" action="/einrichtung/leitweg">
+    <input type="hidden" name="pruefen" value="1">
+    <button class="haupt">Felder in der Datenbank prüfen</button>
+  </form>
+
+  {% if fehler %}
+  <p class="fehler">Die Prüfung ging nicht: {{ fehler }}</p>
+  {% endif %}
+
+  {% if felder %}
+  <table>
+    <tr><th>Feld</th><th>Beschriftung in OPERA</th><th>an der Firmenkartei</th>
+        <th class="zahl">belegt</th><th>Eignung</th></tr>
+    {% for f in felder %}
+    <tr>
+      <td class="fest"><strong>{{ f.spalte }}</strong></td>
+      <td>{{ f.beschriftung or '—' }}</td>
+      <td class="klein">{% if f.sichtbar %}sichtbar ({{ f.block }}){% else %}nicht eingerichtet{% endif %}</td>
+      <td class="zahl">{{ f.belegt or 0 }} von {{ f.karteien }}</td>
+      <td>
+        {% if f.empfohlen %}<span class="status bereit">frei — geeignet</span>
+        {% elif f.frei %}<span class="status pruefung">frei, aber schon beschriftet</span>
+        {% else %}<span class="status fehler">belegt — nicht nehmen</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="klein">„frei — geeignet" heißt: Das Feld trägt in keiner Kartei einen Wert
+  und ist in OPERA noch nicht beschriftet. Sie können es also gefahrlos für die
+  Leitweg-ID einrichten.</p>
+  {% elif geprueft %}
+  <p class="hinweis">Es kam nichts zurück.</p>
+  {% endif %}
+</section>
+
+<section class="karte">
+  <h2>Schritt 2: Das Feld in OPERA sichtbar machen</h2>
+  <p class="klein">Einmal pro Haus. Danach kann der Empfang die Leitweg-ID an der
+  Firmenkartei eintragen wie eine Telefonnummer.</p>
+
+  <ol class="anleitung">
+    <li><strong>In OPERA anmelden</strong> mit einem Benutzer, der die Bildschirmmasken
+      ändern darf. Wenn Sie nicht wissen, ob Sie das dürfen: Sie merken es in Schritt 3
+      — der Menüpunkt fehlt dann einfach.</li>
+    <li><strong>Eine Firmenkartei öffnen.</strong> Menü <em>Kundenkontakt &rarr; Profile</em>,
+      dann eine <em>Firma</em> suchen und öffnen. Wichtig: eine <strong>Firma</strong>,
+      keinen Gast — die Maske heißt intern <code>ACC_MAIN</code>.</li>
+    <li><strong>Den Screen Painter aufrufen.</strong> Bei geöffneter Kartei im Menü
+      <em>Setup &rarr; Screen Painter</em> (je nach Version <em>Konfiguration &rarr;
+      Bildschirmgestaltung</em>). OPERA legt eine Bearbeitungsansicht über die Maske.</li>
+    <li><strong>Das Feld aus der Liste holen.</strong> In der Liste der verfügbaren
+      Felder das in Schritt 1 ermittelte suchen — zum Beispiel <code>UDFC05</code> —
+      und in einen freien Bereich der Maske ziehen.</li>
+    <li><strong>Beschriften.</strong> Als Bezeichnung <code>Leitweg-ID</code> eintragen.
+      Genau so, ohne Zusätze: Danach sucht der Empfang.</li>
+    <li><strong>Länge prüfen.</strong> Das Eingabefeld muss <strong>46 Zeichen</strong>
+      aufnehmen können. Ist es kürzer eingestellt, werden längere Leitweg-IDs beim
+      Tippen abgeschnitten — und das fällt niemandem auf.</li>
+    <li><strong>Speichern und schließen.</strong> Danach eine Firmenkartei neu öffnen:
+      Das Feld muss sichtbar sein.</li>
+  </ol>
+
+  <div class="pruefhinweis">
+    <strong>Der häufigste Fehler:</strong> Das Feld wird an der <em>Gastkartei</em>
+    eingerichtet statt an der Firmenkartei. Es ist dann da, aber nicht dort, wo eine
+    Behörde als Rechnungsempfänger steht. Die Probe: Öffnen Sie eine <em>Firma</em> —
+    sehen Sie das Feld dort, ist es richtig.
+  </div>
+</section>
+
+<section class="karte">
+  <h2>Schritt 3: Der Anwendung sagen, welches Feld es ist</h2>
+  <form method="post" action="/einrichtung/leitweg">
+    <label>Feld für die Leitweg-ID
+      <input name="feld" value="{{ cfg.property.udf_leitweg or '' }}"
+             placeholder="z. B. UDFC05" size="12"
+             title="UDFC01 bis UDFC40, oder leer lassen">
+    </label>
+    <p class="klein">Leer lassen heißt: Die Anwendung sieht dort nicht nach. Dann gilt
+    die bisherige Reihenfolge — Buyer Reference1 an der Reservierung, sonst die
+    Reservierungsnummer.</p>
+    <button class="haupt">Übernehmen</button>
+  </form>
+
+  {% if cfg.property.udf_leitweg %}
+  <p class="hinweis">Die Anwendung liest die Leitweg-ID zurzeit aus
+    <strong>{{ cfg.property.udf_leitweg }}</strong>.</p>
+  {% else %}
+  <p class="hinweis">Zurzeit ist kein Feld eingestellt.</p>
+  {% endif %}
+</section>
+
+<section class="karte">
+  <h2>Woran Sie merken, dass es wirkt</h2>
+  <p>Tragen Sie an einer Firmenkartei mit Behördenbezug eine Leitweg-ID ein, lesen Sie
+  die Rechnungen neu ein und öffnen eine Rechnung dieses Kunden. Unter
+  <em>Käuferreferenz</em> muss dann die Leitweg-ID stehen, und daneben „Leitweg-ID"
+  als Herkunft — nicht „Ersatzwert".</p>
+  <p class="klein">Steht dort etwas anderes als eine Leitweg-ID, sagt die Anwendung es
+  in der Prüfung und benutzt den Wert <strong>nicht</strong>. Eine Leitweg-ID hat einen
+  festen Aufbau (Ziffern, Bindestrich, zweistellige Prüfziffer); was nicht so aussieht,
+  geht nicht als Behördenadresse hinaus.</p>
+</section>
+
+<p class="fusszeile"><a class="knopf zurueck" href="/konfiguration">&#8592; Zur Konfiguration</a></p>
+{% endblock %}

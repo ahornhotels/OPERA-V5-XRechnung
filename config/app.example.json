@@ -1,0 +1,148 @@
+{
+  "_hinweis": "VORLAGE - enthaelt bewusst keine echten Werte. Nach config/app.json kopieren und dort ausfuellen; app.json wird nicht versioniert. Passwoerter werden beim ersten Start Fernet-verschluesselt (config/secret.key).",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8022,
+    "erlaubte_netze": [
+      "127.0.0.1/32",
+      "10.0.0.0/8",
+      "192.168.0.0/16"
+    ]
+  },
+  "datenbank": {
+    "host": "db-server.beispiel.local",
+    "port": 1521,
+    "service_name": "opera",
+    "benutzer": "XRECHNUNG_RO",
+    "passwort": "",
+    "schema": "OPERA",
+    "thick_mode": false,
+    "oracle_client_pfad": "",
+    "_schema_hinweis": "Das Oracle-Schema, in dem die OPERA-Tabellen liegen. Heisst fast immer OPERA; leer lassen bedeutet OPERA. Der Name wird in jede Abfrage eingesetzt (@SCHEMA@) und vorher geprueft — erlaubt sind Buchstaben, Ziffern, _ $ #, beginnend mit einem Buchstaben."
+  },
+  "property": {
+    "resort": "IHRHAUS",
+    "_haus_hinweis": "Name des Hauses fuer die Kopfzeile der Oberflaeche. Leer lassen zeigt das Resortkuerzel.",
+    "haus": "Musterhotel Berlin",
+    "ust_id": "",
+    "kontakt_name": "Buchhaltung",
+    "kontakt_telefon": "",
+    "kontakt_email": "",
+    "iban": "",
+    "bic": "",
+    "kontoinhaber": "",
+    "zahlungsziel_tage": 14,
+    "_kennzeichen_hinweis": "Zwei Mitgliedschaftstypen am Kundenprofil: LEITWEG traegt die Leitweg-ID (Behoerden, BT-10 Pflicht), ERECHNUNG kennzeichnet uebrige Firmenkunden, die eine E-Rechnung bekommen sollen - dort darf die Nummer leer bleiben oder eine Kundenreferenz tragen. Wer weder das eine noch das andere hat, bekommt keine XRechnung.",
+    "_bt10_hinweis": "BT-10 ist nach BR-DE-15 Pflicht, aber nur Behoerden haben eine Leitweg-ID. Reihenfolge: Leitweg-ID, dann vereinbarte Referenz am Profil, dann Kundenreferenz aus der Buchung. Bleibt alles leer, greift der Ersatzwert: rechnungsnummer, debitorennummer oder kundenname.",
+    "_buyerreference_vorlage_hinweis": "BT-10 ist FREITEXT, nicht numerisch — die Norm verlangt nur, dass das Feld gefuellt ist (BR-DE-15). Diese Vorlage wird benutzt, wenn weder eine Leitweg-ID noch 'Buyer Reference1' an der Reservierung etwas hergibt. Platzhalter: {haus}, {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Fehlt einer der benutzten Werte, wird die Vorlage NICHT genommen und buyerreference_ersatz gilt. Leer lassen schaltet sie ab. Zu bedenken: BT-10 ist die Referenz des KAEUFERS, und der Name des Hauses steht ohnehin in BT-27 — fuer Rueckfragen ist die Reservierungsnummer aber das, wonach der Kunde hier sucht.",
+    "buyerreference_vorlage": "{haus} ReservNr.: {reservierungsnummer}",
+    "buyerreference_ersatz": "reservierungsnummer",
+    "_kundenreferenz_hinweis": "CUSTOM_REFERENCE an der Reservierung als BT-10 verwenden. Standard AUS: Ausgezaehlt sind 242 von 320 Werten reine 9- bis 10-stellige Ziffernfolgen, also Buchungsnummern aus dem Channel Manager, nicht die Bestellnummer des Kunden. Eine solche Nummer in BT-10 ist schlechter als ein Ersatzwert, weil sie nach einer echten Referenz aussieht. Wer das Feld im Haus diszipliniert pflegt, kann es einschalten. Besser: EXTERNAL_REFERENCE an der Reservierung fuellen — die wird ohne diesen Schalter verwendet.",
+    "kundenreferenz_als_buyerreference": false,
+    "_gastzeile_hinweis": "BT-22: die Zeile, die sagt, wer im Haus war. Ohne sie nennt eine Firmenrechnung nur den Zahler, und die Buchhaltung des Kunden kann sie keiner Reise zuordnen. Platzhalter: {gast}, {zimmer}, {anreise}, {abreise}. Leer lassen schaltet die Zeile ab. Ist kein Gast bekannt (bei Gruppen), faellt sie ohnehin weg.",
+    "gastzeile": "Gast: {gast}, Zimmer {zimmer}, {anreise} bis {abreise}",
+    "_positionsbemerkung_hinweis": "Welche Felder der BUCHUNG als Bemerkung an der Position (BT-127) ausgegeben werden. Vorgabe: 'remark' — das ist das Feld, das OPERA in der Buchungsmaske 'Supplement' nennt (bestaetigt am 17.09.2026 an Beleg 1400001: 'Beamer Raum Lissabon / Muster Pharma GmbH'). Ist es gefuellt, geht der Text VOLLSTAENDIG auf die Rechnung — so, wie er auch auf der gedruckten Rechnung steht. Bei Konferenzbuchungen ist es zu 41 bis 63 Prozent gefuellt, bei Uebernachtungen fast nie. 'reference' NICHT einschalten: kein Anwenderfeld, sondern OPERA-Systemprotokoll ('[NA Pkgs.BFST]', Check-Nummern), und bei umgeleiteten Buchungen steht dort Name und Zimmernummer eines FREMDEN Gastes (14,9 Prozent der belegten Werte); bei Telefonbuchungen die gewaehlte Rufnummer. Mehrere Felder werden mit ' · ' verbunden, leere Liste schaltet die Bemerkung ab. Bei Gruppenrechnungen steht Zimmer und Gastname vor dem Text — BT-127 gibt es nur einmal je Position.",
+    "positionsbemerkung": [
+      "remark"
+    ],
+    "_positionen_hinweis": "Wie die Positionen auf der Rechnung stehen (docs/14_POSITIONEN.md), entschieden von der Buchhaltung am 14.09.2026. 'automatisch' (Vorgabe): Einzelrechnungen zusammengefasst nach Leistung und Preis (B), Rechnungen mit mehreren Reservierungen je Gast mit Zimmer und Name an der Position (C). 'B' oder 'C' legen eine Art fest, 'A' schreibt jede Buchung einzeln wie vor dem 14.09. Auf der Detailseite laesst sich die Art je Rechnung aendern.",
+    "positionen": "automatisch",
+    "_gastzuordnung_hinweis": "Die Darstellung je Gast ordnet Buchungen ueber ORIGINAL_RESV_NAME_ID dem Gast zu. An echten Daten bestaetigt: Die Spalte ist IMMER gefuellt und weicht bei rund 18 Prozent der Zeilen von RESV_NAME_ID ab — genau den umgeleiteten Buchungen, deckungsgleich mit dem Anteil gefuellter FROM_RESV_ID und dem Anteil mit Routing-Anweisung; FROM_RESV_ID steht nie allein. Deshalb true. Auf false gesetzt, verschickt die AUTOMATIK Gruppenrechnungen nicht, sondern legt sie in die Pruefung; von Hand bleiben sie versendbar. Das ist der Rueckweg, falls sql/discovery/06_positionen_gast.sql im eigenen Haus ein anderes Bild zeigt.",
+    "gastzuordnung_bestaetigt": true,
+    "mitgliedschaftstyp_leitweg": "LEITWEG",
+    "mitgliedschaftstyp_erechnung": "ERECHNUNG",
+    "_udf_hinweis": "Benutzerdefiniertes Feld der FIRMENkartei (ACC_MAIN), in dem die Leitweg-ID steht — etwa 'UDFC05'. Leer lassen schaltet die Stufe ab; dann gilt die Kette wie bisher. Mitgliedschaften taugen dafuer NICHT: OPERA bietet sie nur an der Individualkartei an, von 130.846 liegt keine einzige auf einer Firmenkartei. Siehe docs/09_UDF_LEITWEG_ID.md.",
+    "udf_leitweg": "",
+    "_udf_erechnung_hinweis": "Benutzerdefiniertes Feld der Firmenkartei als E-Rechnungs-Kennzeichen. Leer lassen schaltet die Stufe ab. Was ein Eintrag BEDEUTET, sagt udf_erechnung_bedeutung: 'schliesst_aus' (Vorgabe) nimmt gekennzeichnete Karteien heraus, 'erlaubt' nimmt nur gekennzeichnete auf. Bei einem gewachsenen Karteibestand ist 'erlaubt' erst praktikabel, wenn jemand ihn gepflegt hat — sonst geht gar nichts hinaus.",
+    "udf_erechnung": "",
+    "udf_erechnung_bedeutung": "schliesst_aus",
+    "_resort_hinweis": "Das Resortkuerzel IHRES Hauses, so wie es in OPERA steht (Tabelle RESORT). In einer Datenbank liegen oft mehrere Properties — eine Reservierungszentrale und Demo-Mandanten gehoeren dazu und muessen ausgefiltert bleiben. Welche es gibt, zeigt sql/discovery/01_umgebung.sql."
+  },
+  "mail": {
+    "aktiv": true,
+    "smtp_host": "mail.beispiel.local",
+    "smtp_port": 587,
+    "verschluesselung": "starttls",
+    "benutzer": "",
+    "passwort": "",
+    "absender": "",
+    "absender_name": "",
+    "bcc": "",
+    "_bcc_cl_hinweis": "Zusaetzliche Blindkopie NUR fuer Rechnungen, die ueber das Debitorenkonto ausgecheckt wurden (City Ledger). Diese Rechnungen sind nicht bezahlt, sondern stehen beim Debitor offen - sie gehen die Debitorenbuchhaltung an. Leer lassen, wenn nicht gewuenscht.",
+    "bcc_city_ledger": "",
+    "_erlaubte_empfaenger": "Sicherheitsnetz: solange hier etwas steht, geht KEINE Mail an eine andere Adresse. Erst leeren, wenn der Versand an echte Kunden freigegeben ist.",
+    "erlaubte_empfaenger": [
+      "@beispiel.de"
+    ],
+    "betreff": "Rechnung {bill_no} vom {issuedate} - elektronische Rechnung (XRechnung)",
+    "_text_hinweis": "Der zweite Absatz stellt klar, dass es sich um dieselbe Rechnung in anderem Format handelt und nicht um eine zweite Forderung (§ 14c UStG). Bitte beim Anpassen stehen lassen.",
+    "text": "Guten Tag,\n\nanbei erhalten Sie die Rechnung {bill_no} vom {issuedate} als elektronische Rechnung im Format XRechnung (XML-Datei).\n\nEs handelt sich um dieselbe Rechnung unter derselben Rechnungsnummer, lediglich in dem gesetzlich vorgeschriebenen strukturierten Format - keine zusaetzliche Rechnung und keine zusaetzliche Forderung.\n\nMit freundlichen Gruessen\n{absender_name}",
+    "_pdf_hinweis": "Ordner, in dem die Folio-PDFs aus OPERA liegen. Leer lassen, dann geht nur das XML mit. Voraussetzung ist, dass OPERA die Folios ueberhaupt als Datei ablegt — ist Permanent Folio Storage abgeschaltet, gibt es keine. Siehe docs/10_OPERA_MAILVERSAND.md.",
+    "pdf_ordner": "",
+    "pdf_muster": "{bill_no}.pdf"
+  },
+  "auswahl": {
+    "_hinweis": "Firma als Empfaenger laeuft automatisch; Firma nur an der Reservierung kommt in die Pruefung, weil dort erfahrungsgemaess in rund jedem zehnten Fall eine Privatperson zahlt.",
+    "zeitraum_tage": 30,
+    "_hoechstens_hinweis": "Obergrenze je Lauf. Sie wirkt auf die Belege MIT Firmenbezug, nicht auf alle Rechnungen des Hauses — bei einem mittelgrossen Stadthotel sind das Groessenordnungen weniger. Wird die Grenze erreicht, sagt die Meldung es; dann entweder den Zeitraum verkleinern oder die Grenze anheben.",
+    "hoechstens": 2000,
+    "firmenprofile": [
+      "COMPANY",
+      "TRAVEL_AGENT",
+      "G",
+      "S"
+    ],
+    "reservierungsfirma_aufnehmen": true,
+    "reservierungsfirma_pruefen": true,
+    "_inland_hinweis": "Die Pflicht gilt fuer inlaendische B2B-Umsaetze. Ueber die Haelfte der Firmenrechnungen dieses Hauses geht ins Ausland - dort bringt eine XRechnung nichts. Gefiltert wird ueber das Laenderkennzeichen der Hauptadresse des Empfaengerprofils.",
+    "nur_inland": true,
+    "inlandskennzeichen": [
+      "DE"
+    ],
+    "_betrag_hinweis": "Kleinbetragsrechnungen bis 250 EUR waeren nach § 33 UStDV ausgenommen. Bewusst KEINE Grenze gesetzt - lieber eine XRechnung zu viel als eine zu wenig.",
+    "mindestbetrag_brutto": 0,
+    "_anzahlung_status_hinweis": "Wie OPERA einen Anzahlungsbeleg kennzeichnet. Anzahlungen sind eigene Belege am selben FOLIO_NO; die Spalte FOLIO$_TAX.STATUS kennt nur OK, DEPOSIT, VOID und ZERO — englisch auch in deutschsprachigen Installationen, also Systemkonstanten. Nachgesehen wurde das an EINER Installation; schreibt eine andere OPERA-Version es anders, wird der Wert hier geaendert. Leer lassen bedeutet DEPOSIT. Davon haengt ab, ob eine Schlussrechnung mit Kopfbetrag 0,00 als durch Anzahlungen gedeckt erkannt oder als Nullbeleg zurueckgelegt wird.",
+    "anzahlung_status": "DEPOSIT",
+    "_anzahlungscodes_hinweis": "ZUSAETZLICHE Umsatzcodes, an denen eine Anzahlung erkannt wird — leer lassen ist die Vorgabe und der Normalfall. Entschieden wird ueber anzahlung_status: Anzahlungen sind eigene Belege am selben FOLIO_NO. Fuehrt ein Haus sie stattdessen als Umbuchung INNERHALB desselben Belegs, greift die Statusregel nicht — dann kommen die Codes hier hinein, und eine Rechnung gilt auch dann als angezahlt, wenn sie eine Buchung mit einem dieser Codes traegt. Welche Codes das eigene Haus benutzt, zeigt die Konfigurationsseite auf Knopfdruck (Abfrage sql/opera/anzahlungscodes.sql, ein Jahr). Dort steht auch, welche davon blosse ZAHLUNGSARTEN sind (Karte, Ueberweisung) — die gehoeren nicht hierher. Nicht raten: Eine von Hand gepflegte Liste war der vorherige Weg und ausgerechnet um die drei haeufigsten Codes unvollstaendig.",
+    "anzahlungscodes": []
+  },
+  "automatik": {
+    "aktiv": false,
+    "poll_minuten": 15,
+    "wartezeit_minuten": 120,
+    "nur_mit_firmenbezug": true,
+    "_city_ledger_hinweis": "City-Ledger-Rechnungen automatisch versenden. Standard AUS: Sie sind nicht bezahlt, sondern stehen beim Debitor offen — sie gehen die Debitorenbuchhaltung an, wo gegen das Konto gebucht, gemahnt und verrechnet wird. Von Hand versendbar bleiben sie immer.",
+    "city_ledger_versenden": false,
+    "empfaenger_automatisch": true,
+    "max_pro_lauf": 20,
+    "testlauf": true
+  },
+  "ablage": {
+    "xml_ordner": "data/xml",
+    "archiv_ordner": "data/archiv"
+  },
+  "xrechnung": {
+    "_hinweis": "Version des erzeugten Dokuments. Moeglich ist heute nur 3.0.2 — XRechnung 4.0 ist am 14.09.2026 weder spezifiziert noch mit einem Regelwerk veroeffentlicht. Die Version waehlt Vorlage, CustomizationID (BT-24) und, wenn validierung.kosit_szenarien den Platzhalter {version} enthaelt, das Regelwerk des Validators. Siehe docs/03_NORM_UND_TERMINE.md.",
+    "version": "3.0.2"
+  },
+  "validierung": {
+    "_hinweis": "Laeuft nur lokal. Eine fertige XRechnung enthaelt Kundendaten und gehoert in keine Pruefseite im Internet.",
+    "aktiv": true,
+    "pflicht": true,
+    "kosit_jar": "validation/validationtool.jar",
+    "kosit_szenarien": "validation/xrechnung-{version}/scenarios.xml",
+    "java": "java",
+    "_daemon_hinweis": "Der Validator braucht rund zwoelf Sekunden zum Start, davon fast alles fuer das Uebersetzen der Regelwerke; die Pruefung selbst dauert danach unter einer Sekunde. Im Daemon-Betrieb laeuft er einmal und haelt die Regeln geladen — bei einem vollen Durchlauf der Unterschied zwischen Stunden und Minuten. Er lauscht nur auf 127.0.0.1 und ohne Oberflaeche. Antwortet er nicht, nimmt die Anwendung den Einzelaufruf.",
+    "daemon": true
+  },
+  "update": {
+    "aktiv": true,
+    "repo": "ahornhotels/XRechnungOPERA",
+    "zweig": "main",
+    "_token_hinweis": "Wird beim ersten Laden verschluesselt und in der Oberflaeche nur als 'gesetzt' angezeigt. Fuer den Betrieb genuegt die Berechtigung Contents:Read.",
+    "token": "",
+    "automatisch_pruefen": true,
+    "_repo_hinweis": "Von wo sich diese Installation ihre Aktualisierungen holt, in der Form Konto/Name. Die Vorgabe ist das Repository, aus dem die Anwendung stammt. Wer sie abzweigt und eigene Aenderungen pflegt, traegt hier sein eigenes ein — dann kommen die Aktualisierungen von dort und nicht mehr von hier. Ein privates Repository braucht einen Token mit Leserecht; bei einem oeffentlichen kann das Feld leer bleiben.",
+    "_automatisch_pruefen_hinweis": "Alle sechs Stunden nachsehen, ob eine neuere Fassung bereitliegt, und es Verwaltern in der Kopfzeile melden. EINGESPIELT WIRD NIE VON SELBST — das bleibt ein Knopfdruck unter Konfiguration. Braucht einen Weg zu api.github.com; kommt die Anfrage nicht durch, steht eine Warnung im Protokoll und sonst passiert nichts. Auf false gesetzt, wird gar nicht nachgesehen."
+  }
+}

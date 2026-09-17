@@ -1,0 +1,14 @@
+{% extends "basis.html" %}
+{% block inhalt %}
+<h1>Protokoll</h1>
+<table>
+  <tr><th>Zeit</th><th>Rechnung</th><th>Aktion</th><th>Benutzer</th><th>Text</th></tr>
+  {% for e in eintraege %}
+  <tr class="{{ 'zeile-fehler' if not e.erfolg }}">
+    <td class="klein">{{ e.zeit }}</td>
+    <td>{% if e.bill_no %}<a href="/rechnung/{{ e.bill_no }}">{{ e.bill_no }}</a>{% endif %}</td>
+    <td>{{ e.aktion }}</td><td class="klein">{{ e.benutzer }}</td><td>{{ e.text }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

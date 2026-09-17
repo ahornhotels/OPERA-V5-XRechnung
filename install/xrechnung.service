@@ -1,0 +1,72 @@
+# Vorlage. installieren.sh setzt @BASIS@, @BENUTZER@, @PORT@, @REPO@ und
+# @ZWEIG@ ein und legt die fertige Datei unter
+# /etc/systemd/system/xrechnung.service ab.
+#
+# DIESE DATEI GEHOERT ROOT. Das ist keine Nebensache: Hier steht, aus welchem
+# Repository sich die Anwendung aktualisiert. Stuende der Zeiger nur in
+# config/app.json, koennte ein uebernommener Dienst ihn auf ein fremdes
+# Repository richten, eine Aktualisierung ausloesen und sich dauerhaft
+# einnisten — neustartfest, weil systemd ihn wieder hochfaehrt. Der Token
+# nuetzt einem Angreifer nichts (er liest ein Repository); der ZEIGER ist das
+# Problem, nicht der Schluessel.
+[Unit]
+Description=OPERA XRechnung — erzeugt XRechnungen aus OPERA und versendet sie
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@BENUTZER@
+Group=@BENUTZER@
+
+# Das Programm liegt in einer Freigabe, auf die 'aktuell' zeigt. Umgeschaltet
+# wird der Symlink in einem Schritt; ein halb ersetzter Zustand kann nicht
+# entstehen. Siehe docs/12_AKTUALISIERUNG.md.
+WorkingDirectory=@BASIS@/programm/aktuell
+ExecStart=@BASIS@/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port @PORT@
+
+# Wo der BESTAND liegt. Aus __file__ laesst sich das nicht ableiten: Ein
+# Symlink auf das Arbeitsverzeichnis taucht dort nicht auf, weder mit noch
+# ohne resolve(). Ohne diese Zeilen laegen Konfiguration, Arbeitsliste und die
+# erzeugten Rechnungen IN der Freigabe — und waeren beim Aufraeumen alter
+# Freigaben weg.
+Environment=XRECHNUNG_BASIS=@BASIS@
+Environment=XRECHNUNG_CONFIG_DIR=@BASIS@/config
+Environment=XRECHNUNG_DATEN_DIR=@BASIS@/data
+Environment=XRECHNUNG_LOG_DIR=@BASIS@/logs
+
+# Woher aktualisiert wird. Gewinnt gegen config/app.json; in der Oberflaeche
+# werden die beiden Werte dann nur noch angezeigt.
+Environment=XRECHNUNG_UPDATE_REPO=@REPO@
+Environment=XRECHNUNG_UPDATE_ZWEIG=@ZWEIG@
+
+Restart=always
+RestartSec=5
+StandardOutput=append:@BASIS@/logs/dienst.log
+StandardError=append:@BASIS@/logs/dienst.log
+
+# Der Dienst darf ausschliesslich in seinen eigenen Baum schreiben — und das
+# gilt unabhaengig von Dateirechten. 'strict' macht das gesamte Dateisystem
+# schreibgeschuetzt, ReadWritePaths nimmt genau die fuenf Ordner aus.
+#
+# .venv gehoert dazu, obwohl es nach Programm aussieht: Bringt eine
+# Aktualisierung neue Abhaengigkeiten mit, installiert der Updater sie VOR dem
+# Umschalten mit pip in genau diese Umgebung (der Interpreter aus ExecStart).
+# Ohne diesen Eintrag scheiterte pip an "Read-only file system", obwohl die
+# Dateirechte stimmten — installieren.sh gibt .venv dem Dienstkonto, und der
+# Fehler sah deshalb nach etwas ganz anderem aus. Jede Aktualisierung mit
+# einem neuen Paket blieb so stehen.
+#
+# DIESE UNIT ist damit fuer den Dienst unerreichbar, und darauf kommt es an:
+# Wie der Dienst gestartet wird und woher er sich aktualisiert, kann er nicht
+# aendern. install/ dagegen liegt IM Programm und gehoert dem Dienst — es wird
+# bei jeder Aktualisierung mitersetzt, das ist gewollt. Eine Zusicherung, die
+# man spaeter glaubt und die nicht stimmt, waere schlechter als keine.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@BASIS@/programm @BASIS@/config @BASIS@/data @BASIS@/logs @BASIS@/.venv
+
+[Install]
+WantedBy=multi-user.target

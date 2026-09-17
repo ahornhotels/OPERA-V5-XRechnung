@@ -1,0 +1,46 @@
+OPERA XRechnung - Einrichtung
+=============================
+
+WINDOWS
+    Doppelklick auf   INSTALLIEREN.cmd
+    Windows fragt einmal nach der Erlaubnis - mit Ja bestaetigen.
+
+ROCKY LINUX
+    sudo ./installieren.sh
+
+Das genuegt jeweils. Der Rest dauert 10 bis 20 Minuten.
+
+Nichts geschieht ungefragt: Vor jedem Download steht da, WAS geladen wird,
+WOHER und WOZU - und dann die Frage "Fortfahren? [J/n]". Enter bedeutet Ja.
+Wer "n" eingibt, ueberspringt nur diesen einen Punkt; der Rest laeuft weiter,
+und am Ende steht, was uebersprungen wurde und wie es nachzuholen ist.
+
+Fuer unbeaufsichtigte Laeufe, etwa beim Ausrollen auf mehrere Rechner:
+    Windows       install\installieren.ps1 -OhneRueckfrage
+    Rocky Linux   sudo ./installieren.sh --ohne-rueckfrage
+
+Am Ende stehen im Fenster die Adresse der Oberflaeche und das Startpasswort
+fuer die erste Anmeldung.
+
+
+Was noch in diesem Ordner liegt
+-------------------------------
+
+Windows                      Rocky Linux
+INSTALLIEREN.cmd             installieren.sh          die Einrichtung
+installieren.ps1             (in installieren.sh)     die eigentliche Arbeit
+dienst_einrichten.cmd        dienst_einrichten.sh     nur den Dienst nachtragen
+dienst_entfernen.cmd         dienst_entfernen.sh      Dienst entfernen, Daten bleiben
+                             xrechnung.service        Vorlage fuer systemd
+
+
+Wenn etwas schiefgeht
+---------------------
+
+Die ausfuehrliche Anleitung steht in INSTALLATION.md im Ordner darueber -
+und nach dem ersten Start auch in der Oberflaeche unter "Handbuch".
+Dort ist jeder Schritt einzeln beschrieben, falls einer von Hand
+nachgeholt werden muss.
+
+Unter Linux zeigt   journalctl -u xrechnung -n 50   was der Dienst meldet.
+Unter Windows steht dasselbe in logs\dienst.log.
