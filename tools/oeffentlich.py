@@ -44,6 +44,12 @@ AUSGELASSEN = {
     # Entscheidungsvorlage fuer die Buchhaltung eines Hauses.
     "docs/praesentation/XRechnung_Positionen_Buchhaltung.pptx": "interne Entscheidungsvorlage",
     "docs/praesentation/erzeugen.py": "erzeugt ebendiese Vorlage",
+    # Projektstandsbericht vom 09.09.2026. Er widersprach der README:
+    # "noch nie gegen die echte Datenbank gelaufen" stimmte an dem Tag und
+    # war acht Tage spaeter falsch — und ein Stand, der sich selbst
+    # ueberholt, liest sich fuer einen Fremden wie ein unfertiger Prototyp.
+    # Sein Inhalt steht in README, INSTALLATION und HANDBUCH.
+    "PROTOTYP.md": "Projektstandsbericht, ueberholt",
 }
 
 # Verzeichnisse, die gar nicht erst versioniert sind, aber im Arbeitsbaum
