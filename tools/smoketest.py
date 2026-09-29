@@ -3046,7 +3046,14 @@ for _preis in (189.00, 189.00, 216.09, 216.09, 216.09):   # Bauer: zwei Preise
     _buchungen.append(_buchung(_trx := _trx + 1, "1000", "Übernachtung", _preis, 7, **_bauer))
 _buchungen.append(_buchung(_trx := _trx + 1, "5200", "Parken", 30.00, 19,
                            bemerkung="Tiefgarage", **_bauer))
-# Inklusivleistung ohne Betrag: fuenfmal 0,00 soll EINE Position werden
+# Inklusivleistungen ohne Betrag: fuenfmal 0,00. Bis zum 29.09.2026 sollten sie
+# EINE Position werden; sie gehen jetzt gar nicht mehr hinaus. Grund, an einer
+# echten Gruppenrechnung nachgesehen: Solche Buchungen stammen aus der
+# Reservierung des GRUPPENKOPFS, waehrend die berechneten Leistungen aus den
+# darauf gerouteten Reservierungen kommen — fuer den Empfaenger also kein
+# Leistungsnachweis. Dazu kam, dass sie sich nur zusammenfassen liessen, wenn
+# OPERA die Menge 1 fuehrt; bei Menge 0 gibt es keinen Stueckpreis, und dann
+# standen zehn gleich benannte Zeilen "1 x 0,00" nebeneinander.
 for _i in range(5):
     _buchungen.append(_buchung(_trx := _trx + 1, "2010", "Frühstück inklusive", 0.00, 7, **_bauer))
 for _i in range(5):                        # Musterfrau: 5 Naechte zu 216,09 und Fruehstueck
@@ -3123,12 +3130,19 @@ pruefe(_steuer["B"] == _steuer["C"],
 
 _b_d, _b_x = _dokumente["B"]
 _b_zeilen = [(z["itemname"], z["invoicedquantity"], z.get("bruttopreis")) for z in _b_d["lines"]]
-pruefe(len(_b_d["lines"]) == 5,
-       f"B: 25 Buchungen werden 5 Positionen ({_b_zeilen})")
+_ohne = sum(1 for b in _buchungen if opera.ohne_betrag(b))
+pruefe(len(_b_d["lines"]) == 4,
+       f"B: 25 Buchungen werden 4 Positionen ({_b_zeilen})")
 pruefe(("Übernachtung", 8, 216.09) in _b_zeilen and ("Übernachtung", 2, 189.00) in _b_zeilen,
        "B: gleicher Preis wird zusammengefasst, zwei Preise bleiben zwei Positionen")
-pruefe(("Frühstück inklusive", 5, 0.0) in _b_zeilen,
-       "B: Inklusivleistungen ohne Betrag gehen ebenfalls zusammen")
+pruefe(not any(n == "Frühstück inklusive" for n, _m, _p in _b_zeilen),
+       f"B: Inklusivleistungen ohne Betrag gehen gar nicht hinaus ({_b_zeilen})")
+pruefe(_b_d.get("ohne_betrag") == _ohne == 5,
+       f"B: und die Seite sagt, wieviele weggelassen wurden ({_b_d.get('ohne_betrag')})")
+# Das Weglassen darf die Rechnung nicht veraendern — sonst waere es keine
+# Darstellungsfrage, sondern ein Betragsfehler.
+pruefe(_betrag(_b_x, "TaxInclusiveAmount") == _betrag(_dokumente["A"][1], "TaxInclusiveAmount"),
+       "B: der Gesamtbetrag bleibt, obwohl fuenf Positionen fehlen")
 pruefe(not any(z["itemname"] == "Minibar" for z in _b_d["lines"])
        and "<cac:AllowanceCharge>" not in _b_x,
        "B: Buchung und Storno heben sich auf — keine Position, kein Abschlag")
@@ -3146,13 +3160,13 @@ pruefe(_uebern.get("priceamount") and not _uebern.get("pricebasequantity")
 
 _c_d, _c_x = _dokumente["C"]
 _c_notes = [z.get("bemerkung") for z in _c_d["lines"]]
-pruefe(len(_c_d["lines"]) == 6,
-       f"C: je Gast gebuendelt — 2 fuer Musterfrau, 4 fuer Bauer ({_c_notes})")
+pruefe(len(_c_d["lines"]) == 5,
+       f"C: je Gast gebuendelt — 2 fuer Musterfrau, 3 fuer Bauer ({_c_notes})")
 pruefe(_c_notes[0].startswith("Zi. 214 · Musterfrau, Lena"),
        f"C: die erste Position nennt Zimmer und Gast ({_c_notes[0]})")
 pruefe("Zi. 215 · Beispiel, Max · Tiefgarage" in _c_notes,
        "C: die Bemerkung der Buchung steht hinter Zimmer und Name")
-pruefe([z["gast_zimmer"] for z in _c_d["lines"]] == ["214", "214", "215", "215", "215", "215"],
+pruefe([z["gast_zimmer"] for z in _c_d["lines"]] == ["214", "214", "215", "215", "215"],
        "C: nach Zimmer geordnet, die Positionen eines Gastes stehen beieinander")
 pruefe(_c_x.count("<cac:InvoicePeriod>") == 1 + len(_c_d["lines"]),
        "C: jede Position traegt den Aufenthalt (BT-134/135)")
@@ -3187,8 +3201,12 @@ pruefe(len(_c_baum.findall("cac:InvoiceLine/cac:InvoicePeriod", _ns3)) == len(_c
        "C: im geparsten Dokument hat jede Position Zeitraum und Gast")
 
 _a_d, _ = _dokumente["A"]
-pruefe(len(_a_d["lines"]) + len(_a_d.get("allowances") or []) == len(_buchungen),
-       "A: jede Buchung bleibt einzeln — wie vor dem 14.09.")
+pruefe(len(_a_d["lines"]) + len(_a_d.get("allowances") or [])
+       == len(_buchungen) - _ohne,
+       "A: jede Buchung MIT BETRAG bleibt einzeln — wie vor dem 14.09.")
+pruefe(_a_d.get("ohne_betrag") == _ohne,
+       f"A: auch einzeln dargestellt bleiben betragslose Buchungen draussen "
+       f"({_a_d.get('ohne_betrag')})")
 
 # Sonderfaelle: Menge null wird nie zusammengefasst; ein unvollstaendiger
 # oder verkehrter Zeitraum bleibt ganz weg (BR-30).
@@ -3199,6 +3217,25 @@ for _z in _null:
     _z["bruttopreis"] = 10.00
 pruefe(len(opera.positionen_buendeln(_null, "B")) == 2,
        "eine Buchung mit Menge 0 wird nicht mit anderen verrechnet")
+
+# Betragslose Buchungen: die Paketbestandteile. OPERA bucht eine Pauschale als
+# Huelle plus Bestandteile; die Bestandteile, deren Erloes in der Huelle steckt,
+# stehen mit 0,00 da und mit MENGE 0. Damit haben sie keinen Stueckpreis
+# (NULLIF), fallen in den Zweig "einzeln" und wurden nie zusammengefasst — auf
+# einer Gruppenrechnung standen zehn gleich benannte Zeilen "1 x 0,00"
+# nebeneinander. Sie werden jetzt in ablauf.rechnungsdaten() ausgesondert.
+#
+# Die Gegenprobe ist wichtiger als die Probe: Die STEUERZEILEN (Codes 71xx)
+# fuehren einen Nettobetrag und KEIN Brutto. Wer nur aufs Brutto sieht, wirft
+# sie mit weg und verliert echtes Geld.
+pruefe(opera.ohne_betrag({"lineextensionamountnet": 0, "lineextensionamount": 0}),
+       "Paketbestandteil ohne Betrag wird als betragslos erkannt")
+pruefe(not opera.ohne_betrag({"lineextensionamountnet": 3334.82, "lineextensionamount": 0}),
+       "Steuerzeile mit Netto, aber ohne Brutto, gilt NICHT als betragslos")
+pruefe(not opera.ohne_betrag({"lineextensionamountnet": -50.0, "lineextensionamount": -53.5}),
+       "ein Storno gilt nicht als betragslos")
+pruefe(opera.ohne_betrag({"lineextensionamountnet": None, "lineextensionamount": None}),
+       "fehlende Betraege gelten als betragslos")
 # Menge summiert sich auf null, der Betrag nicht: 3 x 10,00 und -3 x -9,99
 # tragen beide den Preis 3,33. Zusammengefasst ergaebe das "0 x ... = 0,01" —
 # nicht nachrechenbar. Die Buchungen muessen einzeln stehen bleiben.

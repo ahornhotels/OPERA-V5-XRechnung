@@ -532,6 +532,20 @@ def _gastbemerkung(zimmer: str, gast: str) -> str:
     return " · ".join(teile)
 
 
+def ohne_betrag(zeile: dict) -> bool:
+    """Traegt diese Position weder netto noch brutto einen Betrag?
+
+    Das sind die Paketbestandteile: OPERA bucht eine Pauschale als Huelle plus
+    ihre Bestandteile, und die Bestandteile, deren Erloes schon in der Huelle
+    steckt, stehen mit 0,00 da. Sie tragen nichts zur Rechnung bei.
+
+    NETTO UND BRUTTO MUESSEN BEIDE NULL SEIN. Nur auf das Brutto zu sehen
+    waere falsch: Die Steuerzeilen (Codes 71xx) fuehren einen Nettobetrag und
+    kein Brutto — wer die wegwirft, verliert echtes Geld."""
+    return _zahl(zeile.get("lineextensionamountnet")) == 0 \
+        and _zahl(zeile.get("lineextensionamount")) == 0
+
+
 def positionen_buendeln(zeilen: list[dict], art: str) -> list[dict]:
     """Die Buchungen zu Positionen zusammenfassen.
 
@@ -557,10 +571,18 @@ def positionen_buendeln(zeilen: list[dict], art: str) -> list[dict]:
         return zeilen
     gruppen: dict[tuple, list[dict]] = {}
     for nr, z in enumerate(zeilen):
-        # Menge 0 braucht hier keine eigene Bedingung: Eine Gruppe mit Menge
-        # null und Betrag landet unten im Zweig "einzeln", eine mit Menge null
-        # und Betrag null faellt weg. Ohne Preis (Menge 0 in der Abfrage,
-        # NULLIF) gibt es keinen Schluessel.
+        # Menge 0 hat KEINEN Stueckpreis: invoice_lines.sql bildet ihn als
+        # ROUND(brutto / NULLIF(menge, 0)), und das ist bei Menge 0 NULL.
+        # Solche Buchungen landen deshalb im Zweig "einzeln" und werden nie
+        # zusammengefasst — auch nicht miteinander.
+        #
+        # Hier stand frueher, eine Gruppe mit Menge null und Betrag null
+        # "faellt weg". Das stimmte nicht: Der Zweig, der sie entfernt haette,
+        # ist fuer sie unerreichbar, weil der fehlende Preis vorher greift. An
+        # einer Gruppenrechnung standen so zehn gleich benannte Zeilen
+        # "1 x 0,00" nebeneinander. Betragslose Buchungen werden jetzt in
+        # ablauf.rechnungsdaten() ausgesondert, bevor sie hierher kommen —
+        # diese Funktion sieht nur noch Positionen mit Betrag.
         preis = z.get("bruttopreis")
         if preis is None:
             schluessel: tuple = ("einzeln", nr)

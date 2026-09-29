@@ -471,6 +471,37 @@ def rechnungsdaten(cfg: dict, bill_no: int) -> dict:
     daten["positionsart"] = art
     daten["positionsart_quelle"] = quelle
     daten["buchungen"] = len(daten["lines"])
+    # Positionen ohne Betrag gehen nicht hinaus.
+    #
+    # Es sind die Paketbestandteile, deren Erloes bereits in der Huelle der
+    # Pauschale steckt — im Umsatzcode heissen sie woertlich "inclusive". Sie
+    # tragen null zu jeder Summe bei; die Rechnung stimmt mit und ohne sie auf
+    # den Cent. An einer Gruppenrechnung nachgesehen: 20 solcher Zeilen,
+    # Zeilensumme in beiden Faellen dieselbe.
+    #
+    # WARUM SIE WEG SOLLEN: Sie stammen aus der Reservierung des GRUPPENKOPFS,
+    # waehrend die berechneten Leistungen aus den rund zwanzig darauf
+    # gerouteten Reservierungen kommen. Fuer den Empfaenger sind sie also kein
+    # Leistungsnachweis, sondern Buchungstechnik des Hauses. Auf der Rechnung
+    # standen zehn gleich benannte Zeilen "1 x 0,00" ohne erkennbaren
+    # Unterschied — die Buchhaltung des Kunden kann daran nichts pruefen.
+    #
+    # WARUM NICHT IN DER SQL: invoice_lines.sql ist der Datenvertrag und
+    # liefert, was OPERA fuehrt. Was davon ins Dokument gehoert, entscheidet
+    # sich hier — an der einen Stelle, die Anzeige UND Erzeugung gemeinsam
+    # benutzen. Sonst zeigte die Seite Positionen, die nicht hinausgehen.
+    #
+    # DIE LETZTE POSITION BLEIBT. BR-16 verlangt mindestens eine; eine
+    # Rechnung, die nur aus Nullzeilen besteht, waere sonst ein Dokument ohne
+    # Positionen. Ein Beleg ueber 0,00 wird ohnehin zurueckgelegt
+    # (siehe oben, "Nullbelege und negative Betraege"), aber die Detailseite
+    # ruft diesen Weg fuer JEDE Rechnung auf.
+    mit_betrag = [z for z in daten["lines"] if not opera.ohne_betrag(z)]
+    daten["ohne_betrag"] = len(daten["lines"]) - len(mit_betrag)
+    if mit_betrag:
+        daten["lines"] = mit_betrag
+    else:
+        daten["ohne_betrag"] = 0
     daten["lines"] = opera.positionen_buendeln(daten["lines"], art)
     opera.rechnungszeitraum_erweitern(daten["header"], daten["lines"])
     # Eine Gruppenrechnung nennt ihre Gaeste an den Positionen. Am Kopf stand

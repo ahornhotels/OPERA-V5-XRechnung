@@ -321,6 +321,11 @@
   <form method="post" action="/rechnung/{{ satz.bill_no }}/positionen">
     <p class="klein">{{ daten.lines|length }} Position(en) aus {{ daten.buchungen }} Buchung(en)
       — {{ daten.positionsart_quelle }}.
+      {# Weggelassenes muss dastehen. Wer die Positionen mit dem Beleg in
+         OPERA vergleicht, zaehlt sonst verschiedene Zahlen und sucht den
+         Fehler bei sich. #}
+      {% if daten.ohne_betrag %}<br>{{ daten.ohne_betrag }} Buchung(en) ohne Betrag
+      nicht aufgeführt — im Paketpreis enthalten, ohne Wirkung auf die Summe.{% endif %}
       {% if satz.positionen %}
       <input type="hidden" name="art" value="">
       <button class="klein">Vorbelegung wiederherstellen</button>
