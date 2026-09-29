@@ -876,6 +876,10 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "kundenreferenz_nutzen": "J" if p.get("kundenreferenz_als_buyerreference") else "N",
         # :resort macht die Anzahlungs-Unterabfrage indizierbar, siehe dort.
         "resort": p["resort"],
+        # Der Kopf summiert die Anzahlungsbelege selbst (BT-113) und muss
+        # denselben Status ansetzen wie invoice_deposits.sql — sonst zeigen
+        # Betrag und Belegliste auf verschiedene Mengen.
+        "anzahlung_status": anzahlung_status(cfg),
     })
     if not kopf_rows:
         raise LookupError(f"Rechnung {bill_no} nicht gefunden")

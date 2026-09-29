@@ -196,7 +196,13 @@ SELECT f.bill_no                                              AS id,
                                                              FROM @SCHEMA@.folio$_tax k
                                                             WHERE k.resort  = :resort
                                                               AND k.bill_no = :bill_no))
-                   AND d.status = 'DEPOSIT'
+                   -- Derselbe konfigurierbare Wert wie in
+                   -- invoice_deposits.sql und invoice_guard.sql. Hier stand
+                   -- 'DEPOSIT' fest: Solange die Vorgabe gilt, faellt das
+                   -- nicht auf — aendert ein Haus anzahlung_status, meldete
+                   -- der Kopf ab da einen anderen Betrag als die
+                   -- Anzahlungsliste, und BT-113 waere still falsch.
+                   AND d.status = :anzahlung_status
                    AND d.bill_no <> :bill_no), 0)                AS prepaidamount,
        f.total_gross
          - (NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0)) AS payableamount,

@@ -34,7 +34,13 @@ SELECT ft.trx_code,
             THEN 'J' ELSE 'N' END      AS zahlungsart
   FROM @SCHEMA@.financial_transactions ft
   JOIN @SCHEMA@.folio$_tax f ON f.bill_no = ft.bill_no AND f.resort = ft.resort
+  -- Der Primaerschluessel von TRX$_CODES ist (RESORT, TRX_CODE), nicht
+  -- TRX_CODE allein. Ohne die Resort-Bedingung liefert der Join die Codes
+  -- ALLER Haeuser, auch CRO und ORS, und MAX(description) greift dann
+  -- irgendeine davon heraus. Aus dieser Liste soll jemand die Konfiguration
+  -- befuellen — sie muss das eigene Haus zeigen.
   LEFT JOIN @SCHEMA@.trx$_codes c ON c.trx_code = ft.trx_code
+                                 AND c.resort   = ft.resort
  WHERE f.resort = :resort
    AND f.status = :anzahlung_status
    AND f.bill_generation_date >= TRUNC(SYSDATE) - :tage
