@@ -72,6 +72,21 @@ VERBOTEN = [
     (r"\bDE81\s?1009\s?00", "IBAN des Hauses"),
     (r"\b1(2[6-9]|3[01])\d{4}\b", "Belegnummer aus dem Produktivbestand"),
     (r"\b199[5-6]\d{4}\b", "Buchungsnummer aus dem Produktivbestand"),
+    # Diese beiden stehen NUR hier und nicht in Abschnitt 12 des Selbsttests —
+    # die einzige gewollte Abweichung zwischen den sonst gleichen Listen.
+    # Grund: Der Selbsttest prueft das REPOSITORY, und dort duerfen die
+    # internen Dokumente das Haus und die Sitzung beim Namen nennen; genau
+    # dafuer werden sie vom Abzug ausgenommen. Diese Pruefung sieht nur, was
+    # tatsaechlich hinausgeht. Wuerden die Muster auch dort stehen, wuerde der
+    # Selbsttest an docs/00, 06, 07, 09, 11 und 13 dauerhaft rot.
+    #
+    # Aufgenommen, weil beides durchgerutscht ist: Das Resortkuerzel stand mit
+    # Belegzahlen und Jahresbetrag in einem KOMMENTAR des Selbsttests, an drei
+    # Stellen. Die Belegnummer daneben wurde gefunden, das Kuerzel nicht — es
+    # war schlicht in keinem Muster. Ein Kommentar ist der wahrscheinlichste
+    # Ort fuer so etwas: Er erklaert, woher eine Erkenntnis stammt.
+    (r"\bBERC[C]\b", "Resortkuerzel des Hauses"),
+    (r"\bTest[Z]\b", "Name einer internen Sitzung"),
 ]
 OHNE_INHALT = {".pdf", ".png", ".jpg", ".ico", ".woff2"}
 ALS_ZIP = {".pptx", ".docx", ".xlsx"}

@@ -3573,8 +3573,8 @@ pruefe([z["bemerkung"] for z in _konf] == ["Beamer Raum Lissabon / Muster Pharma
 
 # TZ2: Der Name eines FREMDEN Gastes darf nicht auf die Rechnung.
 # OPERA schreibt bei umgeleiteten Buchungen "Routed From <Name> Of Room <Nr>"
-# in REFERENCE — an echten Daten in 14,9 % der belegten Werte (TestZ,
-# BERCC, 30 Tage, 16.09.2026), betroffen waere jede zwoelfte Firmenrechnung.
+# in REFERENCE — an echten Daten in 14,9 % der belegten Werte ueber 30 Tage;
+# betroffen waere jede zwoelfte Firmenrechnung.
 _tz = [{"bem_reference": "[NA P.Room] [Routed From Mustermann Erika Of Room 412]"},
        {"bem_reference": "[NA Pkgs.BFST] [Against Pkg.: BFST]"},
        {"bem_reference": "Routed From Mustermann Erika Of Room 412"},
@@ -3597,7 +3597,7 @@ pruefe(_tz_roh[0]["bemerkung"] == "",
 # genau das REFERENCE-Feld (View FT_HBCALLS_VIEW: ft.reference AS supplement),
 # und in IFC_CALL_HIST tragen 49.967 von 50.000 Zeilen eine Ziffernfolge ab
 # fuenf Stellen — die angerufene Nummer. Verkehrsdaten wiegen schwerer als
-# ein Name (TestZ, 16.09.2026).
+# ein Name.
 _tel = [{"bem_reference": "0301234567 12:44 03:21"},
         {"bem_reference": "CALL 00491701234567"},
         {"bem_reference": "[NA P.Room]"},
