@@ -418,6 +418,33 @@ pruefe("<cac:BillingReference>" in xml2 and "1400005" in xml2, "BG-3 Rechnungsbe
 pruefe("<cbc:PrepaidAmount" in xml2 and "535.00" in xml2, "BT-113 Anzahlungsbetrag erzeugt")
 pruefe(not xml_build.pruefsummen(mit_anz), "Folio-Klammer geht auf")
 
+# Der Fall, der monatelang unbemerkt blieb: Die Anzahlung deckt die Rechnung
+# VOLLSTAENDIG, der OPERA-Kopf weist deshalb TOTAL_GROSS = 0 aus. An echten
+# Daten ist das keine Ausnahme, sondern ein erheblicher Teil aller Rechnungen
+# mit Anzahlung — die Messung steht in docs/06_BEFUNDE_LIVE_DB.md. Faellt
+# BT-113 hier aus, fordert die Rechnung den vollen Betrag ein zweites Mal.
+voll_gedeckt = json.loads(json.dumps(rechnung))
+voll_gedeckt["deposits"] = [{"billingreferenceid": 1400020,
+                             "billingreferenceissuedate": "2026-09-09",
+                             "total_net": 3450.44, "total_gross": 3688.57}]
+voll_gedeckt["header"]["prepaidamount"] = 3688.57
+voll_gedeckt["header"]["payableamount"] = 0.0
+voll_gedeckt["kontrolle"] = {"kopf_netto": 0.0, "kopf_brutto": 0.0,
+                             "anzahlung_netto": 3450.44, "anzahlung_brutto": 3688.57}
+xml2b = xml_build.bauen(voll_gedeckt).decode()
+pruefe("<cbc:PrepaidAmount currencyID=\"EUR\">3688.57</cbc:PrepaidAmount>" in xml2b,
+       "voll gedeckt: BT-113 traegt den vollen Anzahlungsbetrag")
+pruefe("<cbc:PayableAmount currencyID=\"EUR\">0.00</cbc:PayableAmount>" in xml2b,
+       "voll gedeckt: BT-115 ist 0,00 und nicht der Gesamtbetrag")
+pruefe(not xml_build.pruefsummen(voll_gedeckt), "voll gedeckt: BR-CO-16 geht auf")
+
+# BT-113 und BT-115 stehen in totals, nicht nur in der Vorlage — sonst muesste
+# die Detailseite die Formel ein zweites Mal fuehren, und genau daran lag es,
+# dass sie den Anzahlungsbetrag ueberhaupt nicht zeigte.
+_t = xml_build.aufbereiten(voll_gedeckt)["totals"]
+pruefe(round(_t["prepaidamount"], 2) == 3688.57 and round(_t["payableamount"], 2) == 0.0,
+       f"die Summen tragen BT-113 und BT-115 fuer die Anzeige ({_t['prepaidamount']} / {_t['payableamount']})")
+
 print("3b) Kaeuferreferenz BT-10 ohne Leitweg-ID")
 # BR-DE-15 macht BT-10 zur Pflicht, aber nur Behoerden haben eine Leitweg-ID.
 # Ohne Ersatzwert waere jede Rechnung an einen gewoehnlichen Firmenkunden

@@ -96,6 +96,14 @@ th,td{text-align:left;padding:.45rem .6rem;border-bottom:1px solid var(--rand);
       vertical-align:top}
 th{font-size:.8rem;text-transform:uppercase;letter-spacing:.03em;color:var(--gedaempft)}
 td.zahl,th.zahl{text-align:right;font-variant-numeric:tabular-nums}
+/* Summen unter der Positionstabelle und die Anzahlungsbelege: schmal und
+   rechts, damit sie als Abschluss der Tabelle darueber lesbar sind und nicht
+   als weitere Tabelle gleichen Rangs. */
+.summen,.anzahlungen{width:auto;min-width:18rem;margin-left:auto}
+.summen td:last-child,.anzahlungen td:last-child{min-width:7rem}
+.summen tr:last-child td,.betont td,td.betont{border-bottom:0}
+.betont td{font-weight:600}
+.summen tr.betont td{border-top:1px solid var(--rand)}
 .klein{font-size:.82rem;color:var(--gedaempft)}
 .leer{color:var(--gedaempft);font-style:italic}
 .karte{background:var(--karte);border:1px solid var(--rand);border-radius:6px;

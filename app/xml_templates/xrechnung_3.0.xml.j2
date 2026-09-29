@@ -174,25 +174,28 @@
     {% if (totals.allowancetotalamount|default(0)|float) > 0 %}
     <cbc:AllowanceTotalAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.allowancetotalamount|fmt }}</cbc:AllowanceTotalAmount>
     {% endif %}
-    {% set _gross = totals.invoicegross|float %}
-    {# BT-113 ist ein BRUTTO-Betrag. header.prepaidamount enthaelt bereits
-       CASHPAY + CCPAY + DEPOSIT des Kopfes UND die Bruttosummen der
-       DEPOSIT-Belege desselben Folios (siehe invoice_header.sql). #}
-    {% set _prepaid = (header.get('prepaidamount') or 0)|float %}
+    {# BT-113 ist ein BRUTTO-Betrag und enthaelt bereits CASHPAY + CCPAY +
+       DEPOSIT des Kopfes UND die Bruttosummen der DEPOSIT-Belege desselben
+       Folios (siehe invoice_header.sql).
+
+       BT-113 und BT-115 kommen aus totals, nicht aus header: Gerechnet wird
+       beides in xml_build._normalisieren(), damit Dokument und Detailseite
+       denselben Wert zeigen. Die Seite hat den Zahlbetrag frueher gar nicht
+       ausgewiesen, weil die Formel nur hier stand. #}
+    {% set _prepaid = (totals.prepaidamount|default(0))|float %}
     {# BT-114: gleicht den Cent aus, der entsteht, weil jede Steuergruppe
        einzeln gerundet wird. Ohne ihn forderte die Rechnung einen anderen
        Betrag als die Forderung im Haus. #}
     {% set _ausgleich = (totals.roundingamount|default(0))|float %}
-    {% set _payable = (_gross - _prepaid + _ausgleich) %}
     {# Auch eine NEGATIVE Anzahlung wird ausgewiesen: Sie wird unten vom
        Zahlbetrag abgezogen, und fehlt sie im Dokument, geht BR-CO-16 nicht auf. #}
-    {% if _prepaid|float != 0 %}
+    {% if _prepaid != 0 %}
     <cbc:PrepaidAmount currencyID="{{ header.documentcurrencycode }}">{{ _prepaid|fmt }}</cbc:PrepaidAmount>
     {% endif %}
     {% if _ausgleich != 0 %}
     <cbc:PayableRoundingAmount currencyID="{{ header.documentcurrencycode }}">{{ _ausgleich|fmt }}</cbc:PayableRoundingAmount>
     {% endif %}
-    <cbc:PayableAmount currencyID="{{ header.documentcurrencycode }}">{{ _payable|fmt }}</cbc:PayableAmount>
+    <cbc:PayableAmount currencyID="{{ header.documentcurrencycode }}">{{ totals.payableamount|fmt }}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
 
   {% for line in lines %}

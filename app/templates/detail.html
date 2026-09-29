@@ -81,9 +81,23 @@
      Adressen. Der Versand wird abgelehnt, bis die Liste in der Konfiguration
      angepasst ist.</p>
   {% endif %}
+  {# Nummer, Datum UND Betrag. Die Anzahl allein beantwortete die Frage nicht,
+     die hier gestellt wird: Ist meine Anzahlung drin, und mit welchem Betrag? #}
   {% if daten and daten.deposits %}
   <p class="hinweis">{{ daten.deposits|length }} Anzahlungsbeleg(e) desselben Folios —
-     werden als Rechnungsbezug (BG-3) und Anzahlungsbetrag (BT-113) ausgewiesen.</p>
+     als Rechnungsbezug (BG-3) und Anzahlungsbetrag (BT-113) ausgewiesen:</p>
+  <table class="anzahlungen">
+    <tr><th>Beleg</th><th>Datum</th><th class="zahl">Brutto</th></tr>
+    {% for a in daten.deposits %}
+    <tr><td>{{ a.billingreferenceid }}</td>
+        <td>{{ a.billingreferenceissuedate or '—' }}</td>
+        <td class="zahl">{{ '%.2f'|format(a.total_gross|float) }}</td></tr>
+    {% endfor %}
+    {% if daten.deposits|length > 1 %}
+    <tr class="betont"><td colspan="2">Summe</td>
+        <td class="zahl">{{ '%.2f'|format(daten.deposits|sum(attribute='total_gross')|float) }}</td></tr>
+    {% endif %}
+  </table>
   {% endif %}
 </section>
 
@@ -92,7 +106,19 @@
     <h2>Beleg</h2>
     <dl>
       <dt>Datum</dt><dd>{{ satz.issuedate or '—' }}</dd>
-      <dt>Netto / Brutto</dt><dd>{{ '%.2f'|format(satz.total_net or 0) }} / {{ '%.2f'|format(satz.total_gross or 0) }}</dd>
+      {# Das ist der OPERA-KOPF, nicht die Rechnungssumme. Liegen Anzahlungen
+         auf demselben Folio, weist der Kopf nur den Rest aus — bei einer voll
+         angezahlten Rechnung 0,00. Ohne diesen Zusatz las sich die Zeile als
+         "die Rechnung ist ueber nichts". Die Rechnungssummen stehen unter den
+         Positionen. #}
+      <dt>Kopf laut OPERA</dt>
+      <dd>{{ '%.2f'|format(satz.total_net or 0) }} netto / {{ '%.2f'|format(satz.total_gross or 0) }} brutto
+        {% if daten and daten.deposits %}
+        <br><span class="klein">Nur der Restbetrag — die Anzahlungen liegen als
+        eigene Belege auf demselben Folio. Maßgeblich sind die Summen unter den
+        Positionen.</span>
+        {% endif %}
+      </dd>
       <dt>Status</dt><dd><span class="status {{ satz.status }}">{{ satz.status }}</span></dd>
       <dt>Leitweg-ID</dt><dd>{{ satz.leitweg_id or 'keine hinterlegt' }}</dd>
       {% if satz.xrechnung_version %}<dt>Erzeugt als</dt><dd>XRechnung {{ satz.xrechnung_version }}</dd>{% endif %}
@@ -322,6 +348,43 @@
         <td class="zahl">{{ a.percent }} %</td></tr>
     {% endfor %}
   </table>
+  {# Die Summen, die tatsaechlich in die XRechnung gehen. Sie standen hier
+     frueher nicht — und bei einer durch Anzahlungen gedeckten Rechnung zeigte
+     die Seite damit NUR den Kopfbetrag 0,00, waehrend das Dokument 29.995,88
+     forderte und als Anzahlung wieder abzog. Wer das sah, hielt die Anzahlung
+     fuer verloren. Die Werte kommen aus derselben Rechnung wie das XML
+     (xml_build._normalisieren), nicht aus einer zweiten Formel. #}
+  {% if aufbereitet.totals %}
+  {% set t = aufbereitet.totals %}
+  <table class="summen">
+    <tr><td>Positionen (BT-106)</td>
+        <td class="zahl">{{ '%.2f'|format(t.invoicenet|float) }}</td></tr>
+    {% if (t.allowancetotalamount|default(0)|float) != 0 %}
+    <tr><td>Abschläge (BT-107)</td>
+        <td class="zahl">−{{ '%.2f'|format(t.allowancetotalamount|float) }}</td></tr>
+    {% endif %}
+    <tr><td>Netto gesamt (BT-109)</td>
+        <td class="zahl">{{ '%.2f'|format(t.taxexclusiveamount|default(t.invoicenet)|float) }}</td></tr>
+    <tr><td>Umsatzsteuer (BT-110)</td>
+        <td class="zahl">{{ '%.2f'|format(t.invoicetaxtotal|float) }}</td></tr>
+    <tr class="betont"><td>Gesamtbetrag (BT-112)</td>
+        <td class="zahl">{{ '%.2f'|format(t.invoicegross|float) }}</td></tr>
+    {% if (t.prepaidamount|default(0)|float) != 0 %}
+    <tr><td>Anzahlung (BT-113)</td>
+        <td class="zahl">−{{ '%.2f'|format(t.prepaidamount|float) }}</td></tr>
+    {% endif %}
+    {% if (t.roundingamount|default(0)|float) != 0 %}
+    <tr><td>Rundungsausgleich (BT-114)</td>
+        <td class="zahl">{{ '%.2f'|format(t.roundingamount|float) }}</td></tr>
+    {% endif %}
+    <tr class="betont"><td>Zahlbetrag (BT-115)</td>
+        <td class="zahl">{{ '%.2f'|format(t.payableamount|float) }}</td></tr>
+  </table>
+  {% if (t.prepaidamount|default(0)|float) != 0 and (t.payableamount|default(0)|float) == 0 %}
+  <p class="hinweis">Zahlbetrag 0,00 — die Rechnung ist durch die Anzahlung
+     vollständig gedeckt. Sie ist trotzdem geschuldet und wird versendet.</p>
+  {% endif %}
+  {% endif %}
   {% endif %}
 </section>
 

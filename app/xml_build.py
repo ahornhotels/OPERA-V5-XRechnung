@@ -338,6 +338,21 @@ def _normalisieren(rechnung: dict) -> dict:
     rest = (opera_brutto - _dez(summen["invoicegross"])) if opera_brutto is not None else Decimal(0)
     if rest and abs(rest) <= Decimal("0.05"):
         summen["roundingamount"] = float(rest)
+
+    # --- BT-113 und BT-115 gehoeren zu den Dokumentsummen -------------------
+    # Nicht zum Kopf: Der Zahlbetrag haengt am Gesamtbetrag, und der entsteht
+    # erst hier aus den gerundeten Positionen. header.payableamount aus
+    # opera.py bleibt daneben stehen — es ist die UNABHAENGIGE Gegenprobe,
+    # gegen die pruefsummen() BR-CO-16 prueft. Wuerde es hier ueberschrieben,
+    # pruefte die Regel sich selbst.
+    #
+    # Vorher rechnete die Vorlage den Zahlbetrag selbst. Die Detailseite zeigte
+    # ihn deshalb gar nicht: Sie haette die Formel ein zweites Mal fuehren
+    # muessen, und zwei Formeln laufen auseinander. Ein Wert, eine Stelle.
+    prepaid = _dez((rechnung.get("header") or {}).get("prepaidamount"))
+    summen["prepaidamount"] = float(prepaid)
+    summen["payableamount"] = float(
+        _dez(summen["invoicegross"]) - prepaid + _dez(summen.get("roundingamount")))
     aus["totals"] = summen
     return aus
 
