@@ -269,7 +269,7 @@ Aufgenommen wird, wenn eines davon zutrifft:
 
 - der Empfänger hat ein **Firmenprofil** (`COMPANY`, `TRAVEL_AGENT`, Gruppe)
 - die Rechnung hängt an einem **Debitorenkonto**
-- am Profil ist eine **Leitweg-ID** oder das Kennzeichen **E-Rechnung** hinterlegt
+- am Profil ist eine **Leitweg-ID** hinterlegt
 - an der Reservierung hängt eine **Firma** (→ Status prüfung)
 
 Nicht aufgenommen werden ausländische Empfänger — die Pflicht gilt für
@@ -285,22 +285,52 @@ Die **Leitweg-ID** ist die Zustelladresse einer Behörde im elektronischen
 Rechnungsverkehr — ohne sie nimmt eine Behörde keine Rechnung an.
 
 Gepflegt wird sie **in OPERA an der Firmenkartei**, in einem benutzerdefinierten
-Feld. Welches Feld das ist, richtet die IT einmal ein (Seite
-„Einrichtung → Leitweg-ID"); die Buchhaltung trägt die Nummer dann am Profil
-ein. Die Anwendung liest sie von dort und prüft, ob sie wie eine Leitweg-ID
-aussieht — was dort steht, geht sonst ungeprüft als Behördenadresse hinaus.
+Feld (`UDFC01`–`UDFC40`), das per Screen Painter auf die Maske der
+Firmenkartei gelegt und mit „Leitweg-ID" beschriftet wird — oft auf dem Reiter
+„More". Die Buchhaltung trägt die Nummer dann am Profil ein; das Feld gibt es
+an Firmen-, Reisebüro- und Quellkarteien.
+
+**Einrichten, einmal pro Haus:**
+
+1. **In OPERA** das Feld an der Firmenkartei sichtbar machen. Welches frei
+   ist und wie es geht, zeigt die Anleitung unter **Konfiguration → Karte
+   „Leitweg-ID und Käuferreferenz (BT-10)" → „Anleitung: Feld finden und in
+   OPERA einrichten"**. Die Feldprüfung dort zählt jedes Feld über **alle**
+   Karteien — auch über Gastkarteien, denn die Spalten teilen sich alle
+   Karteiarten. Vorgeschlagen wird nur ein Feld ohne jeden Wert und ohne
+   Beschriftung in OPERA.
+2. **In der Anwendung** auf der Konfigurationsseite in der Karte
+   **„Leitweg-ID und Käuferreferenz (BT-10)"** den Feldnamen eintragen, etwa
+   `UDFC05`, und speichern. Die Karte zeigt danach, aus welchem Feld gelesen
+   wird — oder in Rot, dass keines eingestellt ist.
+
+Die Anwendung prüft jeden Wert, ob er wie eine Leitweg-ID aufgebaut ist
+(Ziffern, Bindestrich, zweistellige Prüfziffer, höchstens 46 Zeichen). OPERA
+selbst prüft an dem Feld nichts. Passt ein Wert nicht, wird er **nicht**
+benutzt, und die Rechnung bekommt einen Prüfhinweis — sonst ginge ein
+Tippfehler als Behördenadresse hinaus.
+
+> **Mitgliedschaften taugen dafür nicht.** OPERA bietet sie nur an der
+> Gastkartei an, nicht an der Firmenkartei. Ein Mitgliedschaftstyp für die
+> Leitweg-ID wird deshalb in aller Regel nie gefüllt.
 
 **Nur Behörden haben eine Leitweg-ID.** Gewöhnliche Firmenkunden haben keine —
 das Feld BT-10 muss trotzdem gefüllt sein. Die Anwendung nimmt deshalb den
 ersten Wert, den sie findet:
 
-1. **Leitweg-ID** aus dem Feld an der Firmenkartei
-2. **vereinbarte Referenz** aus der Kennzeichnung „E-Rechnung"
-3. **Buyer Reference1** — das Feld in der Reservierungsmaske. Hier trägt der
-   Empfang die Bestellnummer des Firmenkunden ein.
+1. **von Hand eingetragen** auf der Detailseite der Rechnung (siehe unten)
+2. **Leitweg-ID** aus dem Feld an der Firmenkartei
+3. **Feld in der Reservierungsmaske** für die Käuferreferenz (technisch
+   `FOLIO_TEXT1`; je nach Einrichtung beschriftet als „XRechnung" oder „Buyer
+   Reference1"). Hier trägt der Empfang die Bestellnummer des Firmenkunden ein.
 4. **External Reference** an der Reservierung
 5. **Ersatzwert** — die Vorlage des Hauses, voreingestellt der Satz
    „Musterhotel Berlin ReservNr.: 3000001"
+
+Eine gepflegte Leitweg-ID geht also **vor** dem Reservierungsfeld. Hat eine
+Behörde je Auftrag eine andere Leitweg-ID, bleibt das Profilfeld leer, und die
+Nummer kommt ins Reservierungsfeld — dann wird sie allerdings nicht als
+Leitweg-ID geprüft.
 
 **BT-10 muss nicht numerisch sein.** Die Norm verlangt nur, dass das Feld
 gefüllt ist — was darin steht, ist freier Text. Der Ersatzwert ist deshalb
@@ -310,7 +340,7 @@ eine Vorlage (`property.buyerreference_vorlage`) mit den Platzhaltern
 „ReservNr.:" ohne Nummer sieht aus wie ein Wert und ist keiner; dann gilt der
 feste Ersatzwert.
 
-### Wann muss Buyer Reference1 gefüllt sein?
+### Wann muss das Reservierungsfeld gefüllt sein?
 
 **Vor dem Check-out.** Eine abgerechnete Reservierung lässt sich in OPERA
 nicht mehr ändern — was dort nicht steht, wenn die Rechnung erstellt wird,
@@ -326,13 +356,14 @@ gesetzter Wert hat Vorrang vor allem anderen, auch vor der Leitweg-ID; die
 Herkunftsanzeige macht sichtbar, dass er von Hand kommt. Leeren stellt die
 automatische Ermittlung wieder her.
 
-### Buyer Reference1 — das Feld für die Bestellnummer des Kunden
+### Das Reservierungsfeld — für die Bestellnummer des Kunden
 
 BT-10 ist das Feld, über das die Buchhaltung Ihres Kunden die Rechnung **ihrer
 eigenen Bestellung zuordnet**. Ein Wert, den nur wir kennen — unsere
 Rechnungs- oder Reservierungsnummer —, hilft dort niemandem. Deshalb gibt es
-in der Reservierungsmaske das Feld **„Buyer Reference1"**: Was der Empfang dort
-einträgt, steht später in der Rechnung.
+in der Reservierungsmaske ein eigenes Feld (beschriftet „XRechnung" oder
+„Buyer Reference1"): Was der Empfang dort einträgt, steht später in der
+Rechnung.
 
 Zwei Hinweise dazu:
 
