@@ -132,6 +132,20 @@ etwas, erscheint es rot — und der Versandknopf bleibt gesperrt.
 **„Jetzt versenden"** schickt sie an den gewählten Empfänger, mit dem
 eingestellten BCC in Blindkopie.
 
+Lehnt der Mailserver **nur die Blindkopie** ab, ist die Rechnung trotzdem beim
+Kunden und steht auf „gesendet". Im Protokoll — auf der Detailseite und unter
+„Protokoll" — steht dann ein roter Eintrag „Blindkopie vom Mailserver
+abgelehnt" mit der Antwort des Servers. Die Testmail meldet dasselbe direkt.
+Kommt die Blindkopie nicht an und steht dort **nichts**, hat der Server sie
+angenommen: Dann liegt sie in Spam oder Quarantäne, oder eine Regel hat sie
+umgeleitet — das klärt die Nachrichtenablaufverfolgung am Mailserver.
+
+**In „Gesendete Elemente" erscheint die Mail nicht.** Die Anwendung verschickt
+direkt über den Mailserver; eine Kopie dort legt nur ein Mailprogramm wie
+Outlook an. Dafür ist die Blindkopie da. Ist der Empfänger zugleich die
+BCC-Adresse, kommt die Mail nur einmal an — der Server legt doppelte
+Empfänger zusammen.
+
 Rechnungen, die **über das Debitorenkonto ausgecheckt** wurden (City Ledger),
 bekommen zusätzlich eine **zweite Blindkopie** an die dafür eingetragene
 Adresse. Der Grund ist fachlich: Diese Rechnungen sind nicht bezahlt, sondern

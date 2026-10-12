@@ -24,6 +24,35 @@ class MailFehler(Exception):
     pass
 
 
+class Versandergebnis(str):
+    """Die Message-ID — und welche Blindkopien der Mailserver abgelehnt hat.
+
+    Ein str, damit jeder Aufrufer, der nur die Kennung braucht, unveraendert
+    weiterarbeitet. Bis zum 12.10.2026 stand eine abgelehnte Blindkopie nur
+    im technischen Log des Dienstes: Der Kunde bekam die Rechnung, die Kopie
+    im Haus blieb aus, und in der Oberflaeche sah alles nach Erfolg aus."""
+    bcc_abgelehnt: dict
+
+    def __new__(cls, kennung: str, bcc_abgelehnt: dict | None = None):
+        obj = super().__new__(cls, kennung)
+        obj.bcc_abgelehnt = dict(bcc_abgelehnt or {})
+        return obj
+
+
+def ablehnung_text(abgelehnt: dict) -> str:
+    """'kopie@haus.example (550 Relay denied)' — fuer Protokoll und Meldung."""
+    teile = []
+    for adresse, antwort in abgelehnt.items():
+        try:
+            code, text = antwort
+        except (TypeError, ValueError):
+            code, text = "", antwort
+        if isinstance(text, bytes):
+            text = text.decode(errors="replace")
+        teile.append(f"{adresse} ({code} {text})".replace("( ", "(").strip())
+    return ", ".join(teile)
+
+
 # Genau EINE Adresse, ohne Anzeigenamen, ohne Trenner. Streng mit Absicht:
 # Die Adresse kommt aus OPERA-Freitext oder von Hand. "a@kunde.de; b@fremd.de"
 # passierte die Positivliste ueber endswith("@kunde.de"), und je nach
@@ -133,8 +162,9 @@ def blindkopien(cfg: dict, city_ledger: bool) -> list[str]:
 
 def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
            xml: bytes, xml_name: str, pdf: Path | None = None,
-           city_ledger: bool = False) -> str:
-    """Verschickt eine Rechnung. Gibt die Message-ID zurueck.
+           city_ledger: bool = False) -> Versandergebnis:
+    """Verschickt eine Rechnung. Gibt die Message-ID zurueck, samt der
+    Blindkopien, die der Server abgelehnt hat (Versandergebnis).
     Wirft MailFehler, wenn der Versand nicht moeglich ist."""
     m = cfg["mail"]
     if not m.get("aktiv"):
@@ -219,10 +249,10 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
                          "Die Blindkopie im Haus ist trotzdem angekommen.")
     if abgelehnt:
         log.warning("Blindkopie abgelehnt: %s", abgelehnt)
-    return nachricht["Message-ID"]
+    return Versandergebnis(nachricht["Message-ID"], abgelehnt)
 
 
-def test(cfg: dict, an: str) -> str:
+def test(cfg: dict, an: str) -> Versandergebnis:
     """Testmail an eine Adresse — prueft Server, Anmeldung und BCC."""
     return senden(cfg, an=an, bill_no=0, issuedate="",
                   xml=b"<test/>", xml_name="test.xml")

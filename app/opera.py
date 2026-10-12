@@ -289,7 +289,12 @@ def udf_uebersicht() -> list[dict]:
     gehoert auf Knopfdruck, nicht in den Seitenaufbau."""
     zeilen = db.abfrage(_sql("udf_uebersicht.sql"))
     for z in zeilen:
-        z["frei"] = not z.get("belegt")
+        # Frei ist ein Feld nur, wenn es in KEINER Kartei einen Wert traegt —
+        # die Spalte NAME.UDFCnn teilen sich alle Profiltypen. Gemessen am
+        # 12.10.2026: zehn Felder waren an Firmenkarteien leer und an
+        # Gastkarteien mit bis zu 183.579 Werten belegt.
+        gesamt = z.get("belegt_gesamt")
+        z["frei"] = not (gesamt if gesamt is not None else z.get("belegt"))
         z["sichtbar"] = str(z.get("sichtbar") or "N").upper() == "Y"
         z["empfohlen"] = z["frei"] and not z.get("beschriftung")
     return zeilen

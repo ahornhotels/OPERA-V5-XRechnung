@@ -831,6 +831,7 @@ async def konfiguration_speichern(request: Request):
                    (cfg.get("mail") or {}).get("smtp_port"))
     vorher_update = dict(cfg.get("update") or {})
     vorher_automatik = bool(cfg["automatik"].get("aktiv"))
+    vorher_udf = cfg["property"].get("udf_leitweg") or ""
     ungueltig: list[str] = []
     # Felder, die ohne Inhalt wertlos sind: Ein leeres Feld laesst den
     # bisherigen Wert stehen, statt ihn zu loeschen. Guertel neben dem
@@ -880,6 +881,19 @@ async def konfiguration_speichern(request: Request):
     if updater.quelle(cfg)[2]:
         for feld in ("repo", "zweig"):
             cfg["update"][feld] = vorher_update.get(feld, cfg["update"].get(feld))
+
+    # Das Leitweg-Feld steht seit dem 12.10.2026 auch hier und nicht nur auf
+    # /einrichtung/leitweg. Es gelten dieselben Regeln wie dort: Der Name wird
+    # in die Abfrage eingesetzt, nicht gebunden — nur UDFC01..UDFC40 kommen
+    # durch. Die Schleife oben hat den Rohwert schon eingetragen; hier wird er
+    # normalisiert oder abgelehnt.
+    if "property.udf_leitweg" in formular:
+        udf = str(formular["property.udf_leitweg"]).strip().upper()
+        if udf and udf not in opera.UDF_SPALTEN:
+            ungueltig.append(f"Leitweg-ID-Feld: „{udf}“ ist kein gültiges Feld — "
+                             "erlaubt sind UDFC01 bis UDFC40")
+        else:
+            cfg["property"]["udf_leitweg"] = udf
 
     if ungueltig:
         return RedirectResponse("/konfiguration?meldung=NICHT GESPEICHERT — " + "; ".join(ungueltig),
@@ -933,6 +947,10 @@ async def konfiguration_speichern(request: Request):
         return RedirectResponse(f"/konfiguration?meldung=NICHT GESPEICHERT — {e}",
                                 status_code=303)
     store.protokoll("konfiguration", "geaendert", benutzer=request.state.benutzer)
+    if (cfg["property"].get("udf_leitweg") or "") != vorher_udf:
+        store.protokoll("einrichtung", "Leitweg-Feld gesetzt auf "
+                        f"{cfg['property'].get('udf_leitweg') or '(keines)'}",
+                        benutzer=request.state.benutzer)
     # Die Automatik folgt dem Schalter sofort. Vorher zeigte die Kopfzeile nach
     # dem Speichern "Automatik an", waehrend bis zum Neustart nichts lief.
     if bool(cfg["automatik"].get("aktiv")) != vorher_automatik:
@@ -1113,8 +1131,16 @@ def mailtest(request: Request, an: str = Form(...)):
     if not _darf_verwalten(request):
         return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
     try:
-        mailer.test(config.laden(), an)
-        meldung = f"Testmail an {an} verschickt (BCC inbegriffen)"
+        ergebnis = mailer.test(config.laden(), an)
+        abgelehnt = getattr(ergebnis, "bcc_abgelehnt", None)
+        if abgelehnt:
+            text = mailer.ablehnung_text(abgelehnt)
+            meldung = (f"Testmail an {an} verschickt — ABER die Blindkopie wurde vom "
+                       f"Mailserver abgelehnt: {text}")
+            store.protokoll("testmail", f"an {an}; Blindkopie abgelehnt: {text}",
+                            benutzer=request.state.benutzer, erfolg=False)
+        else:
+            meldung = f"Testmail an {an} verschickt (BCC inbegriffen)"
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)

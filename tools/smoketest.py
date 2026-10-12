@@ -2555,6 +2555,34 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     _e2 = klient.get("/einrichtung/leitweg?pruefen=1")
     pruefe(_e2.status_code == 200 and "ging nicht" in _e2.text,
            "ohne Datenbank meldet die Feldpruefung das, statt abzustuerzen")
+    # Frei heisst: in KEINER Kartei belegt. NAME.UDFCnn teilen sich alle
+    # Profiltypen; am 12.10.2026 zeigte die Seite zehn Felder als frei, die
+    # an Gastkarteien mit bis zu 183.579 Werten belegt waren.
+    import app.opera as _op
+    _db_vorher = _op.db.abfrage
+    _op.db.abfrage = lambda *a, **k: [
+        {"spalte": "UDFC01", "beschriftung": None, "sichtbar": "N", "belegt": 0,
+         "belegt_gesamt": 183579, "karteien": 201391, "profile_gesamt": 1100000},
+        {"spalte": "UDFC05", "beschriftung": "Leitweg-ID", "sichtbar": "Y", "belegt": 1,
+         "belegt_gesamt": 1, "karteien": 201391, "profile_gesamt": 1100000},
+        {"spalte": "UDFC39", "beschriftung": "C/O Ref.", "sichtbar": "Y", "belegt": 0,
+         "belegt_gesamt": 0, "karteien": 201391, "profile_gesamt": 1100000},
+        {"spalte": "UDFC06", "beschriftung": None, "sichtbar": "N", "belegt": 0,
+         "belegt_gesamt": 0, "karteien": 201391, "profile_gesamt": 1100000}]
+    try:
+        _u = {z["spalte"]: z for z in _op.udf_uebersicht()}
+        _seite = klient.get("/einrichtung/leitweg?pruefen=1").text
+    finally:
+        _op.db.abfrage = _db_vorher
+    pruefe(not _u["UDFC01"]["frei"] and not _u["UDFC01"]["empfohlen"],
+           "ein Feld, das nur an Gastkarteien belegt ist, gilt nicht als frei")
+    pruefe(_u["UDFC06"]["empfohlen"], "ein Feld ohne jeden Wert und ohne Beschriftung ist geeignet")
+    pruefe(not _u["UDFC39"]["empfohlen"] and "in OPERA schon" in _seite,
+           "ein beschriftetes Feld ohne Daten wird nicht vorgeschlagen")
+    pruefe(_u["UDFC05"]["sichtbar"] and not _u["UDFC05"]["frei"],
+           "das eingerichtete Leitweg-Feld erscheint sichtbar und belegt")
+    pruefe("insgesamt" in _seite and "183579" in _seite,
+           "die Seite nennt die Belegung an Gastkarteien")
     # Speichern: nur gueltige Feldnamen.
     for _feld, _gilt in (("UDFC05", True), ("udfc07", True),
                          ("UDFC99", False), ("NAME", False), ("", True)):
@@ -2565,6 +2593,41 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                f"'{_feld}' {'wird uebernommen' if _gilt else 'wird abgelehnt'} "
                f"(gespeichert: '{_ist}')")
     klient.post("/einrichtung/leitweg", data={"feld": ""}, follow_redirects=False)
+
+    # Seit dem 12.10.2026 auch als eigene Karte auf der Konfigurationsseite —
+    # vorher nur ein Link in der Karte "Aktualisierung", und der wurde
+    # uebersehen. Dieselben Regeln wie auf der Unterseite.
+    _k = klient.get("/konfiguration").text
+    pruefe('name="property.udf_leitweg"' in _k,
+           "die Konfigurationsseite hat ein eigenes Feld fuer die Leitweg-ID")
+    _karte = _k[_k.find("<h2>Leitweg-ID"):]
+    _karte = _karte[:_karte.find("</section>")]
+    pruefe('href="/einrichtung/leitweg"' in _karte,
+           "und die Anleitung ist aus dieser Karte heraus verlinkt")
+    pruefe("kein Feld eingestellt" in _karte,
+           "ohne eingestelltes Feld sagt die Karte das ausdruecklich")
+    for _feld, _gilt in (("udfc05", True), ("UDFC99", False), ("NAME", False),
+                         ("UDFC05; DROP", False), ("", True)):
+        klient.post("/konfiguration", data={"property.udf_leitweg": "UDFC07"},
+                    follow_redirects=False)
+        _a = klient.post("/konfiguration", data={"property.udf_leitweg": _feld},
+                         follow_redirects=False)
+        _ist = config.laden()["property"].get("udf_leitweg", "")
+        if _gilt:
+            pruefe(_ist == _feld.upper(),
+                   f"Konfiguration: '{_feld}' wird uebernommen (gespeichert: '{_ist}')")
+        else:
+            pruefe(_ist == "UDFC07" and "NICHT GESPEICHERT" in _uq(_a.headers.get("location", "")),
+                   f"Konfiguration: '{_feld}' wird abgelehnt, der alte Wert bleibt "
+                   f"(gespeichert: '{_ist}')")
+    klient.post("/konfiguration", data={"property.udf_leitweg": "UDFC05"},
+                follow_redirects=False)
+    _karte = klient.get("/konfiguration").text
+    _karte = _karte[_karte.find("<h2>Leitweg-ID"):]
+    pruefe("<strong>UDFC05</strong>" in _karte[:_karte.find("</section>")],
+           "ein eingestelltes Feld nennt die Karte beim Namen")
+    klient.post("/konfiguration", data={"property.udf_leitweg": ""},
+                follow_redirects=False)
 
     # Einrichtungsseite fuer die Anzahlungen. Sie ersetzt einen Knopf, der das
     # Ergebnis in eine Meldungszeile schrieb — eine Zeile ist der falsche Ort
@@ -3487,6 +3550,18 @@ try:
         pruefe(False, "B2: ein abgelehnter Kunde bei angenommener Blindkopie ist ein Fehler")
     except _mailer.MailFehler as e:
         pruefe("abgelehnt" in str(e), f"B2: ein abgelehnter Kunde bei angenommener Blindkopie ist ein Fehler ({str(e)[:60]})")
+    # Umgekehrt: Der Kunde wird angenommen, nur die Blindkopie abgelehnt. Bis
+    # zum 12.10.2026 stand das allein im technischen Log; die Oberflaeche
+    # meldete Erfolg, und die Kopie im Haus blieb aus, ohne dass es jemand sah.
+    _FalscherServer.ablehnen = {"kopie@haus.example"}
+    _erg = _mailer.senden(_mcfg, an="kunde@firma.example", bill_no=1, issuedate="",
+                          xml=b"<x/>", xml_name="x.xml")
+    pruefe("kopie@haus.example" in getattr(_erg, "bcc_abgelehnt", {})
+           and str(_erg).startswith("<"),
+           "eine abgelehnte Blindkopie kommt beim Aufrufer an, die Kennung bleibt ein Text")
+    pruefe("554" in _mailer.ablehnung_text(_erg.bcc_abgelehnt)
+           and "Relay access denied" in _mailer.ablehnung_text(_erg.bcc_abgelehnt),
+           "und der Grund des Servers steht im Text")
     _FalscherServer.ablehnen = set()
     _smtp_protokoll.clear()
     _mailer.senden(_mcfg, an="kunde@firma.example", bill_no=1, issuedate="", xml=b"<x/>", xml_name="x.xml")
@@ -4043,6 +4118,16 @@ try:
     except _mailer.MailFehler:
         pass
     pruefe(store.rechnung(960010)["status"] == "fehler", "B2: ein abgelehnter Versand steht auf 'fehler'")
+    # Blindkopie abgelehnt, Kunde bedient: gesendet — und sichtbar im Protokoll.
+    _mailer.senden = lambda cfg, **k: _mailer.Versandergebnis(
+        "<id@test>", {"kopie@haus.example": (554, b"5.7.1 Relay access denied")})
+    store.setzen(960010, status="bereit", fehler=None)
+    ablauf.versenden(_vcfg, 960010)
+    _p10 = store.protokoll_lesen(10, 960010)
+    pruefe(store.rechnung(960010)["status"] == "gesendet"
+           and any("Blindkopie vom Mailserver abgelehnt" in e["text"] and not e["erfolg"]
+                   and "Relay access denied" in e["text"] for e in _p10),
+           "eine abgelehnte Blindkopie steht als Fehler im Protokoll der Rechnung")
     # xml_erzeugen: Ansehen schreibt nichts, Befund getrennt von Gruenden
     store.setzen(960010, status="pruefung", fehler="Firma an der Reservierung", pruefbefund=None, xml_pfad=None)
     ablauf.xml_erzeugen(_vcfg, 960010, ablegen=False)

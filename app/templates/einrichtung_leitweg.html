@@ -29,7 +29,7 @@
   <h2>Schritt 1: Welches Feld ist frei?</h2>
   <p class="klein">Die Prüfung sieht in der Datenbank nach, welche Felder an der
   Firmenkartei sichtbar sind und in welchen schon Werte stehen. Sie läuft über alle
-  Firmenkarteien und braucht einen Moment.</p>
+  Karteien und braucht einen Moment.</p>
   <form method="get" action="/einrichtung/leitweg">
     <input type="hidden" name="pruefen" value="1">
     <button class="haupt">Felder in der Datenbank prüfen</button>
@@ -48,18 +48,23 @@
       <td class="fest"><strong>{{ f.spalte }}</strong></td>
       <td>{{ f.beschriftung or '—' }}</td>
       <td class="klein">{% if f.sichtbar %}sichtbar ({{ f.block }}){% else %}nicht eingerichtet{% endif %}</td>
-      <td class="zahl">{{ f.belegt or 0 }} von {{ f.karteien }}</td>
+      <td class="zahl">{{ f.belegt or 0 }} von {{ f.karteien }}
+        {% if (f.belegt_gesamt or 0) > (f.belegt or 0) %}<br><span class="klein">insgesamt
+        {{ f.belegt_gesamt }} — auch an Gastkarteien</span>{% endif %}</td>
       <td>
         {% if f.empfohlen %}<span class="status bereit">frei — geeignet</span>
-        {% elif f.frei %}<span class="status pruefung">frei, aber schon beschriftet</span>
+        {% elif f.frei %}<span class="status pruefung">ohne Daten, aber in OPERA schon
+          eingerichtet — nicht nehmen</span>
         {% else %}<span class="status fehler">belegt — nicht nehmen</span>{% endif %}
       </td>
     </tr>
     {% endfor %}
   </table>
-  <p class="klein">„frei — geeignet" heißt: Das Feld trägt in keiner Kartei einen Wert
-  und ist in OPERA noch nicht beschriftet. Sie können es also gefahrlos für die
-  Leitweg-ID einrichten.</p>
+  <p class="klein">„frei — geeignet" heißt: Das Feld trägt in keiner Kartei einen Wert —
+  weder an Firmen noch an Gästen — und ist an der Firmenkartei noch nicht beschriftet.
+  Sie können es also gefahrlos für die Leitweg-ID einrichten. Die Felder teilen sich
+  alle Karteiarten: Ein Feld, das an Firmenkarteien leer ist, kann an Gastkarteien
+  längst benutzt werden.</p>
   {% elif geprueft %}
   <p class="hinweis">Es kam nichts zurück.</p>
   {% endif %}

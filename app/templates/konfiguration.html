@@ -43,6 +43,29 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
     <label>BIC<input name="property.bic" value="{{ cfg.property.bic }}"></label>
     <label>Kontoinhaber<input name="property.kontoinhaber" value="{{ cfg.property.kontoinhaber }}"></label>
     <label>Zahlungsziel (Tage)<input name="property.zahlungsziel_tage" value="{{ cfg.property.zahlungsziel_tage }}"></label>
+  </section>
+
+  {# Eigene Karte: Das Feld stand vorher nur hinter einem Link in der Karte
+     "Aktualisierung" und wurde dort übersehen. Die Anleitung für den Screen
+     Painter bleibt auf ihrer Unterseite — hier steht der Konfigurationspunkt. #}
+  <section class="karte">
+    <h2>Leitweg-ID und Käuferreferenz (BT-10)</h2>
+    <label class="hervor">Feld der Firmenkartei mit der Leitweg-ID
+      <input name="property.udf_leitweg" value="{{ cfg.property.udf_leitweg or '' }}"
+             placeholder="z. B. UDFC05" title="UDFC01 bis UDFC40, oder leer lassen">
+      <span class="klein">Benutzerdefiniertes Feld an der <strong>Firmenkartei</strong>
+      (<code>UDFC01</code>–<code>UDFC40</code>). Leer lassen heißt: Die Anwendung sieht
+      dort nicht nach.</span></label>
+    {% if cfg.property.udf_leitweg %}
+    <p class="hinweis">Die Leitweg-ID wird zurzeit aus
+      <strong>{{ cfg.property.udf_leitweg }}</strong> gelesen.</p>
+    {% else %}
+    <p class="fehler">Zurzeit ist kein Feld eingestellt — eine Leitweg-ID an der
+      Firmenkartei wird nicht gelesen.</p>
+    {% endif %}
+    <p class="klein"><a href="/einrichtung/leitweg">Anleitung: Feld finden und in OPERA
+      einrichten</a> — welches Feld frei ist, und wie es per Screen Painter an die
+      Firmenkartei kommt.</p>
     <label>Mitgliedschaftstyp Leitweg-ID<input name="property.mitgliedschaftstyp_leitweg" value="{{ cfg.property.mitgliedschaftstyp_leitweg }}"></label>
     <label>Käuferreferenz (BT-10), wenn keine hinterlegt ist
       <select name="property.buyerreference_ersatz">
@@ -174,9 +197,6 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <h2>Aktualisierung</h2>
     <label class="schalter"><input type="checkbox" name="update.aktiv" value="1"
       {{ 'checked' if cfg['update'].aktiv }}> Aktualisierung über GitHub erlaubt</label>
-    <p class="hinweis"><a href="/einrichtung/leitweg">Leitweg-ID einrichten</a> —
-      welches Feld der Firmenkartei die Leitweg-ID trägt, mit Anleitung für den
-      Screen Painter.</p>
     {% if quelle_festgenagelt %}
     {# Steht die Quelle in der systemd-Unit, gehoert sie root — und dann darf
        sie hier nicht bearbeitbar sein, sonst suggeriert das Feld eine Wirkung,

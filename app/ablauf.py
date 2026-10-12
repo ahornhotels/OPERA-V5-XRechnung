@@ -782,6 +782,15 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
                     f"XRechnung {fassung} an {an}, BCC {bcc}"
                     f"{' (City Ledger)' if ist_cl else ''}, {kennung}",
                     bill_no=bill_no, benutzer=benutzer)
+    # Die Rechnung IST beim Kunden — deshalb bleibt sie 'gesendet'. Aber die
+    # Kopie im Haus fehlt, und das gehoert sichtbar ins Protokoll, nicht nur
+    # ins technische Log.
+    abgelehnt = getattr(kennung, "bcc_abgelehnt", None)
+    if abgelehnt:
+        store.protokoll("versand", "Blindkopie vom Mailserver abgelehnt: "
+                        f"{mailer.ablehnung_text(abgelehnt)} — die Rechnung ging an {an}, "
+                        "die Kopie im Haus fehlt", bill_no=bill_no, benutzer=benutzer,
+                        erfolg=False)
     return kennung
 
 
