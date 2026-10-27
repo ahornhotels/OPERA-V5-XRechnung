@@ -347,6 +347,9 @@ $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] -
     while ($p) { if ($p -is [System.Management.Automation.Language.FunctionDefinitionAst]) { $in = $p.Name; break }; $p = $p.Parent }
     "UMLEITUNG " + $_.Extent.StartLineNumber + " " + $in
 }
+$ast.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] }, $true) |
+    ForEach-Object { "VARIABLE " + ($_.VariablePath.UserPath -replace '^(script|global|local|private|using):', '') } |
+    Sort-Object -Unique -CaseSensitive
 $f = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq "Nativ" }, $true) | Select-Object -First 1
 if (-not $f) { "NATIV fehlt"; exit }
 . ([ScriptBlock]::Create($f.Extent.Text))
@@ -369,6 +372,16 @@ try { $c = Nativ printf '%s;' "mit leer" -x; "ARGS_OK $c" } catch { "ARGS_ABBRUC
     ausserhalb = [z for z in aus if z.startswith("UMLEITUNG") and not z.endswith(" Nativ")]
     pruefe(not ausserhalb,
            f"keine Umleitung nativer Ausgaben ausserhalb von Nativ (5.1 bricht daran ab) ({ausserhalb})")
+    # PowerShell unterscheidet bei Variablennamen nicht zwischen gross und
+    # klein. Die Schleife foreach ($schritt ...) ueberschrieb so den
+    # Schrittzaehler $Schritt, und der Installer brach nach den Ordnerrechten ab.
+    _namen: dict[str, set[str]] = {}
+    for z in aus:
+        if z.startswith("VARIABLE "):
+            _namen.setdefault(z[9:].lower(), set()).add(z[9:])
+    _doppelt = sorted(v for v in _namen.values() if len(v) > 1)
+    pruefe(len(_namen) > 20 and not _doppelt,
+           f"keine zwei Variablen, die sich nur in Gross/Klein unterscheiden ({_doppelt})")
     pruefe(any(z.startswith("JAVA_OK openjdk") for z in aus),
            f"java -version ueber Nativ bricht unter 'Stop' nicht ab und liefert die Zeile "
            f"({[z for z in aus if z.startswith('JAVA') or z.startswith('NATIV')]})")
@@ -383,6 +396,12 @@ pfad_zuweisungen = re.findall(r"^\s*\$env:Path\s*=.*$", ps1_text, flags=re.M | r
 pruefe(pfad_zuweisungen and all('"User"' in z or "PfadNeuLaden" in z or "$benutzer" in z
                                 for z in pfad_zuweisungen),
        f"PATH wird nie nur aus dem Maschinenteil gesetzt ({pfad_zuweisungen})")
+# Java kommt als Zip nach validation\jre, nicht als MSI: Das MSI traegt sich
+# in den systemweiten Suchpfad ein, und auf OPERA-Rechnern steht dort ein
+# Java 8, das die OPERA-Oberflaeche braucht.
+pruefe("Temurin" not in "".join(re.findall(r"winget install[^\n]*", ps1_text))
+       and "validation\\jre" in ps1_text and "Get-FileHash" in ps1_text,
+       "Java wird nicht systemweit installiert, sondern als Zip mit Pruefsumme nach validation\\jre")
 nach_winget = re.findall(r"winget install[^\n]*(?:\n[^\n]*){0,4}", ps1_text)
 pruefe(nach_winget and all("PfadNeuLaden" in s for s in nach_winget),
        "nach jedem winget install wird der Suchpfad neu gelesen")

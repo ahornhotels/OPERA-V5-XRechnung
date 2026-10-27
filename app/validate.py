@@ -170,8 +170,9 @@ def zustand(cfg: dict) -> dict:
     elif (java_hauptversion(version) or JAVA_MINDESTENS) < JAVA_MINDESTENS:
         fehlt.append(f"Java {java_hauptversion(version)} ({java}) ist zu alt — das "
                      f"Pruefprogramm braucht Java {JAVA_MINDESTENS} oder neuer. "
-                     "Eine JRE 21 installieren und unter Konfiguration -> Java "
-                     "den vollen Pfad zu deren java.exe eintragen")
+                     "Unter Windows legt ein erneuter Lauf von install\\installieren.ps1 "
+                     "eine eigene Java 21 nach validation\\jre; sonst eine JRE 21 "
+                     "installieren und unter Konfiguration -> Java ihren Pfad eintragen")
     if not jar:
         fehlt.append("Validator-JAR — Pfad nicht konfiguriert")
     elif not jar.exists():

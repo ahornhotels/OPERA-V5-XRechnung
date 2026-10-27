@@ -36,6 +36,14 @@ Er zeigt nach jedem Schritt `[ok]` oder eine Meldung, was fehlt, und nennt am
 Ende Adresse und Startpasswort. **Dauer: 10 bis 20 Minuten**, überwiegend
 Wartezeit. Der Rechner braucht dafür Internetzugang.
 
+**Java und OPERA.** Auf einem OPERA-Rechner liegt meist ein Java 8 (32 Bit)
+für die OPERA-Oberfläche. Das bleibt, wie es ist. Das Prüfprogramm braucht
+Java 11 oder neuer. Der Windows-Installer legt dafür eine eigene Java 21
+(64 Bit) nach `C:\XRechnung\validation\jre`, als entpacktes Zip. Es kommt
+nicht in den Suchpfad, nicht in die Registry und übernimmt keine
+`.jar`-Dateien. OPERA und andere Programme merken davon nichts. Ein
+erneuter Lauf des Installers bringt dieses Java auf den neuesten Stand.
+
 Er **bricht nicht ab**, wenn etwas nicht klappt: Fehlt zum Beispiel Java, läuft
 der Rest weiter, und am Ende steht, was nachzuholen ist.
 
@@ -169,14 +177,13 @@ einzelnen Punkt nachholen will.
 den Haken bei „Add python.exe to PATH"** setzen. Prüfen: `Windows+R`, `cmd`,
 `python --version` → es muss eine 3.12er-Nummer erscheinen.
 
-**2. Java.** <https://adoptium.net/de/temurin/releases/> — Windows, x64, **JRE**,
-Version 21, `.msi` installieren. Prüfen: `java -version`. Erscheint dort
-`1.8.0_…`, steht ein altes Java 8 vorn im Suchpfad (oft für andere Programme
-installiert, also nicht entfernen). Das Prüfprogramm braucht Java 11 oder
-neuer. Dann unter **Konfiguration → Java** den vollen Pfad zur neuen
-`java.exe` eintragen, etwa
-`C:\Program Files\Eclipse Adoptium\jre-21.0.5.11-hotspot\bin\java.exe`. Der
-Installer erledigt das selbst.
+**2. Java.** <https://adoptium.net/de/temurin/releases/>: Windows, x64,
+**JRE**, Version 21, die **`.zip`**-Datei (nicht das `.msi`). Entpacken und den
+Ordner darin (`jdk-21…-jre`) als `C:\XRechnung\validation\jre` ablegen, so
+dass `C:\XRechnung\validation\jre\bin\java.exe` existiert. Die Anwendung
+nimmt dieses Java von selbst. Ein vorhandenes Java 8, etwa für OPERA, bleibt
+unberührt. Das `.msi` würde sich dagegen in den Suchpfad eintragen und
+`.jar`-Dateien übernehmen.
 
 **3. Programm ablegen.** Projektinhalt nach `C:\XRechnung` kopieren.
 

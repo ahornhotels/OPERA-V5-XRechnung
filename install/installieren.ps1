@@ -56,29 +56,14 @@ function JavaHaupt($zeile) {
     return 0
 }
 
-# Das erste Java ab 11, als @(Pfad, Versionszeile) oder $null. Gesucht wird
-# im Suchpfad (alle Treffer, nicht nur der erste) und in den ueblichen
-# Installationsordnern — winget legt Temurin dort ab, und vor ihm kann im
-# Suchpfad noch ein altes Java stehen.
-function JavaSuchen {
-    $kandidaten = @(Get-Command java -All -CommandType Application -ErrorAction SilentlyContinue |
-                    ForEach-Object { $_.Source })
-    foreach ($ordner in @("Eclipse Adoptium", "Java", "Microsoft")) {
-        $wurzel = Join-Path $env:ProgramFiles $ordner
-        if (Test-Path $wurzel) {
-            # Nur eine Ebene tief (jdk-21...\bin\java.exe): Unter "Microsoft"
-            # liegt auf einem Server weit mehr als ein JDK.
-            $kandidaten += @(Get-ChildItem -Path $wurzel -Directory -ErrorAction SilentlyContinue |
-                             Sort-Object Name -Descending |
-                             ForEach-Object { Join-Path $_.FullName "bin\java.exe" } |
-                             Where-Object { Test-Path $_ })
-        }
-    }
-    foreach ($exe in ($kandidaten | Select-Object -Unique)) {
-        $zeile = (Nativ $exe -version) | Select-Object -First 1
-        if ($script:NativCode -eq 0 -and (JavaHaupt $zeile) -ge 11) { return @($exe, $zeile) }
-    }
-    return $null
+# Die Laufzeitumgebung, die die Anwendung zuerst nimmt (app/validate.py,
+# java_pfad): validation\jre\bin\java.exe. Sie liegt nur in diesem Ordner —
+# kein Eintrag im Suchpfad, keine Registry, keine .jar-Verknuepfung.
+function JreVersion($ordner) {
+    $release = Join-Path $ordner "release"
+    if (-not (Test-Path $release)) { return "" }
+    $zeile = Get-Content $release | Where-Object { $_ -like 'JAVA_RUNTIME_VERSION=*' } | Select-Object -First 1
+    return ("$zeile" -replace '^JAVA_RUNTIME_VERSION=', '').Trim('"')
 }
 
 # Ruft ein externes Programm auf: Nativ <programm> <argumente...>
@@ -169,7 +154,7 @@ Write-Host "  Folgendes ist vorgesehen. Jeder Punkt wird einzeln angesagt und mu
 Write-Host "  bestaetigt werden - Ablehnen ueberspringt nur diesen Punkt:"
 Write-Host ""
 Write-Host "    1. Python 3.12                ueber winget von python.org"
-Write-Host "    2. Java 21 (JRE)              ueber winget von adoptium.net"
+Write-Host "    2. Java 21 (JRE)              Zip von adoptium.net, nur in $Basis\validation\jre"
 Write-Host "    3. Python-Bausteine           von pypi.org"
 Write-Host "    4. KoSIT-Pruefprogramm        von github.com/itplr-kosit"
 Write-Host "    5. Konfigurationsvorlage      oertlich, kein Download"
@@ -224,46 +209,112 @@ foreach ($kandidat in @("py", "python")) {
     }
 
     # ------------------------------------------------------------------ 2. Java
-    # Vorher genuegte hier JEDES Java. Ein Java 8 meldete "[ok]", der Validator
-    # (braucht 11) haette erst an der ersten Rechnung versagt.
-    # $JavaPfad wird nur gesetzt, wenn das passende Java NICHT das erste im
-    # Suchpfad ist — dann traegt Schritt "Konfiguration" den vollen Pfad ein.
+    # Auf einem OPERA-Rechner liegt meist ein Oracle JRE 8 (32 Bit) fuer die
+    # Forms-Oberflaeche. Das darf nicht ersetzt werden, und es darf sich auch
+    # nichts davor schieben: Das Temurin-MSI traegt sich in den systemweiten
+    # Suchpfad ein und uebernimmt die .jar-Verknuepfung. Deshalb kein MSI,
+    # sondern das Zip der JRE 21 (x64), entpackt nach validation\jre. Die
+    # Anwendung schaut dort zuerst nach. Das alte Java sieht davon nichts.
+    #
+    # Ein Java ab 11, das schon VORN im Suchpfad steht, genuegt ebenfalls —
+    # dann wird nichts geladen. Ein erneuter Lauf bringt die eigene JRE auf
+    # den neuesten Stand; der Dienst wird dafuer kurz angehalten, weil die
+    # laufende Pruefung die java.exe sperrt.
     Titel "Java (fuer die Rechnungspruefung)"
-    $JavaPfad = $null
+    $ValidOrdner = Join-Path $Basis "validation"
+    $JreOrdner = Join-Path $ValidOrdner "jre"
+    $JreJava = Join-Path $JreOrdner "bin\java.exe"
+    $JreStand = ""
+    if (Test-Path $JreJava) {
+        $zeile = (Nativ $JreJava -version) | Select-Object -First 1
+        if ($script:NativCode -eq 0 -and (JavaHaupt $zeile) -ge 11) { $JreStand = JreVersion $JreOrdner }
+    }
     $JavaErster = (Get-Command java -CommandType Application -ErrorAction SilentlyContinue |
                    Select-Object -First 1).Source
+    $JavaSystem = ""
     if ($JavaErster) {
-        $alteZeile = (Nativ $JavaErster -version) | Select-Object -First 1
-        if ((JavaHaupt $alteZeile) -lt 11) {
-            Info "im Suchpfad: $alteZeile ($JavaErster) - zu alt, das Pruefprogramm braucht Java 11 oder neuer"
-            Info "das alte Java bleibt unangetastet; andere Programme brauchen es vielleicht"
+        $JavaSystem = (Nativ $JavaErster -version) | Select-Object -First 1
+        if ((JavaHaupt $JavaSystem) -lt 11) {
+            Info "im Suchpfad: $JavaSystem ($JavaErster) - fuer die Pruefung zu alt, bleibt aber unangetastet"
+            $JavaSystem = ""
         }
     }
-    $JavaGefunden = JavaSuchen
-    if ($JavaGefunden) {
-        Gut "$($JavaGefunden[1]) ($($JavaGefunden[0]))"
-        if ($JavaGefunden[0] -ne $JavaErster) { $JavaPfad = $JavaGefunden[0] }
-    } elseif (Vorhanden "winget") {
-        Ansage "Java 21 (JRE) installieren" "winget, Quelle adoptium.net" `
-               "das KoSIT-Pruefprogramm ist ein Java-Programm und braucht Java 11 oder neuer"
-        if (Frage) {
-            $null = Nativ winget install --id EclipseAdoptium.Temurin.21.JRE --silent `
-                   --accept-package-agreements --accept-source-agreements
-            if ($script:NativCode -ne 0) { Info "winget meldet Rueckgabewert $script:NativCode" }
-            PfadNeuLaden
-            $JavaErster = (Get-Command java -CommandType Application -ErrorAction SilentlyContinue |
-                           Select-Object -First 1).Source
-            $JavaGefunden = JavaSuchen
-            if ($JavaGefunden) {
-                Gut "Java installiert: $($JavaGefunden[1]) ($($JavaGefunden[0]))"
-                if ($JavaGefunden[0] -ne $JavaErster) { $JavaPfad = $JavaGefunden[0] }
-            }
-            else { Schlecht "Java 21 wurde installiert, ist aber nicht zu finden. Den Pfad zu java.exe spaeter unter Konfiguration -> Java eintragen." }
-        } else {
-            Uebergangen "Java 11 oder neuer - die Rechnungspruefung bleibt aus. Nachholen: https://adoptium.net/de/temurin/releases/ (JRE 21, Windows x64), dann den Pfad zu java.exe unter Konfiguration -> Java eintragen"
-        }
+
+    $JreNeu = $null
+    if ($JavaSystem -and -not $JreStand) {
+        Gut "$JavaSystem ($JavaErster)"
     } else {
-        Schlecht "Java fehlt und winget ist nicht vorhanden. Von https://adoptium.net/de/temurin/releases/ die JRE 21 fuer Windows x64 installieren. Ohne Java laeuft nur die Rechnungspruefung nicht."
+        try {
+            # Erst in eine Variable: 5.1 reicht ein JSON-Feld aus
+            # Invoke-RestMethod als EIN Objekt weiter, erst die Variable zaehlt auf.
+            $liste = Invoke-RestMethod -Uri ("https://api.adoptium.net/v3/assets/latest/21/hotspot" +
+                     "?architecture=x64&image_type=jre&os=windows&vendor=eclipse") `
+                     -Headers @{ "User-Agent" = "OPERA-XRechnung" } -TimeoutSec 60
+            $JreNeu = $liste | Select-Object -First 1
+        } catch {
+            Info "Adoptium nicht erreichbar: $($_.Exception.Message)"
+        }
+        if ($JreStand -and (-not $JreNeu -or $JreNeu.version.openjdk_version -eq $JreStand)) {
+            Gut "Java $JreStand in validation\jre"
+            $JreNeu = $null
+        } elseif (-not $JreNeu) {
+            Schlecht "Java 21 konnte nicht geladen werden. Nachholen: installieren.ps1 erneut ausfuehren, oder von Hand - siehe INSTALLATION.md, 'Windows von Hand'"
+        }
+    }
+    if ($JreNeu) {
+        $paket = $JreNeu.binary.package
+        if ($JreStand) {
+            Ansage "Java in validation\jre aktualisieren: $JreStand -> $($JreNeu.version.openjdk_version)" `
+                   "adoptium.net (Eclipse Temurin)" "Sicherheitsupdates der Laufzeitumgebung"
+        } else {
+            Ansage "Java 21 (JRE, 64 Bit) nach $JreOrdner entpacken (etwa $([int]($paket.size / 1MB)) MB)" `
+                   "adoptium.net (Eclipse Temurin), $($paket.name)" `
+                   "das KoSIT-Pruefprogramm braucht Java 11 oder neuer - nur fuer diese Anwendung, nichts im System"
+        }
+        if (-not (Frage)) {
+            Uebergangen "Java 21 - die Rechnungspruefung bleibt aus. Nachholen: installieren.ps1 erneut ausfuehren"
+        } else {
+            $angehalten = $false
+            $tmp = Join-Path $env:TEMP ("jre-" + [Guid]::NewGuid().ToString("N"))
+            $neuOrdner = Join-Path $ValidOrdner "jre.neu"
+            $altOrdner = Join-Path $ValidOrdner "jre.alt"
+            try {
+                New-Item -ItemType Directory -Force -Path $tmp, $ValidOrdner | Out-Null
+                $zip = Join-Path $tmp $paket.name
+                Laden $paket.link $zip
+                $summe = (Get-FileHash -Path $zip -Algorithm SHA256).Hash
+                if ($summe -ne $paket.checksum) { throw "Pruefsumme stimmt nicht ($summe statt $($paket.checksum))" }
+                # Entpackt wird neben das Ziel, nicht nach TEMP: Move-Item kann
+                # unter 5.1 keinen Ordner ueber Laufwerksgrenzen verschieben.
+                Remove-Item $neuOrdner, $altOrdner -Recurse -Force -ErrorAction SilentlyContinue
+                Expand-Archive -Path $zip -DestinationPath $neuOrdner -Force
+                $innen = Get-ChildItem -Path $neuOrdner -Directory | Select-Object -First 1
+                if (-not $innen -or -not (Test-Path (Join-Path $innen.FullName "bin\java.exe"))) {
+                    throw "Im Zip liegt keine bin\java.exe"
+                }
+                $dienstJetzt = Get-Service -Name "OperaXRechnung" -ErrorAction SilentlyContinue
+                if ($dienstJetzt -and $dienstJetzt.Status -eq "Running") {
+                    Info "Dienst OperaXRechnung wird fuer den Austausch angehalten"
+                    Stop-Service -Name "OperaXRechnung" -Force
+                    $angehalten = $true
+                }
+                if (Test-Path $JreOrdner) { Rename-Item $JreOrdner "jre.alt" }
+                Move-Item $innen.FullName $JreOrdner
+                $zeile = (Nativ $JreJava -version) | Select-Object -First 1
+                if ($script:NativCode -ne 0) {
+                    # Zurueck auf den alten Stand, falls es einen gab
+                    Remove-Item $JreOrdner -Recurse -Force -ErrorAction SilentlyContinue
+                    if (Test-Path $altOrdner) { Rename-Item $altOrdner "jre" }
+                    throw "Die neue java.exe startet nicht"
+                }
+                Gut "$zeile (validation\jre)"
+            } catch {
+                Schlecht "Java 21 nicht eingerichtet: $($_.Exception.Message)"
+            } finally {
+                Remove-Item $tmp, $neuOrdner, $altOrdner -Recurse -Force -ErrorAction SilentlyContinue
+                if ($angehalten) { Start-Service -Name "OperaXRechnung" -ErrorAction SilentlyContinue }
+            }
+        }
     }
 
     # ------------------------------------------------- 3. Programmumgebung anlegen
@@ -361,16 +412,6 @@ if (Test-Path $ConfDatei) {
 } else {
     Copy-Item (Join-Path $Basis "config\app.example.json") $ConfDatei
     Gut "aus der Vorlage angelegt - Werte spaeter in der Oberflaeche eintragen"
-}
-if ($JavaPfad) {
-    $eintrag = Join-Path $Basis "install\java_eintragen.py"
-    if (Test-Path $VenvPython) {
-        $javaAusgabe = (Nativ $VenvPython $eintrag $ConfDatei $JavaPfad) -join " "
-        if ($script:NativCode -eq 0) { Gut "Java fuer die Pruefung - $javaAusgabe" }
-        else { Schlecht "Java-Pfad nicht eingetragen ($javaAusgabe). Unter Konfiguration -> Java von Hand eintragen: $JavaPfad" }
-    } else {
-        Schlecht "Java-Pfad unter Konfiguration -> Java von Hand eintragen: $JavaPfad (vor ihm steht ein aelteres Java im Suchpfad)"
-    }
 }
 foreach ($ordner in @("data", "logs", "data\xml", "data\archiv")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Basis $ordner) | Out-Null
