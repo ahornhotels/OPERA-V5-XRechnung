@@ -170,7 +170,13 @@ den Haken bei „Add python.exe to PATH"** setzen. Prüfen: `Windows+R`, `cmd`,
 `python --version` → es muss eine 3.12er-Nummer erscheinen.
 
 **2. Java.** <https://adoptium.net/de/temurin/releases/> — Windows, x64, **JRE**,
-Version 21, `.msi` installieren. Prüfen: `java -version`.
+Version 21, `.msi` installieren. Prüfen: `java -version`. Erscheint dort
+`1.8.0_…`, steht ein altes Java 8 vorn im Suchpfad (oft für andere Programme
+installiert, also nicht entfernen). Das Prüfprogramm braucht Java 11 oder
+neuer. Dann unter **Konfiguration → Java** den vollen Pfad zur neuen
+`java.exe` eintragen, etwa
+`C:\Program Files\Eclipse Adoptium\jre-21.0.5.11-hotspot\bin\java.exe`. Der
+Installer erledigt das selbst.
 
 **3. Programm ablegen.** Projektinhalt nach `C:\XRechnung` kopieren.
 

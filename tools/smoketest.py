@@ -1150,6 +1150,23 @@ if java:
 pruefe(validate.java_laeuft("/gibt/es/nicht/java") is None,
        "nicht vorhandenes Java wird als nicht lauffaehig erkannt")
 
+# Ein Java 8 startet, laeuft aber den Validator nicht. Auf einem Windows-Server
+# lag genau das im Pfad, und der Installer meldete es als in Ordnung.
+for _zeile, _haupt in (('java version "1.8.0_431"', 8), ('openjdk version "11.0.2" 2019-01-15', 11),
+                       ('openjdk version "21.0.4" 2024-07-16 LTS', 21), ('openjdk version "25" 2025-09-16', 25),
+                       ("Java", None)):
+    pruefe(validate.java_hauptversion(_zeile) == _haupt,
+           f"Java-Hauptversion aus {_zeile!r}: {_haupt}")
+_alt_java = validate._java_versionen.copy()
+try:
+    _java8 = _json.loads(_json.dumps(cfg))
+    _java8["validierung"] = dict(_java8.get("validierung") or {}, java=sys.executable)
+    validate._java_versionen[sys.executable] = 'java version "1.8.0_431"'
+    pruefe(any("zu alt" in m for m in validate.zustand(_java8)["fehlt"]),
+           "ein Java 8 meldet der Validator als zu alt statt als einsatzbereit")
+finally:
+    validate._java_versionen.clear(); validate._java_versionen.update(_alt_java)
+
 print("6b) Validierung und Aktualisierung")
 z = validate.zustand(cfg)
 pruefe("bereit" in z and isinstance(z["fehlt"], list), "Validator meldet seinen Zustand")

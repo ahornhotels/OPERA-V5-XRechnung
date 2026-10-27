@@ -103,6 +103,26 @@ def _java_laeuft(java: str) -> str | None:
     return ausgabe[0] if ausgabe else "Java"
 
 
+# Der KoSIT-Validator 1.5 und neuer verlangt Java 11. Ein aelteres Java
+# startet ihn gar nicht erst (UnsupportedClassVersionError) — erst an der
+# ersten Rechnung, mit einer Meldung, die niemand zuordnen kann. Auf
+# Windows-Servern liegt oft noch ein Java 8 fuer andere Programme im Pfad.
+JAVA_MINDESTENS = 11
+_JAVA_VERSION = re.compile(r'version "(\d+)(?:\.(\d+))?')
+
+
+def java_hauptversion(zeile: str) -> int | None:
+    """Hauptversion aus der ersten Zeile von 'java -version':
+    'java version "1.8.0_431"' -> 8, 'openjdk version "21.0.4"' -> 21."""
+    treffer = _JAVA_VERSION.search(zeile or "")
+    if not treffer:
+        return None
+    haupt = int(treffer.group(1))
+    if haupt == 1 and treffer.group(2):
+        return int(treffer.group(2))
+    return haupt
+
+
 _REGELWERK_IM_PFAD = re.compile(r"xrechnung-(\d+\.\d+(?:\.\d+)?)")
 
 
@@ -147,6 +167,11 @@ def zustand(cfg: dict) -> dict:
     elif not version:
         fehlt.append(f"Java gefunden ({java}), startet aber nicht — "
                      "vermutlich nur ein Platzhalter oder eine kaputte Verknuepfung")
+    elif (java_hauptversion(version) or JAVA_MINDESTENS) < JAVA_MINDESTENS:
+        fehlt.append(f"Java {java_hauptversion(version)} ({java}) ist zu alt — das "
+                     f"Pruefprogramm braucht Java {JAVA_MINDESTENS} oder neuer. "
+                     "Eine JRE 21 installieren und unter Konfiguration -> Java "
+                     "den vollen Pfad zu deren java.exe eintragen")
     if not jar:
         fehlt.append("Validator-JAR — Pfad nicht konfiguriert")
     elif not jar.exists():

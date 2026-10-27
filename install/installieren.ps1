@@ -23,12 +23,16 @@ $ErrorActionPreference = "Stop"
 $Basis = Split-Path -Parent $PSScriptRoot
 $Fehler = @()
 $Uebersprungen = @()
-$Schritt = 0
+# Bewusst nicht $Schritt: PowerShell unterscheidet bei Variablennamen nicht
+# zwischen gross und klein, und die Schleifen ueber icacls- und nssm-Aufrufe
+# heissen $schritt. Die erste ueberschrieb den Zaehler mit einem Feld, das
+# naechste $script:Schritt++ brach die Einrichtung nach den Ordnerrechten ab.
+$SchrittNr = 0
 
 function Titel($text) {
-    $script:Schritt++
+    $script:SchrittNr++
     Write-Host ""
-    Write-Host "== Schritt $script:Schritt - $text" -ForegroundColor Cyan
+    Write-Host "== Schritt $script:SchrittNr - $text" -ForegroundColor Cyan
 }
 function Gut($text)  { Write-Host "   [ok]   $text" -ForegroundColor Green }
 function Info($text) { Write-Host "          $text" -ForegroundColor Gray }
@@ -41,6 +45,41 @@ function Uebergangen($text) {
     $script:Uebersprungen += $text
 }
 function Vorhanden($befehl) { $null -ne (Get-Command $befehl -ErrorAction SilentlyContinue) }
+
+# Hauptversion aus der ersten Zeile von 'java -version':
+# 'java version "1.8.0_431"' -> 8, 'openjdk version "21.0.4"' -> 21, sonst 0.
+function JavaHaupt($zeile) {
+    if ("$zeile" -match 'version "(\d+)(?:\.(\d+))?') {
+        if ($Matches[1] -eq "1" -and $Matches[2]) { return [int]$Matches[2] }
+        return [int]$Matches[1]
+    }
+    return 0
+}
+
+# Das erste Java ab 11, als @(Pfad, Versionszeile) oder $null. Gesucht wird
+# im Suchpfad (alle Treffer, nicht nur der erste) und in den ueblichen
+# Installationsordnern — winget legt Temurin dort ab, und vor ihm kann im
+# Suchpfad noch ein altes Java stehen.
+function JavaSuchen {
+    $kandidaten = @(Get-Command java -All -CommandType Application -ErrorAction SilentlyContinue |
+                    ForEach-Object { $_.Source })
+    foreach ($ordner in @("Eclipse Adoptium", "Java", "Microsoft")) {
+        $wurzel = Join-Path $env:ProgramFiles $ordner
+        if (Test-Path $wurzel) {
+            # Nur eine Ebene tief (jdk-21...\bin\java.exe): Unter "Microsoft"
+            # liegt auf einem Server weit mehr als ein JDK.
+            $kandidaten += @(Get-ChildItem -Path $wurzel -Directory -ErrorAction SilentlyContinue |
+                             Sort-Object Name -Descending |
+                             ForEach-Object { Join-Path $_.FullName "bin\java.exe" } |
+                             Where-Object { Test-Path $_ })
+        }
+    }
+    foreach ($exe in ($kandidaten | Select-Object -Unique)) {
+        $zeile = (Nativ $exe -version) | Select-Object -First 1
+        if ($script:NativCode -eq 0 -and (JavaHaupt $zeile) -ge 11) { return @($exe, $zeile) }
+    }
+    return $null
+}
 
 # Ruft ein externes Programm auf: Nativ <programm> <argumente...>
 # Gibt stdout UND stderr als Textzeilen zurueck; der Rueckgabewert des
@@ -151,7 +190,14 @@ foreach ($kandidat in @("py", "python")) {
                 $version = (Nativ $kandidat --version) -join " "
                 if ($version -match "Python 3\.(\d+)" -and [int]$Matches[1] -ge 11) {
                     $Python = $kandidat; Gut "$version gefunden"; break
-                } else { Info "$version ist zu alt (gebraucht wird 3.11 oder neuer)" }
+                } elseif ($version -match "Python \d") {
+                    Info "$version ist zu alt (gebraucht wird 3.11 oder neuer)"
+                } else {
+                    # Windows legt unter 'python' einen Verweis auf den Microsoft
+                    # Store an. Der antwortet mit einem Hinweistext, nicht mit einer
+                    # Version — das ist kein altes Python, sondern gar keins.
+                    Info "'$kandidat' ist nur der Verweis auf den Microsoft Store, kein Python"
+                }
             } catch { }
         }
     }
@@ -178,21 +224,43 @@ foreach ($kandidat in @("py", "python")) {
     }
 
     # ------------------------------------------------------------------ 2. Java
+    # Vorher genuegte hier JEDES Java. Ein Java 8 meldete "[ok]", der Validator
+    # (braucht 11) haette erst an der ersten Rechnung versagt.
+    # $JavaPfad wird nur gesetzt, wenn das passende Java NICHT das erste im
+    # Suchpfad ist — dann traegt Schritt "Konfiguration" den vollen Pfad ein.
     Titel "Java (fuer die Rechnungspruefung)"
-    if (Vorhanden "java") {
-        Gut ((Nativ java -version) | Select-Object -First 1)
+    $JavaPfad = $null
+    $JavaErster = (Get-Command java -CommandType Application -ErrorAction SilentlyContinue |
+                   Select-Object -First 1).Source
+    if ($JavaErster) {
+        $alteZeile = (Nativ $JavaErster -version) | Select-Object -First 1
+        if ((JavaHaupt $alteZeile) -lt 11) {
+            Info "im Suchpfad: $alteZeile ($JavaErster) - zu alt, das Pruefprogramm braucht Java 11 oder neuer"
+            Info "das alte Java bleibt unangetastet; andere Programme brauchen es vielleicht"
+        }
+    }
+    $JavaGefunden = JavaSuchen
+    if ($JavaGefunden) {
+        Gut "$($JavaGefunden[1]) ($($JavaGefunden[0]))"
+        if ($JavaGefunden[0] -ne $JavaErster) { $JavaPfad = $JavaGefunden[0] }
     } elseif (Vorhanden "winget") {
         Ansage "Java 21 (JRE) installieren" "winget, Quelle adoptium.net" `
-               "das KoSIT-Pruefprogramm ist ein Java-Programm"
+               "das KoSIT-Pruefprogramm ist ein Java-Programm und braucht Java 11 oder neuer"
         if (Frage) {
             $null = Nativ winget install --id EclipseAdoptium.Temurin.21.JRE --silent `
                    --accept-package-agreements --accept-source-agreements
             if ($script:NativCode -ne 0) { Info "winget meldet Rueckgabewert $script:NativCode" }
             PfadNeuLaden
-            if (Vorhanden "java") { Gut "Java installiert" }
-            else { Schlecht "Java wurde installiert, ist aber noch nicht im Suchpfad. Nach einem Neustart erneut pruefen." }
+            $JavaErster = (Get-Command java -CommandType Application -ErrorAction SilentlyContinue |
+                           Select-Object -First 1).Source
+            $JavaGefunden = JavaSuchen
+            if ($JavaGefunden) {
+                Gut "Java installiert: $($JavaGefunden[1]) ($($JavaGefunden[0]))"
+                if ($JavaGefunden[0] -ne $JavaErster) { $JavaPfad = $JavaGefunden[0] }
+            }
+            else { Schlecht "Java 21 wurde installiert, ist aber nicht zu finden. Den Pfad zu java.exe spaeter unter Konfiguration -> Java eintragen." }
         } else {
-            Uebergangen "Java - die Rechnungspruefung bleibt aus. Nachholen: https://adoptium.net/de/temurin/releases/ (JRE 21, Windows x64)"
+            Uebergangen "Java 11 oder neuer - die Rechnungspruefung bleibt aus. Nachholen: https://adoptium.net/de/temurin/releases/ (JRE 21, Windows x64), dann den Pfad zu java.exe unter Konfiguration -> Java eintragen"
         }
     } else {
         Schlecht "Java fehlt und winget ist nicht vorhanden. Von https://adoptium.net/de/temurin/releases/ die JRE 21 fuer Windows x64 installieren. Ohne Java laeuft nur die Rechnungspruefung nicht."
@@ -293,6 +361,16 @@ if (Test-Path $ConfDatei) {
 } else {
     Copy-Item (Join-Path $Basis "config\app.example.json") $ConfDatei
     Gut "aus der Vorlage angelegt - Werte spaeter in der Oberflaeche eintragen"
+}
+if ($JavaPfad) {
+    $eintrag = Join-Path $Basis "install\java_eintragen.py"
+    if (Test-Path $VenvPython) {
+        $javaAusgabe = (Nativ $VenvPython $eintrag $ConfDatei $JavaPfad) -join " "
+        if ($script:NativCode -eq 0) { Gut "Java fuer die Pruefung - $javaAusgabe" }
+        else { Schlecht "Java-Pfad nicht eingetragen ($javaAusgabe). Unter Konfiguration -> Java von Hand eintragen: $JavaPfad" }
+    } else {
+        Schlecht "Java-Pfad unter Konfiguration -> Java von Hand eintragen: $JavaPfad (vor ihm steht ein aelteres Java im Suchpfad)"
+    }
 }
 foreach ($ordner in @("data", "logs", "data\xml", "data\archiv")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Basis $ordner) | Out-Null
