@@ -56,7 +56,9 @@ SELECT f.bill_no,
             THEN 'J' ELSE 'N' END                                   AS brutto_mit_anzahlung_ok,
        (SELECT NVL(SUM(t.net_amount), 0)
           FROM @SCHEMA@.financial_transactions t
-         WHERE t.bill_no = f.bill_no
+         WHERE t.bill_no  = f.bill_no
+           AND t.folio_no = f.folio_no
+           AND t.resort   = f.resort
            AND t.gross_amount IS NULL
            AND t.tax_rate IS NOT NULL)                              AS steuerzeilen_summe
   FROM @SCHEMA@.folio$_tax f
@@ -70,8 +72,9 @@ SELECT f.bill_no,
                     COUNT(*)          AS zeilen
                FROM @SCHEMA@.financial_transactions
               WHERE gross_amount IS NOT NULL
-                AND bill_no = :bill_no
-                AND resort  = :resort
+                AND bill_no  = :bill_no
+                AND resort   = :resort
+                AND folio_no = :folio_no
               GROUP BY bill_no) z
     ON z.bill_no = f.bill_no
   -- Die Anzahlungen desselben Folios. Frueher stand hier eine Inline-Sicht,
@@ -89,10 +92,12 @@ SELECT f.bill_no,
                 AND d.resort = :resort
                 AND d.bill_no IN (SELECT fo.bill_no
                                     FROM @SCHEMA@.folios fo
-                                   WHERE fo.folio_no = (SELECT k.folio_no
-                                                          FROM @SCHEMA@.folio$_tax k
-                                                         WHERE k.bill_no = :bill_no
-                                                           AND k.resort  = :resort))) dep
+                                   WHERE fo.folio_no = :folio_no)
+                -- Der Beleg selbst zaehlt nicht mit — wie in invoice_deposits.sql.
+                -- Hat er selbst den Status DEPOSIT, hob er sonst seine eigene
+                -- Anzahlung auf, und brutto_mit_anzahlung_ok stand zufaellig auf J.
+                AND d.bill_no <> :bill_no) dep
     ON 1 = 1
  WHERE f.bill_no = :bill_no
    AND f.resort  = :resort
+   AND f.folio_no = :folio_no   -- siehe invoice_folio.sql

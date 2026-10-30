@@ -32,12 +32,18 @@ Es gibt zwei Rollen:
 | Rolle | darf |
 |---|---|
 | **ansehen** | Rechnungen und Protokoll lesen, XML erzeugen und ansehen |
-| **verwalten** | zusätzlich einlesen, Rechnungen aufnehmen, Empfänger, Käuferreferenz und Darstellung der Positionen wählen, freigeben, versenden, zurücklegen, Einstellungen ändern, Automatik schalten, Zugänge anlegen |
+| **verwalten** | zusätzlich einlesen, Rechnungen aufnehmen, Empfänger, Käuferreferenz und Darstellung der Positionen wählen, freigeben, versenden, zurücklegen, Einstellungen ändern, Automatik schalten, Zugänge anlegen, Passwörter anderer Zugänge neu setzen |
 
 **Wird ein Zugang gelöscht oder herabgestuft, wirkt das sofort** — auch auf
 eine offene Sitzung. Ein Zugang mit demselben Namen lässt sich nicht
 versehentlich überschreiben, und der letzte Zugang mit Verwaltungsrecht lässt
 sich nicht löschen.
+
+**Passwort vergessen?** Ein Zugang mit Verwaltungsrecht setzt es unter
+„Benutzer" → „Vorhandene Zugänge" neu, ohne das bisherige zu kennen. Laufende
+Anmeldungen dieses Zugangs enden dabei sofort, und das Protokoll vermerkt, wer
+wessen Passwort gesetzt hat. Das eigene Passwort geht nur oben mit dem
+bisherigen — eine offen gelassene Sitzung soll es nicht ändern können.
 
 Nach acht Stunden ohne Anmeldung läuft die Sitzung ab. Nach fünf Fehlversuchen
 wird der Zugang kurz gesperrt; die Sperre verlängert sich bei weiteren Versuchen.

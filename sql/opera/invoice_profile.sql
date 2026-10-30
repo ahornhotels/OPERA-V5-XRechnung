@@ -33,4 +33,5 @@ SELECT n.name_id,
   LEFT JOIN @SCHEMA@.name_address a
     ON a.name_id = n.name_id AND a.primary_yn = 'Y'
  WHERE n.name_id = (SELECT NVL(payee_name_id, name_id)
-                      FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort)
+                      FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+                        AND folio_no = :folio_no)   -- siehe invoice_folio.sql

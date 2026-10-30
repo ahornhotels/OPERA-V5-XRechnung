@@ -444,6 +444,8 @@ def pruefsummen(rechnung: dict) -> list[str]:
             fehler.append(
                 f"BR-CO-16: Brutto {brutto} - Anzahlung {prepaid} + Ausgleich "
                 f"{ausgleich} != Zahlbetrag {payable}")
+    if kopf.get("anzahlung_befund"):
+        fehler.append(kopf["anzahlung_befund"])
     anz_brutto = sum(_dez(a.get("total_gross")) for a in rechnung.get("deposits") or [])
     if anz_brutto and prepaid < anz_brutto:
         fehler.append(
@@ -700,4 +702,12 @@ def bauen(rechnung: dict, version: str = STANDARD_VERSION) -> bytes:
     if _leere_elemente_entfernen(baum):
         xml = etree.tostring(baum, xml_declaration=True, encoding="UTF-8",
                              pretty_print=True)
+    # Jinja laesst den letzten Zeilenumbruch weg. Fuer XML ist das gleichgueltig,
+    # KoSIT nimmt die Datei so oder so an. Eine Textdatei endet aber ueblicherweise
+    # mit einem Zeilenumbruch, und Werkzeuge, die zeilenweise lesen, verlieren
+    # sonst die letzte Zeile. Der Verdacht, ein Empfaenger-Validator scheitere
+    # daran, liess sich nicht belegen — er lehnte spaeter auch gueltige
+    # Musterrechnungen ab.
+    if not xml.endswith(b"\n"):
+        xml += b"\n"
     return xml

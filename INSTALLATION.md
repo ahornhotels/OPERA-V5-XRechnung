@@ -267,7 +267,7 @@ Unit lässt sich vorab ansehen mit `install/unit_erzeugen.sh`.
 | „Datenbank testen" meldet `DPY-6005` oder Zeitüberschreitung | Der Server erreicht die Datenbank nicht — Firewall, Host oder Port prüfen |
 | Kollegen kommen nicht auf die Seite | Port nicht freigegeben, oder das eigene Netz steht nicht unter „Erlaubte Netze" |
 | Der Validierungskasten bleibt rot | Pfade prüfen — die Datei muss wirklich `validationtool.jar` heißen |
-| Passwort vergessen | `config/users.json` löschen und den Dienst neu starten. Es wird wieder ein `ERSTES_PASSWORT.txt` erzeugt |
+| Passwort vergessen | Ein anderer Zugang mit Verwaltungsrecht setzt es unter „Benutzer“ neu. Gibt es keinen: `config/users.json` löschen und den Dienst neu starten — dann entsteht wieder ein `ERSTES_PASSWORT.txt` mit `admin`, alle anderen Zugänge sind weg |
 
 ## Nur Windows
 

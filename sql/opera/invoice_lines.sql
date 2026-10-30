@@ -117,5 +117,7 @@ SELECT z.trx_no,
             ON g.name_id = rn.name_id
          WHERE ft.bill_no      = :bill_no
            AND ft.resort       = :resort
+           -- BILL_NO allein mischte zwei Aufenthalte, siehe invoice_folio.sql
+           AND ft.folio_no     = :folio_no
            AND ft.gross_amount IS NOT NULL) z
  ORDER BY z.trx_no

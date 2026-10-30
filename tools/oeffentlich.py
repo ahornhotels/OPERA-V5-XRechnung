@@ -70,7 +70,12 @@ VERBOTEN = [
     (r"\b10\.49\.\d{1,3}\.\d{1,3}\b", "interne IP-Adresse"),
     (r"\bBEVODEB[B]\b", "BIC des Hauses"),
     (r"\bDE81\s?1009\s?00", "IBAN des Hauses"),
-    (r"\b1(2[6-9]|3[01])\d{4}\b", "Belegnummer aus dem Produktivbestand"),
+    # Der Bereich waechst mit jedem Tag: Am 30.10.2026 reichten die Belegnummern
+    # bis 132xxxx, und interne Umbuchungen verwenden Nummern ab 1229xxx wieder.
+    # Die Regel stand auf 126xxxx bis 131xxxx und haette beides durchgelassen. Nach
+    # oben endet sie bei 133xxxx — darueber liegen die erfundenen Testnummern
+    # (1399xxx, 1400xxx). Rueckt der echte Bestand naeher, hier nachziehen.
+    (r"\b1(2[2-9]|3[0-3])\d{4}\b", "Belegnummer aus dem Produktivbestand"),
     (r"\b199[5-6]\d{4}\b", "Buchungsnummer aus dem Produktivbestand"),
     # Diese beiden stehen NUR hier und nicht in Abschnitt 12 des Selbsttests —
     # die einzige gewollte Abweichung zwischen den sonst gleichen Listen.

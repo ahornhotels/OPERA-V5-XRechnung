@@ -37,12 +37,27 @@
 
 <section class="karte">
   <h2>Vorhandene Zugänge</h2>
+  {% if verwalten %}
+  <p class="klein">Passwort vergessen? Hier lässt sich das Passwort eines anderen
+     Zugangs neu setzen, ohne das bisherige zu kennen. Dessen Anmeldungen enden
+     dabei sofort. Das neue Passwort bitte auf sicherem Weg weitergeben — der
+     Zugang ändert es danach selbst.</p>
+  {% endif %}
   <table>
-    <tr><th>Benutzer</th><th>Rolle</th><th></th></tr>
+    <tr><th>Benutzer</th><th>Rolle</th>{% if verwalten %}<th>Passwort neu setzen</th>{% endif %}<th></th></tr>
     {% for name, daten in benutzerliste.items() %}
     <tr>
       <td>{{ name }}{% if name == benutzer %} <span class="klein">(Sie)</span>{% endif %}</td>
       <td>{{ daten.rolle }}</td>
+      {% if verwalten %}<td>{% if name != benutzer %}
+        <form method="post" action="/benutzer/passwort_setzen" class="zeile"
+              data-frage="Passwort von {{ name }} neu setzen? Laufende Anmeldungen dieses Zugangs enden."
+              onsubmit="return confirm(this.dataset.frage)">
+          <input type="hidden" name="name" value="{{ name }}">
+          <input name="neu" type="password" minlength="10" required autocomplete="new-password"
+                 placeholder="mind. 10 Zeichen" aria-label="Neues Passwort für {{ name }}">
+          <button>Passwort setzen</button>
+        </form>{% else %}<span class="klein">oben ändern</span>{% endif %}</td>{% endif %}
       <td>{% if verwalten and name != benutzer %}
         {# Der Name steht im Attribut, nicht im JavaScript: Dort war er nur
            HTML-maskiert, und ein Apostroph im Namen brach aus der Zeichenkette aus. #}

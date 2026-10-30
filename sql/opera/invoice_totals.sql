@@ -11,4 +11,5 @@ SELECT f.bill_no,
        f.clpay                                                 AS spay_cl
   FROM @SCHEMA@.folio$_tax f
  WHERE f.bill_no = :bill_no
+   AND f.folio_no = :folio_no   -- siehe invoice_folio.sql
    AND f.resort  = :resort

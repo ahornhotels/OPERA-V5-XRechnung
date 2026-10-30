@@ -117,6 +117,9 @@ label input,label select,label textarea{display:block;width:100%;margin-top:.2re
   padding:.4rem;border:1px solid var(--rand);border-radius:4px;font:inherit;color:var(--text)}
 label.schalter{display:flex;gap:.5rem;align-items:flex-start;color:var(--text)}
 label.schalter input{width:auto;margin:0}
+/* Feld und Knopf in einer Tabellenzeile, etwa "Passwort neu setzen" */
+form.zeile{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:0}
+form.zeile input{padding:.4rem .5rem;border:1px solid var(--rand);border-radius:4px;font:inherit;min-width:10rem}
 label.hervor{border-left:3px solid var(--akzent);padding-left:.6rem}
 /* Auswahlknoepfe nebeneinander (Darstellung der Positionen). Die allgemeine
    label-Regel oben macht jedes Feld blockbreit — ein Radioknopf stand damit

@@ -363,6 +363,8 @@ hinweise = xml_build.pruefsummen(rechnung)
 pruefe(not hinweise, f"Vorpruefung sauber ({hinweise})")
 xml = xml_build.bauen(rechnung)
 text = xml.decode()
+# Eine Textdatei endet mit einem Zeilenumbruch; Jinja liess ihn weg.
+pruefe(xml.endswith(b"</ubl:Invoice>\n"), "die XML-Datei endet mit einem Zeilenumbruch")
 for muss in ("<cbc:BuyerReference>991-33333TEST-33", "<cbc:CustomizationID>",
              "3450.44", "3688.57", "<cbc:Percent>19.00", "<cbc:ID>Z</cbc:ID>"):
     pruefe(muss in text, f"XML enthaelt {muss[:40]}")
@@ -612,7 +614,8 @@ try:
             opera.rechnung(_cfg, 1400003)
         except Exception:
             pass  # ohne echte Daten bricht es spaeter ab, der Parameter ist gestellt
-        _param = next(iter(_gestellt.values()), {})
+        # Gezielt die Kopfabfrage: Vor ihr laeuft inzwischen invoice_folio.sql.
+        _param = next((v for k, v in _gestellt.items() if "invoice_header" in k), {})
         pruefe(_param.get("kundenreferenz_nutzen") == _erwartet,
                f"Kundenreferenz-Schalter {_wert} ergibt '{_erwartet}' "
                f"(ist '{_param.get('kundenreferenz_nutzen')}')")
@@ -2018,6 +2021,44 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                          follow_redirects=False)
         pruefe(store.rechnung(970001).get("buyerreference") == "PO-4711",
                "mit Verwaltungsrecht geht beides weiterhin")
+        # Passwort eines anderen Zugangs neu setzen: nur mit Verwaltungsrecht,
+        # nie fuer sich selbst, und die alten Anmeldungen enden dabei.
+        from urllib.parse import unquote as _unq
+        auth.anlegen("vergessen", "Altes-Passwort!1", "ansehen")
+        _vtok = auth.anmelden("vergessen", "Altes-Passwort!1", "127.0.0.1")
+        _a = klient.post("/benutzer/passwort_setzen", data={"name": "vergessen", "neu": "Vom-Leser-1234"},
+                         cookies=_leser, follow_redirects=False)
+        pruefe("Berechtigung" in _unq(_a.headers.get("location", ""))
+               and auth.anmelden("vergessen", "Vom-Leser-1234", "127.0.0.1") is None,
+               "ein Konto mit Leserecht kann kein fremdes Passwort setzen")
+        _a = klient.post("/benutzer/passwort_setzen", data={"name": "vergessen", "neu": "kurz"},
+                         follow_redirects=False)
+        pruefe("10 Zeichen" in _unq(_a.headers.get("location", ""))
+               and auth.anmelden("vergessen", "kurz", "127.0.0.1") is None,
+               "ein zu kurzes Passwort wird abgelehnt")
+        _a = klient.post("/benutzer/passwort_setzen", data={"name": "gibt-es-nicht", "neu": "Lang-genug-123"},
+                         follow_redirects=False)
+        pruefe("gibt es nicht" in _unq(_a.headers.get("location", "")),
+               "ein unbekannter Zugang wird gemeldet, nicht angelegt")
+        _a = klient.post("/benutzer/passwort_setzen", data={"name": "vergessen", "neu": "Neu-gesetzt-123"},
+                         follow_redirects=False)
+        pruefe("neu gesetzt" in _unq(_a.headers.get("location", ""))
+               and auth.anmelden("vergessen", "Neu-gesetzt-123", "127.0.0.1") is not None
+               and auth.anmelden("vergessen", "Altes-Passwort!1", "127.0.0.1") is None,
+               "ein Verwalter setzt das Passwort eines anderen Zugangs, das alte gilt nicht mehr")
+        pruefe(auth.sitzung(_vtok) is None, "die bisherige Anmeldung dieses Zugangs ist beendet")
+        pruefe(any("vergessen" in (e.get("text") or "") and e.get("benutzer") == "pruefer" for e in store.protokoll_lesen(20)),
+               "das Protokoll vermerkt, wessen Passwort gesetzt wurde")
+        _a = klient.post("/benutzer/passwort_setzen", data={"name": "pruefer", "neu": "Selbst-gesetzt-1"},
+                         follow_redirects=False)
+        pruefe("eigene" in _unq(_a.headers.get("location", ""))
+               and auth.anmelden("pruefer", "Selbst-gesetzt-1", "127.0.0.1") is None,
+               "das eigene Passwort geht nur ueber den Weg mit dem bisherigen")
+        _seite = klient.get("/benutzer").text
+        pruefe("/benutzer/passwort_setzen" in _seite, "die Benutzerseite zeigt Verwaltern das Feld")
+        pruefe("/benutzer/passwort_setzen" not in klient.get("/benutzer", cookies=_leser).text,
+               "Konten mit Leserecht sehen es nicht")
+        auth.loeschen("vergessen")
         auth.loeschen("leser")
         # Eine Rechnung, die nicht in der Arbeitsliste steht: keine Erfolgsmeldung
         # fuer eine Wahl, die nirgends gespeichert wird.
@@ -3626,6 +3667,81 @@ _pdfcfg = {"mail": {"pdf_ordner": "pdfablage", "pdf_muster": "{bill_no}.pdf"}}
 pruefe(_mailer.anhang_pdf(_pdfcfg, 4711) is not None,
        "B41: ein relativer PDF-Ordner gilt gegenueber der Installation")
 
+# --- Anzahlung auf einem Folio mit mehreren Schlussrechnungen ----------------
+# Ein Folio wie im Haus gesehen (Nummern erfunden, Betraege echt): Anzahlung 440,00,
+# Hauptrechnung 470,85 in den Zeilen und 30,85 im Kopf, Nebenrechnung 80,00
+# mit Karte bezahlt. OPERA rechnet die Anzahlung nur der Hauptrechnung an.
+# Vorher zog die Anwendung sie von BEIDEN ab — die Nebenrechnung kam auf -360,00.
+print("8c) Anzahlung nur auf der Schlussrechnung, der OPERA sie anrechnet")
+_anz_fall = {}
+
+
+def _db_anzahlung(sql, parameter=None):
+    kopfzeile = sql.splitlines()[0]
+    if "invoice_header.sql" in kopfzeile:
+        return [{"issuedate": "2026-10-01", "reservierungsnummer": "4711",
+                 "invoicegross": _anz_fall["kopf"], "invoicenet": _anz_fall["kopf"],
+                 "prepaidamount": _anz_fall.get("gezahlt", 0)}]
+    if "invoice_lines.sql" in kopfzeile:
+        return [{"lineextensionamount": _anz_fall["zeilen"], "lineextensionamountnet": _anz_fall["zeilen"],
+                 "invoicedquantity": 1, "itemname": "Logis", "classifiedtaxcategoryid": "Z",
+                 "classifiedtaxcategorypercent": 0}]
+    if "invoice_deposits.sql" in kopfzeile:
+        return [{"billingreferenceid": 1400090, "billingreferenceissuedate": "2026-09-20",
+                 "total_net": 440.0, "total_gross": 440.0, "status": "DEPOSIT"}]
+    if "invoice_totals.sql" in kopfzeile:
+        return [{"invoicenet": _anz_fall["kopf"], "invoicegross": _anz_fall["kopf"]}]
+    return []
+
+
+_echt_abf_anz = opera.db.abfrage
+opera.db.abfrage = _db_anzahlung
+try:
+    _acfg = json.loads(json.dumps(cfg))
+    _acfg["property"].update(udf_leitweg="")
+    _anz_fall.update(kopf=30.85, zeilen=470.85, gezahlt=0)
+    _haupt = opera.rechnung(_acfg, 1400097)
+    pruefe(len(_haupt["deposits"]) == 1 and _haupt["header"]["prepaidamount"] == 440.0
+           and _haupt["header"]["payableamount"] == 30.85,
+           f"die Hauptrechnung traegt die Anzahlung ({_haupt['header']['prepaidamount']} / "
+           f"{_haupt['header']['payableamount']})")
+    _anz_fall.update(kopf=80.0, zeilen=80.0, gezahlt=80.0)
+    _neben = opera.rechnung(_acfg, 1400098)
+    pruefe(not _neben["deposits"] and _neben["header"]["prepaidamount"] == 80.0
+           and _neben["header"]["payableamount"] == 0.0,
+           f"die Nebenrechnung nicht: nur ihre Kartenzahlung ist abgezogen "
+           f"({_neben['header']['prepaidamount']} / {_neben['header']['payableamount']})")
+    pruefe("BillingReference" not in xml_build.bauen(_neben).decode(),
+           "und sie verweist nicht auf den Anzahlungsbeleg")
+    pruefe(not [h for h in xml_build.pruefsummen(_neben) if "Folio-Klammer" in h or "Anzahlung" in h],
+           f"die Vorpruefung laesst die Nebenrechnung durch ({xml_build.pruefsummen(_neben)})")
+    _anz_fall.update(kopf=250.0, zeilen=470.85, gezahlt=0)
+    _teil = opera.rechnung(_acfg, 1400099)
+    pruefe(any("teilweise angerechnet" in h for h in xml_build.pruefsummen(_teil)),
+           "eine Teilanrechnung haelt den Beleg zur Pruefung an, statt zu raten")
+finally:
+    opera.db.abfrage = _echt_abf_anz
+_kopf_sql_anz = "\n".join(z.split("--")[0] for z in
+                          (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8").splitlines())
+pruefe(":anzahlung_status" not in _kopf_sql_anz and "AS prepaidamount" in _kopf_sql_anz,
+       "der Rechnungskopf zaehlt die Anzahlungsbelege des Folios nicht mehr selbst dazu")
+
+_folio_sql = "\n".join(z.split("--")[0] for z in
+                       (BASE / "sql" / "opera" / "invoice_folio.sql").read_text(encoding="utf-8").splitlines())
+pruefe(_folio_sql.index("'TSE_FOLIO' THEN 0") < _folio_sql.index("'INTERNAL' THEN 2")
+       and "FETCH FIRST 1 ROW ONLY" in _folio_sql,
+       "bei doppelter Belegnummer gilt die Kassenrechnung, eine interne Umbuchung nur notfalls")
+pruefe("folio_type = 'TSE_FOLIO'" not in _folio_sql.replace(" ", " ")
+       and "<> 'TSE_FOLIO'" not in _folio_sql,
+       "TSE_FOLIO wird bevorzugt, aber weder verlangt noch ausgeschlossen — es ist der Normalfall")
+_guard_sql = (BASE / "sql" / "opera" / "invoice_guard.sql").read_text(encoding="utf-8")
+_dep_teil = _guard_sql[_guard_sql.index("AS anzahl_deposits"):_guard_sql.index(") dep")]
+pruefe("d.bill_no <> :bill_no" in _dep_teil,
+       "der Guard zaehlt den Beleg selbst nicht als eigene Anzahlung mit")
+for _liste in ("invoice_list.sql", "invoice_suche.sql"):
+    pruefe("<> 'INTERNAL'" in (BASE / "sql" / "opera" / _liste).read_text(encoding="utf-8"),
+           f"{_liste}: interne Umbuchungen sind keine Rechnungen an Gaeste")
+
 # --- opera: Leitweg, Bemerkung, Vorlagen, Suche, Firmenprofile, Resort -------
 _gerufen = []
 
@@ -3654,10 +3770,20 @@ try:
     _je_beleg = [g for g in _gerufen if "bill_no" in g[1]]
     pruefe(all(g[1].get("resort") == "MUSTER" and ":resort" in g[2] for g in _je_beleg) and len(_je_beleg) >= 5,
            f"B42: jede Abfrage je Beleg filtert nach Resort ({[g[0][:28] for g in _je_beleg if g[1].get('resort') != 'MUSTER']})")
+    # BILL_NO ist nicht eindeutig (interne Umbuchungen verwenden Nummern echter
+    # Rechnungen wieder). Ausser der Folio-Suche selbst grenzt jede Abfrage je
+    # Beleg auf das Folio ein — sonst mischt sie zwei Aufenthalte.
+    _ohne_folio = [g[0][:32] for g in _je_beleg
+                   if "invoice_folio.sql" not in g[0] and (":folio_no" not in g[2] or "folio_no" not in g[1])]
+    pruefe(not _ohne_folio and any("invoice_folio.sql" in g[0] for g in _je_beleg),
+           f"jede Abfrage je Beleg grenzt auch auf das Folio ein ({_ohne_folio})")
     _gerufen.clear()
     opera.empfaenger(1); opera.buchungsfirma(1)
     pruefe(all(":resort" in g[2] and g[1].get("resort") for g in _gerufen),
            "B42: auch Empfaenger und Buchungsfirma")
+    pruefe(all(":folio_no" in g[2] and "folio_no" in g[1] for g in _gerufen
+               if "invoice_folio.sql" not in g[0]),
+           "und beide grenzen auf das Folio ein")
     # Befund 37/45: Suche und Firmenprofile
     _gerufen.clear()
     _scfg = json.loads(json.dumps(cfg))

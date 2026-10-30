@@ -39,4 +39,5 @@ SELECT r.resv_name_id,
   LEFT JOIN @SCHEMA@.name g ON g.name_id = r.group_id
   LEFT JOIN @SCHEMA@.name z ON z.name_id = NVL(f.payee_name_id, f.name_id)
  WHERE f.bill_no = :bill_no
+   AND f.folio_no = :folio_no   -- siehe invoice_folio.sql
    AND f.resort  = :resort

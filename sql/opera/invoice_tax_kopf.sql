@@ -23,17 +23,17 @@ SELECT bucket,
   FROM (
         SELECT 1 AS bucket, net1_amt AS taxableamount, tax1_amt AS taxamount,
                tax1_rate AS taxcategorypercent, tax1_rate_type AS ratetype
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
         UNION ALL SELECT 2, net2_amt, tax2_amt, tax2_rate, tax2_rate_type
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
         UNION ALL SELECT 3, net3_amt, tax3_amt, tax3_rate, tax3_rate_type
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
         UNION ALL SELECT 4, net4_amt, tax4_amt, tax4_rate, tax4_rate_type
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
         UNION ALL SELECT 5, net5_amt, tax5_amt, tax5_rate, tax5_rate_type
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
         UNION ALL SELECT 6, net6_amt, tax6_amt, tax6_rate, tax6_rate_type
-          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort
+          FROM @SCHEMA@.folio$_tax WHERE bill_no = :bill_no AND resort = :resort AND folio_no = :folio_no
        )
  WHERE NVL(taxableamount, 0) <> 0
     OR NVL(taxamount, 0)     <> 0

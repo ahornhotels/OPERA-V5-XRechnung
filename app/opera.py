@@ -201,23 +201,38 @@ def kandidaten(cfg: dict, tage: int | None = None) -> list[dict]:
     })
 
 
+def folio(cfg: dict | None, bill_no: int) -> int | None:
+    """Das Folio zu einer Rechnungsnummer — oder None, wenn es sie nicht gibt.
+
+    BILL_NO ist je Resort nicht eindeutig: Interne Umbuchungen verwenden
+    Nummern echter Rechnungen wieder. Jede Abfrage je Beleg grenzt deshalb
+    zusaetzlich auf dieses Folio ein; welches gemeint ist, entscheidet allein
+    invoice_folio.sql."""
+    resort = cfg["property"]["resort"] if cfg else _resort()
+    zeilen = db.abfrage(_sql("invoice_folio.sql", cfg), {"bill_no": bill_no, "resort": resort})
+    return zeilen[0].get("folio_no") if zeilen else None
+
+
 def pruefung(cfg: dict, bill_no: int) -> dict:
     """Guard: rekonziliieren die Positionen gegen den Kopf?"""
     zeilen = db.abfrage(_mit_anzahlungscodes(_sql("invoice_guard.sql", cfg), cfg),
                         {"bill_no": bill_no, "resort": cfg["property"]["resort"],
+                         "folio_no": folio(cfg, bill_no),
                          "anzahlung_status": anzahlung_status(cfg)})
     return zeilen[0] if zeilen else {}
 
 
 def empfaenger(bill_no: int) -> list[dict]:
     """Alle E-Mail-Adressen, die zu dieser Rechnung gehoeren."""
-    return db.abfrage(_sql("invoice_recipients.sql"), {"bill_no": bill_no, "resort": _resort()})
+    return db.abfrage(_sql("invoice_recipients.sql"), {"bill_no": bill_no, "resort": _resort(),
+                                                       "folio_no": folio(None, bill_no)})
 
 
 def profil(cfg: dict, bill_no: int) -> dict:
     zeilen = db.abfrage(_sql("invoice_profile.sql", cfg), {
         "bill_no": bill_no,
         "resort": cfg["property"]["resort"],
+        "folio_no": folio(cfg, bill_no),
         "leitweg_typ": cfg["property"]["mitgliedschaftstyp_leitweg"],
         "erechnung_typ": cfg["property"].get("mitgliedschaftstyp_erechnung") or "-",
     })
@@ -317,7 +332,8 @@ def buchungsfirma(bill_no: int) -> dict:
     """Welche Firma haengt an der Reservierung? Nur fuer die Sichtpruefung
     einer einzelnen Rechnung — die Abfrage geht ueber eine grosse View und
     gehoert nicht in die Liste."""
-    zeilen = db.abfrage(_sql("invoice_buchungsfirma.sql"), {"bill_no": bill_no, "resort": _resort()})
+    zeilen = db.abfrage(_sql("invoice_buchungsfirma.sql"), {"bill_no": bill_no, "resort": _resort(),
+                                                           "folio_no": folio(None, bill_no)})
     return zeilen[0] if zeilen else {}
 
 
@@ -889,30 +905,65 @@ def hauskontakt(kopf: dict, p: dict) -> dict:
     return kopf
 
 
+def anzahlung_zuordnen(anzahlungen: list[dict], zeilen_brutto: float,
+                       kopf_brutto: float) -> tuple[list[dict], str]:
+    """Welche Anzahlungen gehoeren auf DIESEN Beleg? Gibt (Belege, Befund)
+    zurueck; ein Befund sperrt den Versand (xml_build.pruefsummen).
+
+    Die Anzahlungsbelege haengen am Folio, nicht an einer Schlussrechnung.
+    Liegen mehrere Schlussrechnungen auf einem Folio, rechnet OPERA die
+    Anzahlung genau EINER davon an. Welcher, steht in OPERA schon fest: Unter
+    jeder Schlussrechnung liegen ihre Buchungen, und TOTAL_GROSS ist der Rest
+    nach Anrechnung. Die Differenz ist der angerechnete Teil:
+        Zeilensumme brutto - TOTAL_GROSS
+          = Summe der Anzahlungen  -> dieser Beleg traegt sie
+          = 0                      -> ein anderer Beleg traegt sie
+    Nachgerechnet am 29.10.2026 an allen 54 Schlussrechnungen mit Buchungen
+    auf den 27 Folios eines Quartals, die mehr als eine Schlussrechnung und
+    eine Anzahlung haben: 27-mal die volle Summe, 22-mal genau 0, nie etwas
+    dazwischen. Vorher bekam jede Schlussrechnung die volle Anzahlung
+    abgezogen; die Vorpruefung sperrte diese Belege dann, sie gingen gar
+    nicht hinaus.
+
+    Etwas dazwischen waere eine Teilanrechnung. Welche Anzahlungsbelege mit
+    welchem Teil gemeint sind, laesst sich daraus nicht ablesen — dann bleibt
+    alles beim Alten, und der Befund haelt den Beleg zur Pruefung an."""
+    if not anzahlungen:
+        return [], ""
+    summe = round(sum(_zahl(a.get("total_gross")) for a in anzahlungen), 2)
+    anteil = round(zeilen_brutto - kopf_brutto, 2)
+    if abs(anteil) <= 0.02:
+        return [], ""
+    if abs(anteil - summe) <= 0.02:
+        return anzahlungen, ""
+    return anzahlungen, (
+        f"Anzahlung nur teilweise angerechnet: Positionen {zeilen_brutto:.2f} minus "
+        f"Rechnungsbetrag in OPERA {kopf_brutto:.2f} ergibt {anteil:.2f}, die "
+        f"Anzahlungsbelege des Folios summieren sich auf {summe:.2f}. Welcher Teil "
+        "auf diese Rechnung gehoert, ist so nicht zu erkennen — bitte in OPERA prüfen.")
+
+
 def rechnung(cfg: dict, bill_no: int) -> dict:
     """Laedt Kopf, Positionen, Steueraufteilung, Summen und Anzahlungsbelege
     und setzt daraus die Struktur zusammen, die der XML-Bau erwartet."""
     p = cfg["property"]
+    folio_no = folio(cfg, bill_no)
     # Ob eine echte Leitweg-ID vorliegt, wird vor dem Ersatzwert festgehalten.
     kopf_rows = db.abfrage(_sql("invoice_header.sql", cfg), {
         "bill_no": bill_no,
+        "folio_no": folio_no,
         "leitweg_typ": p["mitgliedschaftstyp_leitweg"],
         "erechnung_typ": p.get("mitgliedschaftstyp_erechnung") or "-",
         # CUSTOM_REFERENCE traegt ueberwiegend Portal-Buchungsnummern, siehe
         # invoice_header.sql. Nur nach ausdruecklicher Freigabe.
         "kundenreferenz_nutzen": "J" if p.get("kundenreferenz_als_buyerreference") else "N",
-        # :resort macht die Anzahlungs-Unterabfrage indizierbar, siehe dort.
         "resort": p["resort"],
-        # Der Kopf summiert die Anzahlungsbelege selbst (BT-113) und muss
-        # denselben Status ansetzen wie invoice_deposits.sql — sonst zeigen
-        # Betrag und Belegliste auf verschiedene Mengen.
-        "anzahlung_status": anzahlung_status(cfg),
     })
     if not kopf_rows:
         raise LookupError(f"Rechnung {bill_no} nicht gefunden")
     kopf = kopf_rows[0]
 
-    je_beleg = {"bill_no": bill_no, "resort": p["resort"]}
+    je_beleg = {"bill_no": bill_no, "resort": p["resort"], "folio_no": folio_no}
     zeilen = db.abfrage(_sql("invoice_lines.sql", cfg), je_beleg)
     positionsbemerkung(zeilen, p)
     steuer = db.abfrage(_sql("invoice_tax.sql", cfg), je_beleg)
@@ -924,7 +975,7 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     # :resort ist fuer den Index noetig, nicht nur fuer die Abgrenzung —
     # siehe invoice_deposits.sql.
     anzahlungen = db.abfrage(_sql("invoice_deposits.sql", cfg),
-                             {"bill_no": bill_no, "resort": p["resort"],
+                             {"bill_no": bill_no, "resort": p["resort"], "folio_no": folio_no,
                               "anzahlung_status": anzahlung_status(cfg)})
 
     # --- Konfigurationswerte ergaenzen, die OPERA nicht fuehrt ---------------
@@ -973,8 +1024,8 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
 
     # --- Anzahlungen: BT-113 und BG-3 --------------------------------------
     # BT-113 ist alles, was bereits geflossen ist: Bar- und Kartenzahlungen auf
-    # diesem Beleg sowie die Bruttosummen der DEPOSIT-Belege desselben Folios.
-    # Die Kopf-SQL rechnet das zusammen.
+    # diesem Beleg (Kopf-SQL) sowie der Teil der Anzahlungen, den OPERA DIESEM
+    # Beleg angerechnet hat (anzahlung_zuordnen).
     #
     # BT-115 wird daraus ABGELEITET und nicht getrennt bestimmt. Vorher kamen
     # die beiden Werte aus verschiedenen Quellen — prepaid aus der Kopf-SQL,
@@ -984,12 +1035,16 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     #
     # Der City-Ledger-Betrag zaehlt bewusst NICHT als gezahlt: Er ist die
     # Umbuchung auf das Debitorenkonto, die Rechnung steht dort offen.
+    zeilen_brutto = sum(_zahl(z.get("lineextensionamount")) for z in zeilen)
+    anzahlungen, anzahlung_befund = anzahlung_zuordnen(
+        anzahlungen, zeilen_brutto, _zahl(kopf.get("invoicegross")))
+    if anzahlung_befund:
+        kopf["anzahlung_befund"] = anzahlung_befund
     anz_brutto = sum(_zahl(a.get("total_gross")) for a in anzahlungen)
 
     # Summen fuer die Templates: bei Anzahlungen ist die Zeilensumme massgeblich,
     # der Kopfbetrag ist nur der Rest (siehe docs/06_BEFUNDE_LIVE_DB.md).
     zeilen_netto = sum(_zahl(z.get("lineextensionamountnet")) for z in zeilen)
-    zeilen_brutto = sum(_zahl(z.get("lineextensionamount")) for z in zeilen)
     totals = {
         "invoicenet": zeilen_netto if anz_brutto else _zahl(summen.get("invoicenet")),
         "invoicegross": zeilen_brutto if anz_brutto else _zahl(summen.get("invoicegross")),
@@ -998,7 +1053,7 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     totals["spay_cl"] = _zahl(summen.get("spay_cl"))
 
     # Erst jetzt, wenn der Gesamtbetrag feststeht: Zahlbetrag daraus ableiten.
-    kopf["prepaidamount"] = round(_zahl(kopf.get("prepaidamount")), 2)
+    kopf["prepaidamount"] = round(_zahl(kopf.get("prepaidamount")) + anz_brutto, 2)
     kopf["payableamount"] = round(totals["invoicegross"] - kopf["prepaidamount"], 2)
 
     return {

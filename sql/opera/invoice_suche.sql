@@ -53,6 +53,8 @@ SELECT f.bill_no,
   LEFT JOIN @SCHEMA@.ar$_account ar
     ON ar.account_code = f.account_code AND ar.resort = f.resort
  WHERE f.resort = :resort
+   -- Interne Umbuchungen tragen Nummern echter Rechnungen, siehe invoice_folio.sql
+   AND NVL(f.folio_type, '-') <> 'INTERNAL'
    AND (   (:bill_no    IS NOT NULL AND f.bill_no    = :bill_no)
         OR (:invoice_no IS NOT NULL AND f.invoice_no = :invoice_no))
  ORDER BY f.bill_no DESC

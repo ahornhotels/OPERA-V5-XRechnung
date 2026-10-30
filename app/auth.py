@@ -134,6 +134,39 @@ def loeschen(benutzer: str) -> str | None:
     return None
 
 
+def passwort_setzen(benutzer: str, neu: str) -> str | None:
+    """Setzt das Passwort eines ANDEREN Zugangs, ohne das bisherige zu kennen —
+    fuer den Fall, dass es vergessen ist. Nur fuer Verwalter (prueft main.py).
+    Gibt eine Fehlermeldung zurueck oder None.
+
+    Vorher blieb dafuer nur, config/users.json zu loeschen: Das setzte ALLE
+    Zugaenge zurueck und ging nur mit Zugriff auf den Server."""
+    from . import config
+    daten = json.loads(USER_DATEI.read_text(encoding="utf-8"))
+    eintrag = daten.get(benutzer)
+    if not eintrag:
+        return f"Den Zugang „{benutzer}“ gibt es nicht."
+    if len(neu) < 10:
+        return "Das neue Passwort muss mindestens 10 Zeichen haben."
+    eintrag["hash"] = _hash(neu, os.urandom(16))
+    try:
+        _speichern(daten)
+    except config.KonfigFehler as e:
+        return str(e)
+    # Wer gerade mit dem alten Passwort angemeldet ist, fliegt hinaus — sonst
+    # haette ein Ruecksetzen nach einem Verdacht keine Wirkung.
+    sitzungen_beenden(benutzer)
+    # Das Startpasswort in ERSTES_PASSWORT.txt gilt fuer diesen Zugang nicht
+    # mehr. Die Datei bliebe sonst liegen und fuehrte in die Irre.
+    erst = config.CONFIG_DIR / "ERSTES_PASSWORT.txt"
+    try:
+        if erst.exists() and f"Benutzer: {benutzer}\n" in erst.read_text(encoding="utf-8"):
+            erst.unlink()
+    except OSError:
+        pass
+    return None
+
+
 def passwort_aendern(benutzer: str, alt: str, neu: str) -> str | None:
     """Aendert das eigene Passwort. Gibt eine Fehlermeldung zurueck oder None."""
     daten = json.loads(USER_DATEI.read_text(encoding="utf-8"))

@@ -21,6 +21,7 @@ WITH beleg AS (
       FROM @SCHEMA@.folio$_tax
      WHERE bill_no = :bill_no
        AND resort  = :resort
+       AND folio_no = :folio_no   -- siehe invoice_folio.sql
 ),
 profile AS (
     SELECT b.payee_name_id AS name_id, 'Zahler'      AS rolle FROM beleg b WHERE b.payee_name_id IS NOT NULL

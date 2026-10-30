@@ -92,6 +92,9 @@ SELECT f.bill_no,
  WHERE f.resort          = :resort
    AND f.document_type   = 'INVOICE'
    AND f.status          = 'OK'
+   -- Interne Umbuchungen zwischen Folios sind keine Rechnungen an Gaeste. Sie
+   -- verwenden obendrein Belegnummern echter Rechnungen wieder (invoice_folio.sql).
+   AND NVL(f.folio_type, '-') <> 'INTERNAL'
    AND f.bill_generation_date >= TRUNC(SYSDATE) - :days
 )
  WHERE :nur_firmen = 'N' OR firmenbezug <> '-'

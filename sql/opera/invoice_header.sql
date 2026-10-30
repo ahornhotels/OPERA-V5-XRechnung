@@ -170,40 +170,19 @@ SELECT f.bill_no                                              AS id,
        f.total_net                                            AS invoicenet,
        f.total_gross                                          AS invoicegross,
        f.total_gross - f.total_net                            AS invoicetaxtotal,
-       -- Vom Gast bereits beglichen. CLPAY ist die Umbuchung aufs Debitorenkonto
-       -- und damit gerade NICHT bezahlt — sie bleibt offen (BT-115).
-       -- Anzahlungen liegen als eigene DEPOSIT-Belege auf demselben Folio und
-       -- gehoeren ebenfalls in BT-113 (siehe invoice_deposits.sql).
-       NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0)
-         -- Umweg ueber FOLIOS statt WHERE folio_no: FOLIO$_TAX_E hat keinen
-         -- Index auf FOLIO_NO, FOLIOS_E hat einen auf (FOLIO_NO, BILL_NO).
-         -- Das war der Unterschied zwischen 1686 ms und wenigen Millisekunden.
-         -- Die RESORT-Bedingung gehoert dazu: FOLIO_TAX_BILLNO_I geht ueber
-         -- (RESORT, BILL_NO) und greift ohne sie nicht.
-         --
-         -- ENTSCHEIDEND ist aber, dass die Unterabfrage NICHT korreliert:
-         -- Die Folionummer kommt aus einer eigenen Unterabfrage ueber
-         -- :bill_no und nicht als f.folio_no aus der aeusseren Zeile. Nur so
-         -- steht der Wert vor der Auswertung fest und der Index laesst sich
-         -- ansetzen. Gemessen an derselben Zeile mit demselben Ergebnis:
-         --   korreliert    (fo.folio_no = f.folio_no)   1928.5 ms
-         --   entkorreliert (eigene Unterabfrage)            0.7 ms
-         -- Das Resort allein aendert daran nichts (1780 ms).
-         + NVL((SELECT SUM(d.total_gross) FROM @SCHEMA@.folio$_tax d
-                 WHERE d.resort = :resort
-                   AND d.bill_no IN (SELECT fo.bill_no FROM @SCHEMA@.folios fo
-                                      WHERE fo.folio_no = (SELECT k.folio_no
-                                                             FROM @SCHEMA@.folio$_tax k
-                                                            WHERE k.resort  = :resort
-                                                              AND k.bill_no = :bill_no))
-                   -- Derselbe konfigurierbare Wert wie in
-                   -- invoice_deposits.sql und invoice_guard.sql. Hier stand
-                   -- 'DEPOSIT' fest: Solange die Vorgabe gilt, faellt das
-                   -- nicht auf — aendert ein Haus anzahlung_status, meldete
-                   -- der Kopf ab da einen anderen Betrag als die
-                   -- Anzahlungsliste, und BT-113 waere still falsch.
-                   AND d.status = :anzahlung_status
-                   AND d.bill_no <> :bill_no), 0)                AS prepaidamount,
+       -- Vom Gast auf DIESEM Beleg bereits beglichen. CLPAY ist die Umbuchung
+       -- aufs Debitorenkonto und damit gerade NICHT bezahlt — sie bleibt offen
+       -- (BT-115).
+       --
+       -- Die Anzahlungen stehen hier NICHT mehr drin. Bisher wurden alle
+       -- DEPOSIT-Belege desselben Folios dazugezaehlt — bei jeder
+       -- Schlussrechnung des Folios. Liegen mehrere auf einem Folio (etwa
+       -- Hauptrechnung plus Nebenrechnung), rechnet OPERA die Anzahlung aber nur
+       -- EINER davon an; die Nebenrechnung haette die volle Anzahlung
+       -- abgezogen bekommen (gesehen im Haus: 80,00 offen, XRechnung -360,00).
+       -- Welcher Anteil auf diesen Beleg entfaellt, bestimmt jetzt
+       -- app/opera.py aus der Differenz Zeilensumme - TOTAL_GROSS.
+       NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0) AS prepaidamount,
        f.total_gross
          - (NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0)) AS payableamount,
        f.folio_no,
@@ -220,6 +199,8 @@ SELECT f.bill_no                                              AS id,
   LEFT JOIN @SCHEMA@.reservation_name resv
     ON resv.resv_name_id = f.resv_name_id
  WHERE f.bill_no = :bill_no
+   -- BILL_NO allein ist nicht eindeutig, siehe invoice_folio.sql
+   AND f.folio_no = :folio_no
    -- BILL_NO ist je Resort eindeutig, nicht ueber alle — und der Index geht
    -- ueber (RESORT, BILL_NO).
    AND f.resort  = :resort

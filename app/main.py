@@ -793,6 +793,24 @@ def benutzer_anlegen(request: Request, name: str = Form(...),
     return RedirectResponse(f"/benutzer?meldung=Benutzer {name} angelegt", status_code=303)
 
 
+@app.post("/benutzer/passwort_setzen")
+def benutzer_passwort_setzen(request: Request, name: str = Form(...), neu: str = Form("")):
+    """Ein Verwalter setzt das Passwort eines anderen Zugangs neu."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/benutzer?meldung=Keine Berechtigung", status_code=303)
+    if name == request.state.benutzer:
+        # Fuer den eigenen Zugang gilt der Weg mit dem bisherigen Passwort:
+        # Eine offen gelassene Sitzung soll es nicht ohne Weiteres aendern koennen.
+        return RedirectResponse("/benutzer?meldung=Das eigene Passwort bitte oben mit dem "
+                                "bisherigen Passwort ändern", status_code=303)
+    fehler = auth.passwort_setzen(name, neu)
+    if fehler:
+        return RedirectResponse(f"/benutzer?meldung={fehler}", status_code=303)
+    store.protokoll("benutzer", f"Passwort von '{name}' neu gesetzt", benutzer=request.state.benutzer)
+    return RedirectResponse(f"/benutzer?meldung=Passwort von {name} neu gesetzt — "
+                            "bisherige Anmeldungen dieses Zugangs sind beendet", status_code=303)
+
+
 @app.post("/benutzer/loeschen")
 def benutzer_loeschen(request: Request, name: str = Form(...)):
     if not _darf_verwalten(request):

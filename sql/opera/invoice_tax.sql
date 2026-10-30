@@ -41,6 +41,8 @@ SELECT NVL(z.pct, 0)                                      AS taxcategorypercent,
             ON tc.trx_code = ft.trx_code AND tc.resort = ft.resort
          WHERE ft.bill_no      = :bill_no
            AND ft.resort       = :resort
+           -- BILL_NO allein mischte zwei Aufenthalte, siehe invoice_folio.sql
+           AND ft.folio_no     = :folio_no
            AND ft.gross_amount IS NOT NULL) z
  GROUP BY NVL(z.pct, 0)
  HAVING SUM(z.net_amount) <> 0 OR SUM(z.gross_amount) <> 0

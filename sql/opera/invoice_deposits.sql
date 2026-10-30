@@ -42,10 +42,10 @@ SELECT d.bill_no                                     AS billingreferenceid,
  WHERE d.resort = :resort
    AND d.bill_no IN (SELECT fo.bill_no
                        FROM @SCHEMA@.folios fo
-                      WHERE fo.folio_no = (SELECT f.folio_no
-                                             FROM @SCHEMA@.folio$_tax f
-                                            WHERE f.bill_no = :bill_no
-                                              AND f.resort  = :resort))
+                      -- Das Folio steht vorab fest (invoice_folio.sql). Hier
+                      -- stand eine Unterabfrage ueber BILL_NO, die bei einer
+                      -- doppelt vergebenen Nummer zwei Zeilen lieferte.
+                      WHERE fo.folio_no = :folio_no)
    AND d.bill_no <> :bill_no
    AND d.status   = :anzahlung_status
  ORDER BY d.bill_generation_date, d.bill_no
