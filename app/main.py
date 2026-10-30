@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ablauf, auth, automatik, config, db, mailer, markdown, opera, store, updater, validate, xml_build
+from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, opera, store, updater, validate, xml_build
 
 from . import pfade
 # Programm: Handbuch und Vorlagen wechseln mit jeder Aktualisierung.
@@ -713,6 +713,8 @@ def konfiguration(request: Request, meldung: str = ""):
     return seiten.TemplateResponse(request, "konfiguration.html", _kontext(
         request, cfg=config.oeffentlich(cfg), meldung=meldung,
         schalter=[f"{s}.{f}" for s, f in SCHALTER],
+        # Tooltips aus docs/15_EINSTELLUNGEN.md, siehe app/einstellungen.py
+        erklaerungen=einstellungen.erklaerungen(),
         schreibbar=schreibbar, schreibgrund=schreibgrund,
         validator=validate.zustand(cfg), version=updater.version(),
         xrechnung_versionen=list(xml_build.VERSIONEN),

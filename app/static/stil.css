@@ -252,3 +252,18 @@ label.hervor{border-left:3px solid var(--akzent);padding-left:.6rem}
 .fuss{margin:2.5rem 0 0;padding:.9rem 1.2rem;border-top:1px solid var(--rand);
       color:var(--gedaempft);font-size:.8rem;text-align:center}
 .fuss a{color:var(--gedaempft)}
+
+/* Tooltip an den Einstellungen (konfiguration.html). Der Text steht in
+   data-tipp und kommt aus docs/15_EINSTELLUNGEN.md. Er erscheint unter dem
+   ganzen Feld und ist so breit wie die Karte — so laeuft er nie aus dem Bild,
+   auch nicht in der rechten Spalte. Per Tastatur: Tab auf das Fragezeichen. */
+label:has(> .tipp){position:relative}
+.tipp{display:inline-flex;align-items:center;justify-content:center;width:1.05rem;height:1.05rem;
+  margin-left:.35rem;border:1px solid var(--rand);border-radius:50%;background:#fff;
+  color:var(--gedaempft);font-size:.72rem;font-weight:600;line-height:1;cursor:help;
+  vertical-align:middle;flex-shrink:0}
+.tipp:hover,.tipp:focus{color:var(--text);border-color:var(--akzent-hell);outline:none}
+.tipp:hover::after,.tipp:focus::after{content:attr(data-tipp);position:absolute;left:0;right:0;
+  top:100%;margin-top:.3rem;z-index:20;padding:.55rem .7rem;background:var(--text);color:#fff;
+  border-radius:6px;font-size:.82rem;font-weight:400;line-height:1.45;text-align:left;
+  white-space:normal;box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}

@@ -1754,6 +1754,23 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     # Ein NEU eingetragener Token muss sofort verschluesselt in der Datei
     # landen — nicht erst beim naechsten Start. Sonst laege er bis zum
     # Neustart im Klartext, und genau das war der Fehler.
+    # Tooltips: je Feld der Seite eine Erklaerung, gelesen aus
+    # docs/15_EINSTELLUNGEN.md — keine zweite Fassung in der Oberflaeche.
+    from app import einstellungen as _einst
+    _erkl = _einst.erklaerungen()
+    _kseite = klient.get("/konfiguration").text
+    _felder = set(_re0.findall(r'name="([a-z_]+\.[a-z_]+)"', _kseite))
+    pruefe(_felder and not (_felder - set(_erkl)),
+           f"jede Einstellung der Seite hat eine Erklaerung im Dokument ({sorted(_felder - set(_erkl))})")
+    pruefe(_kseite.count('class="tipp"') == len(_felder),
+           f"und jede bekommt ihren Tooltip ({_kseite.count('class=\"tipp\"')} von {len(_felder)})")
+    pruefe(not [t for t in _erkl.values() if "**" in t or "`" in t],
+           "die Tooltips sind schlichter Text, ohne Markdown")
+    pruefe("Blindkopie bei jeder verschickten Rechnung" in _kseite,
+           "der Text steht tatsaechlich auf der Seite")
+    pruefe(_einst.erklaerungen(_sandkasten / "gibt-es-nicht.md") == {},
+           "fehlt das Dokument, gibt es keine Tooltips — aber keinen Absturz")
+
     klient.post("/konfiguration", data={"update.token": "github_pat_FRISCH_EINGETRAGEN"},
                 follow_redirects=False)
     datei = (config.CONFIG_DIR / "app.json").read_text(encoding="utf-8")

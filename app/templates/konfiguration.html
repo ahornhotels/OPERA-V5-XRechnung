@@ -1,4 +1,9 @@
 {% extends "basis.html" %}
+{# Tooltip je Einstellung. Der Text kommt aus docs/15_EINSTELLUNGEN.md
+   (app/einstellungen.py) — hier steht keine zweite Fassung, die mit der Zeit
+   vom Dokument abweicht. Ohne JavaScript: Das Fragezeichen ist per Maus und
+   Tastatur erreichbar, der Text steht zusaetzlich als aria-label da. #}
+{% macro tipp(feld) %}{% set t = erklaerungen.get(feld) %}{% if t %}<span class="tipp" tabindex="0" role="note" aria-label="{{ t }}" data-tipp="{{ t }}">?</span>{% endif %}{% endmacro %}
 {% block inhalt %}
 <h1>Konfiguration</h1>
 {% if not schreibbar %}
@@ -20,20 +25,20 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
 
   <section class="karte">
     <h2>Datenbank (nur lesend)</h2>
-    <label>Host<input name="datenbank.host" value="{{ cfg.datenbank.host }}"></label>
-    <label>Port<input name="datenbank.port" value="{{ cfg.datenbank.port }}"></label>
-    <label>Service<input name="datenbank.service_name" value="{{ cfg.datenbank.service_name }}"></label>
-    <label>Benutzer<input name="datenbank.benutzer" value="{{ cfg.datenbank.benutzer }}"></label>
+    <label>Host{{ tipp('datenbank.host') }}<input name="datenbank.host" value="{{ cfg.datenbank.host }}"></label>
+    <label>Port{{ tipp('datenbank.port') }}<input name="datenbank.port" value="{{ cfg.datenbank.port }}"></label>
+    <label>Service{{ tipp('datenbank.service_name') }}<input name="datenbank.service_name" value="{{ cfg.datenbank.service_name }}"></label>
+    <label>Benutzer{{ tipp('datenbank.benutzer') }}<input name="datenbank.benutzer" value="{{ cfg.datenbank.benutzer }}"></label>
     <label>Passwort <span class="klein">({{ cfg.datenbank.passwort or 'nicht gesetzt' }})</span>
-      <input name="datenbank.passwort" type="password" placeholder="unverändert lassen"></label>
+      {{ tipp('datenbank.passwort') }}<input name="datenbank.passwort" type="password" placeholder="unverändert lassen"></label>
     <label class="schalter"><input type="checkbox" name="datenbank.thick_mode" value="1"
-      {{ 'checked' if cfg.datenbank.thick_mode }}> Thick-Modus (nur bei Fehler DPY-3015)</label>
+      {{ 'checked' if cfg.datenbank.thick_mode }}> Thick-Modus (nur bei Fehler DPY-3015){{ tipp('datenbank.thick_mode') }}</label>
     {# Fehlte hier: Wer den Thick-Modus brauchte, musste app.json von Hand
        bearbeiten — mit einfachen Backslashes im Windows-Pfad startete der
        Dienst danach nicht mehr. Hier eingetragen, speichert ihn die Seite
        richtig. #}
     <label>Oracle-Client-Pfad (nur für den Thick-Modus)
-      <input name="datenbank.oracle_client_pfad" value="{{ cfg.datenbank.oracle_client_pfad }}"
+      {{ tipp('datenbank.oracle_client_pfad') }}<input name="datenbank.oracle_client_pfad" value="{{ cfg.datenbank.oracle_client_pfad }}"
              placeholder="C:\oracle\instantclient_21_13  oder  /opt/oracle/instantclient_21_13">
       <span class="klein">Ordner des Oracle Instant Client mit <code>oci.dll</code>
       (Windows) bzw. <code>libclntsh.so</code> (Linux), <strong>64 Bit</strong>. Ein
@@ -43,17 +48,17 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
 
   <section class="karte">
     <h2>Haus</h2>
-    <label>Resort<input name="property.resort" value="{{ cfg.property.resort }}"></label>
-    <label>USt-IdNr. (BT-31)<input name="property.ust_id" value="{{ cfg.property.ust_id }}"></label>
-    <label>Kontakt (BR-DE-5)<input name="property.kontakt_name" value="{{ cfg.property.kontakt_name }}"></label>
-    <label>Telefon (geht vor OPERA)<input name="property.kontakt_telefon" value="{{ cfg.property.kontakt_telefon }}"></label>
-    <label>E-Mail (geht vor OPERA)<input name="property.kontakt_email" value="{{ cfg.property.kontakt_email }}"></label>
+    <label>Resort{{ tipp('property.resort') }}<input name="property.resort" value="{{ cfg.property.resort }}"></label>
+    <label>USt-IdNr. (BT-31){{ tipp('property.ust_id') }}<input name="property.ust_id" value="{{ cfg.property.ust_id }}"></label>
+    <label>Kontakt (BR-DE-5){{ tipp('property.kontakt_name') }}<input name="property.kontakt_name" value="{{ cfg.property.kontakt_name }}"></label>
+    <label>Telefon (geht vor OPERA){{ tipp('property.kontakt_telefon') }}<input name="property.kontakt_telefon" value="{{ cfg.property.kontakt_telefon }}"></label>
+    <label>E-Mail (geht vor OPERA){{ tipp('property.kontakt_email') }}<input name="property.kontakt_email" value="{{ cfg.property.kontakt_email }}"></label>
     <p class="klein">Stehen Telefon oder E-Mail hier, kommen sie so auf die Rechnung.
        Leer lassen nimmt die Angabe am Resort in OPERA.</p>
-    <label>IBAN<input name="property.iban" value="{{ cfg.property.iban }}"></label>
-    <label>BIC<input name="property.bic" value="{{ cfg.property.bic }}"></label>
-    <label>Kontoinhaber<input name="property.kontoinhaber" value="{{ cfg.property.kontoinhaber }}"></label>
-    <label>Zahlungsziel (Tage)<input name="property.zahlungsziel_tage" value="{{ cfg.property.zahlungsziel_tage }}"></label>
+    <label>IBAN{{ tipp('property.iban') }}<input name="property.iban" value="{{ cfg.property.iban }}"></label>
+    <label>BIC{{ tipp('property.bic') }}<input name="property.bic" value="{{ cfg.property.bic }}"></label>
+    <label>Kontoinhaber{{ tipp('property.kontoinhaber') }}<input name="property.kontoinhaber" value="{{ cfg.property.kontoinhaber }}"></label>
+    <label>Zahlungsziel (Tage){{ tipp('property.zahlungsziel_tage') }}<input name="property.zahlungsziel_tage" value="{{ cfg.property.zahlungsziel_tage }}"></label>
   </section>
 
   {# Eigene Karte: Das Feld stand vorher nur hinter einem Link in der Karte
@@ -62,7 +67,7 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Leitweg-ID und Käuferreferenz (BT-10)</h2>
     <label class="hervor">Feld der Firmenkartei mit der Leitweg-ID
-      <input name="property.udf_leitweg" value="{{ cfg.property.udf_leitweg or '' }}"
+      {{ tipp('property.udf_leitweg') }}<input name="property.udf_leitweg" value="{{ cfg.property.udf_leitweg or '' }}"
              placeholder="z. B. UDFC05" title="UDFC01 bis UDFC40, oder leer lassen">
       <span class="klein">Benutzerdefiniertes Feld an der <strong>Firmenkartei</strong>
       (<code>UDFC01</code>–<code>UDFC40</code>). Leer lassen heißt: Die Anwendung sieht
@@ -77,9 +82,9 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
     <p class="klein"><a href="/einrichtung/leitweg">Anleitung: Feld finden und in OPERA
       einrichten</a> — welches Feld frei ist, und wie es per Screen Painter an die
       Firmenkartei kommt.</p>
-    <label>Mitgliedschaftstyp Leitweg-ID<input name="property.mitgliedschaftstyp_leitweg" value="{{ cfg.property.mitgliedschaftstyp_leitweg }}"></label>
+    <label>Mitgliedschaftstyp Leitweg-ID{{ tipp('property.mitgliedschaftstyp_leitweg') }}<input name="property.mitgliedschaftstyp_leitweg" value="{{ cfg.property.mitgliedschaftstyp_leitweg }}"></label>
     <label>Käuferreferenz (BT-10), wenn keine hinterlegt ist
-      <select name="property.buyerreference_ersatz">
+      {{ tipp('property.buyerreference_ersatz') }}<select name="property.buyerreference_ersatz">
         {# Die Vorgabe 'reservierungsnummer' fehlte in der Liste — beim Speichern
            der Seite wurde sie stillschweigend zur Rechnungsnummer. #}
         {% for w, b in [('reservierungsnummer','Reservierungsnummer'), ('rechnungsnummer','Rechnungsnummer'), ('debitorennummer','Debitorennummer'), ('kundenname','Kundenname')] %}
@@ -94,84 +99,84 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Mailversand</h2>
     <label class="schalter"><input type="checkbox" name="mail.aktiv" value="1"
-      {{ 'checked' if cfg.mail.aktiv }}> Versand aktiv</label>
-    <label>SMTP-Server<input name="mail.smtp_host" value="{{ cfg.mail.smtp_host }}"></label>
-    <label>Port<input name="mail.smtp_port" value="{{ cfg.mail.smtp_port }}"></label>
+      {{ 'checked' if cfg.mail.aktiv }}> Versand aktiv{{ tipp('mail.aktiv') }}</label>
+    <label>SMTP-Server{{ tipp('mail.smtp_host') }}<input name="mail.smtp_host" value="{{ cfg.mail.smtp_host }}"></label>
+    <label>Port{{ tipp('mail.smtp_port') }}<input name="mail.smtp_port" value="{{ cfg.mail.smtp_port }}"></label>
     <label>Verschlüsselung
-      <select name="mail.verschluesselung">
+      {{ tipp('mail.verschluesselung') }}<select name="mail.verschluesselung">
         {% for v in ['starttls','ssl','keine'] %}
         <option value="{{ v }}" {{ 'selected' if cfg.mail.verschluesselung == v }}>{{ v }}</option>
         {% endfor %}
       </select></label>
-    <label>Benutzer<input name="mail.benutzer" value="{{ cfg.mail.benutzer }}"></label>
+    <label>Benutzer{{ tipp('mail.benutzer') }}<input name="mail.benutzer" value="{{ cfg.mail.benutzer }}"></label>
     <label>Passwort <span class="klein">({{ cfg.mail.passwort or 'nicht gesetzt' }})</span>
-      <input name="mail.passwort" type="password" placeholder="unverändert lassen"></label>
-    <label>Absender<input name="mail.absender" value="{{ cfg.mail.absender }}"></label>
-    <label>Absendername<input name="mail.absender_name" value="{{ cfg.mail.absender_name }}"></label>
+      {{ tipp('mail.passwort') }}<input name="mail.passwort" type="password" placeholder="unverändert lassen"></label>
+    <label>Absender{{ tipp('mail.absender') }}<input name="mail.absender" value="{{ cfg.mail.absender }}"></label>
+    <label>Absendername{{ tipp('mail.absender_name') }}<input name="mail.absender_name" value="{{ cfg.mail.absender_name }}"></label>
     <label class="hervor">BCC (immer mitgesendet)
-      <input name="mail.bcc" value="{{ cfg.mail.bcc }}"></label>
+      {{ tipp('mail.bcc') }}<input name="mail.bcc" value="{{ cfg.mail.bcc }}"></label>
     <label class="hervor">BCC nur für City Ledger (zusätzlich)
-      <input name="mail.bcc_city_ledger" value="{{ cfg.mail.bcc_city_ledger }}">
+      {{ tipp('mail.bcc_city_ledger') }}<input name="mail.bcc_city_ledger" value="{{ cfg.mail.bcc_city_ledger }}">
       <span class="klein">Geht zusätzlich mit, wenn die Rechnung über das
       Debitorenkonto ausgecheckt wurde — diese Rechnungen sind nicht bezahlt,
       sondern stehen beim Debitor offen. Leer lassen, wenn nicht gewünscht.</span></label>
     <label class="hervor">Erlaubte Empfänger (Komma; leer = keine Beschränkung)
-      <input name="mail.erlaubte_empfaenger" value="{{ cfg.mail.erlaubte_empfaenger|join(', ') }}">
+      {{ tipp('mail.erlaubte_empfaenger') }}<input name="mail.erlaubte_empfaenger" value="{{ cfg.mail.erlaubte_empfaenger|join(', ') }}">
       <span class="klein">Solange hier etwas steht, geht keine Mail an eine andere
       Adresse — auch nicht aus der Automatik. Erst leeren, wenn der Versand an
       echte Kunden freigegeben ist.</span></label>
-    <label>Betreff<input name="mail.betreff" value="{{ cfg.mail.betreff }}"></label>
-    <label>Text<textarea name="mail.text" rows="5">{{ cfg.mail.text }}</textarea></label>
-    <label>Betreff einer Gutschrift<input name="mail.betreff_gutschrift" value="{{ cfg.mail.betreff_gutschrift }}"></label>
-    <label>Text einer Gutschrift<textarea name="mail.text_gutschrift" rows="5">{{ cfg.mail.text_gutschrift }}</textarea>
+    <label>Betreff{{ tipp('mail.betreff') }}<input name="mail.betreff" value="{{ cfg.mail.betreff }}"></label>
+    <label>Text{{ tipp('mail.text') }}<textarea name="mail.text" rows="5">{{ cfg.mail.text }}</textarea></label>
+    <label>Betreff einer Gutschrift{{ tipp('mail.betreff_gutschrift') }}<input name="mail.betreff_gutschrift" value="{{ cfg.mail.betreff_gutschrift }}"></label>
+    <label>Text einer Gutschrift{{ tipp('mail.text_gutschrift') }}<textarea name="mail.text_gutschrift" rows="5">{{ cfg.mail.text_gutschrift }}</textarea>
       <span class="klein">{bezug} wird zu „zur Rechnung … vom …“, wenn die berichtigte
       Rechnung eindeutig erkannt ist, sonst leer.</span></label>
-    <label>PDF-Ordner (optional)<input name="mail.pdf_ordner" value="{{ cfg.mail.pdf_ordner }}"></label>
-    <label>PDF-Dateimuster<input name="mail.pdf_muster" value="{{ cfg.mail.pdf_muster }}"></label>
+    <label>PDF-Ordner (optional){{ tipp('mail.pdf_ordner') }}<input name="mail.pdf_ordner" value="{{ cfg.mail.pdf_ordner }}"></label>
+    <label>PDF-Dateimuster{{ tipp('mail.pdf_muster') }}<input name="mail.pdf_muster" value="{{ cfg.mail.pdf_muster }}"></label>
   </section>
 
   <section class="karte">
     <h2>Auswahl — welche Rechnungen aufgenommen werden</h2>
     <label>Zeitraum beim Einlesen (Tage)
-      <input name="auswahl.zeitraum_tage" value="{{ cfg.auswahl.zeitraum_tage }}"></label>
+      {{ tipp('auswahl.zeitraum_tage') }}<input name="auswahl.zeitraum_tage" value="{{ cfg.auswahl.zeitraum_tage }}"></label>
     <label>Höchstens je Lauf einlesen
-      <input name="auswahl.hoechstens" value="{{ cfg.auswahl.hoechstens }}"></label>
+      {{ tipp('auswahl.hoechstens') }}<input name="auswahl.hoechstens" value="{{ cfg.auswahl.hoechstens }}"></label>
     <label>Profiltypen, die als Firma gelten (Komma)
-      <input name="auswahl.firmenprofile" value="{{ cfg.auswahl.firmenprofile|join(', ') }}"></label>
+      {{ tipp('auswahl.firmenprofile') }}<input name="auswahl.firmenprofile" value="{{ cfg.auswahl.firmenprofile|join(', ') }}"></label>
     <label class="schalter"><input type="checkbox" name="auswahl.reservierungsfirma_aufnehmen" value="1"
       {{ 'checked' if cfg.auswahl.reservierungsfirma_aufnehmen }}> auch aufnehmen, wenn die Firma
-      nur an der Reservierung hängt</label>
-    <label class="schalter hervor"><input type="checkbox" name="auswahl.reservierungsfirma_pruefen" value="1"
+      nur an der Reservierung hängt{{ tipp('auswahl.reservierungsfirma_aufnehmen') }}</label>
+    <label class="schalter hervor">{{ tipp('auswahl.reservierungsfirma_pruefen') }}<input type="checkbox" name="auswahl.reservierungsfirma_pruefen" value="1"
       {{ 'checked' if cfg.auswahl.reservierungsfirma_pruefen }}> <strong>diese erst nach
       Sichtprüfung versenden</strong> — dort zahlt oft eine Privatperson</label>
     <label class="schalter"><input type="checkbox" name="auswahl.nur_inland" value="1"
-      {{ 'checked' if cfg.auswahl.nur_inland }}> nur inländische Empfänger</label>
+      {{ 'checked' if cfg.auswahl.nur_inland }}> nur inländische Empfänger{{ tipp('auswahl.nur_inland') }}</label>
     <label>Inlandskennzeichen (Komma)
-      <input name="auswahl.inlandskennzeichen" value="{{ cfg.auswahl.inlandskennzeichen|join(', ') }}"></label>
+      {{ tipp('auswahl.inlandskennzeichen') }}<input name="auswahl.inlandskennzeichen" value="{{ cfg.auswahl.inlandskennzeichen|join(', ') }}"></label>
     <label>Mindestbetrag brutto (0 = keine Grenze)
-      <input name="auswahl.mindestbetrag_brutto" value="{{ cfg.auswahl.mindestbetrag_brutto }}"></label>
+      {{ tipp('auswahl.mindestbetrag_brutto') }}<input name="auswahl.mindestbetrag_brutto" value="{{ cfg.auswahl.mindestbetrag_brutto }}"></label>
   </section>
 
   <section class="karte">
     <h2>Automatik</h2>
     <label class="schalter"><input type="checkbox" name="automatik.aktiv" value="1"
-      {{ 'checked' if cfg.automatik.aktiv }}> Automatik eingeschaltet</label>
-    <label class="schalter hervor"><input type="checkbox" name="automatik.testlauf" value="1"
+      {{ 'checked' if cfg.automatik.aktiv }}> Automatik eingeschaltet{{ tipp('automatik.aktiv') }}</label>
+    <label class="schalter hervor">{{ tipp('automatik.testlauf') }}<input type="checkbox" name="automatik.testlauf" value="1"
       {{ 'checked' if cfg.automatik.testlauf }}> <strong>Testlauf</strong> — alles wird
       vorbereitet, aber nichts verschickt</label>
-    <label>Takt in Minuten<input name="automatik.poll_minuten" value="{{ cfg.automatik.poll_minuten }}"></label>
+    <label>Takt in Minuten{{ tipp('automatik.poll_minuten') }}<input name="automatik.poll_minuten" value="{{ cfg.automatik.poll_minuten }}"></label>
     <label>Wartezeit bis Versand (Minuten)
-      <input name="automatik.wartezeit_minuten" value="{{ cfg.automatik.wartezeit_minuten }}"></label>
-    <label>Höchstens je Lauf<input name="automatik.max_pro_lauf" value="{{ cfg.automatik.max_pro_lauf }}"></label>
+      {{ tipp('automatik.wartezeit_minuten') }}<input name="automatik.wartezeit_minuten" value="{{ cfg.automatik.wartezeit_minuten }}"></label>
+    <label>Höchstens je Lauf{{ tipp('automatik.max_pro_lauf') }}<input name="automatik.max_pro_lauf" value="{{ cfg.automatik.max_pro_lauf }}"></label>
     <label class="schalter"><input type="checkbox" name="automatik.city_ledger_versenden" value="1"
       {{ 'checked' if cfg.automatik.city_ledger_versenden }}>
       <span>City-Ledger-Rechnungen automatisch versenden<br>
       <span class="klein">Aus: Debitorenrechnungen gehen nur von Hand hinaus. Sie sind
-      nicht bezahlt, sondern stehen beim Debitor offen.</span></span></label>
+      nicht bezahlt, sondern stehen beim Debitor offen.</span></span>{{ tipp('automatik.city_ledger_versenden') }}</label>
     <label class="schalter"><input type="checkbox" name="automatik.nur_mit_firmenbezug" value="1"
-      {{ 'checked' if cfg.automatik.nur_mit_firmenbezug }}> nur Rechnungen mit Firmenbezug aufnehmen</label>
+      {{ 'checked' if cfg.automatik.nur_mit_firmenbezug }}> nur Rechnungen mit Firmenbezug aufnehmen{{ tipp('automatik.nur_mit_firmenbezug') }}</label>
     <label class="schalter"><input type="checkbox" name="automatik.empfaenger_automatisch" value="1"
-      {{ 'checked' if cfg.automatik.empfaenger_automatisch }}> Empfänger automatisch vorbelegen</label>
+      {{ 'checked' if cfg.automatik.empfaenger_automatisch }}> Empfänger automatisch vorbelegen{{ tipp('automatik.empfaenger_automatisch') }}</label>
   </section>
 
   <section class="karte">
@@ -179,23 +184,23 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
     <p class="klein">Läuft ausschließlich lokal auf diesem Server. Eine fertige
        XRechnung enthält Kundendaten und gehört in keine Prüfseite im Internet.</p>
     <label class="schalter"><input type="checkbox" name="validierung.aktiv" value="1"
-      {{ 'checked' if cfg.validierung.aktiv }}> Validierung eingeschaltet</label>
-    <label class="schalter hervor"><input type="checkbox" name="validierung.pflicht" value="1"
+      {{ 'checked' if cfg.validierung.aktiv }}> Validierung eingeschaltet{{ tipp('validierung.aktiv') }}</label>
+    <label class="schalter hervor">{{ tipp('validierung.pflicht') }}<input type="checkbox" name="validierung.pflicht" value="1"
       {{ 'checked' if cfg.validierung.pflicht }}> <strong>Pflicht</strong> — ohne
       eingerichteten Validator wird nicht versendet</label>
-    <label>Java<input name="validierung.java" value="{{ cfg.validierung.java }}"></label>
-    <label>Validator-JAR<input name="validierung.kosit_jar" value="{{ cfg.validierung.kosit_jar }}"></label>
+    <label>Java{{ tipp('validierung.java') }}<input name="validierung.java" value="{{ cfg.validierung.java }}"></label>
+    <label>Validator-JAR{{ tipp('validierung.kosit_jar') }}<input name="validierung.kosit_jar" value="{{ cfg.validierung.kosit_jar }}"></label>
     {# Der Versionsschalter steht beim Validator, weil beide zusammengehoeren:
        Eine Version ohne passendes Regelwerk laesst sich nicht pruefen. #}
     <label>XRechnung-Version
-      <select name="xrechnung.version">
+      {{ tipp('xrechnung.version') }}<select name="xrechnung.version">
         {% for v in xrechnung_versionen %}
         <option value="{{ v }}" {{ 'selected' if (cfg.xrechnung or {}).version == v }}>{{ v }}</option>
         {% endfor %}
       </select></label>
     <p class="klein">XRechnung 4.0 ist noch nicht veröffentlicht und deshalb nicht wählbar.
        Steht im Pfad unten <code>{version}</code>, wählt die Version das Regelwerk mit.</p>
-    <label>scenarios.xml<input name="validierung.kosit_szenarien" value="{{ cfg.validierung.kosit_szenarien }}"></label>
+    <label>scenarios.xml{{ tipp('validierung.kosit_szenarien') }}<input name="validierung.kosit_szenarien" value="{{ cfg.validierung.kosit_szenarien }}"></label>
     <div class="{{ 'hinweis' if validator.bereit else 'fehler' }}">
       {% if validator.bereit %}Eingerichtet — {{ validator.java_version }} ({{ validator.java }})
       {% else %}Noch nicht einsatzbereit:
@@ -211,7 +216,7 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
        zuruecksendet, würde jedes Speichern die Angaben löschen. #}
   <h2>Aktualisierung</h2>
     <label class="schalter"><input type="checkbox" name="update.aktiv" value="1"
-      {{ 'checked' if cfg['update'].aktiv }}> Aktualisierung über GitHub erlaubt</label>
+      {{ 'checked' if cfg['update'].aktiv }}> Aktualisierung über GitHub erlaubt{{ tipp('update.aktiv') }}</label>
     {% if quelle_festgenagelt %}
     {# Steht die Quelle in der systemd-Unit, gehoert sie root — und dann darf
        sie hier nicht bearbeitbar sein, sonst suggeriert das Feld eine Wirkung,
@@ -223,21 +228,21 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
       gehört dem Dienst. Wer den Dienst übernimmt, soll ihn nicht auf ein fremdes
       Repository richten können.</p>
     {% else %}
-    <label>Repository<input name="update.repo" value="{{ cfg['update'].repo }}"></label>
-    <label>Zweig<input name="update.zweig" value="{{ cfg['update'].zweig }}"></label>
+    <label>Repository{{ tipp('update.repo') }}<input name="update.repo" value="{{ cfg['update'].repo }}"></label>
+    <label>Zweig{{ tipp('update.zweig') }}<input name="update.zweig" value="{{ cfg['update'].zweig }}"></label>
     {% endif %}
     <label>Token (nur bei privatem Repository)
       <span class="klein">({{ 'gesetzt' if cfg['update'].token else 'nicht gesetzt' }})</span>
-      <input name="update.token" type="password" placeholder="unverändert lassen"></label>
+      {{ tipp('update.token') }}<input name="update.token" type="password" placeholder="unverändert lassen"></label>
     <p class="klein">Version {{ version }} · {{ update_stand }}</p>
   </section>
 
   <section class="karte">
     <h2>Netz und Ablage</h2>
     <label>Erlaubte Netze (Komma)
-      <input name="server.erlaubte_netze" value="{{ cfg.server.erlaubte_netze|join(', ') }}"></label>
-    <label>XML-Ordner<input name="ablage.xml_ordner" value="{{ cfg.ablage.xml_ordner }}"></label>
-    <label>Archiv<input name="ablage.archiv_ordner" value="{{ cfg.ablage.archiv_ordner }}"></label>
+      {{ tipp('server.erlaubte_netze') }}<input name="server.erlaubte_netze" value="{{ cfg.server.erlaubte_netze|join(', ') }}"></label>
+    <label>XML-Ordner{{ tipp('ablage.xml_ordner') }}<input name="ablage.xml_ordner" value="{{ cfg.ablage.xml_ordner }}"></label>
+    <label>Archiv{{ tipp('ablage.archiv_ordner') }}<input name="ablage.archiv_ordner" value="{{ cfg.ablage.archiv_ordner }}"></label>
   </section>
 </div>
 <div class="knoepfe"><button class="haupt">Speichern</button></div>
