@@ -25,7 +25,7 @@ from pptx.util import Emu, Inches, Pt
 
 BILDER = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "aufnahmen")
 ZIEL = pathlib.Path(__file__).resolve().parent / "XRechnung_Anleitung_Anwender.pptx"
-STAND = "Stand 16.09.2026"
+STAND = "Stand 30.10.2026"
 
 # --- Hausfarben wie in erzeugen.py -----------------------------------------
 AKZENT = RGBColor(0x74, 0x5B, 0x2F)
@@ -310,8 +310,9 @@ y = schritte(f, RAND, INHALT_Y + Inches(0.05), LINKS_B, [
 hinweis(f, RAND, y + Inches(0.15), LINKS_B, "HINWEIS",
         "Nach **8 Stunden** meldet das Programm Sie ab — dann einfach neu anmelden.\n"
         "Nach **5 falschen Passwörtern** ist der Zugang kurz gesperrt. Warten Sie etwas, bevor Sie es erneut versuchen.")
-hinweis(f, BILD_X + Inches(1.3), Inches(6.0), BILD_B - Inches(1.3), "TIPP",
-        "Passwort vergessen? Das kann die IT zurücksetzen.", h=Inches(0.72))
+hinweis(f, BILD_X + Inches(1.3), Inches(5.95), BILD_B - Inches(1.3), "TIPP",
+        "Passwort vergessen? Wer **verwalten** darf, setzt es unter **„Benutzer“** neu — sonst die IT.",
+        h=Inches(1.0))
 
 # =============================================================================
 # 5 Liste
@@ -492,7 +493,7 @@ meldungen = [
     ("Ort, Land oder Name des Empfängers fehlt", "Anschrift in OPERA am Kundenprofil ergänzen, dann die Rechnung neu öffnen."),
     ("Positionen / Summe / Folio-Klammer / Steuergruppe", "Nicht selbst korrigieren — an die Buchhaltung melden."),
     ("KoSIT: …", "Das offizielle Prüfprogramm beanstandet etwas. Rechnungsnummer an die IT geben."),
-    ("Nullbeleg / negativer Betrag", "Gehört nicht in den Versand. Zurücklegen."),
+    ("Nullbeleg", "Gehört nicht in den Versand. Zurücklegen."),
 ]
 ty = Inches(5.02)
 kasten(f, RAND, ty - Inches(0.36), BREITE - 2 * RAND, Inches(0.36), DUNKEL)
@@ -587,6 +588,24 @@ hinweis(f, BILD_X, Inches(5.05), BILD_B, "TIPP",
         "Der Knopf **„… ohne Adresse“** in der Liste (Bild unten rechts) lädt eine **Excel-Liste**: "
         "welche Kunden keine Adresse haben, wie viele Rechnungen daran hängen. "
         "Oben stehen die, bei denen sich die Pflege am meisten lohnt.")
+
+# =============================================================================
+# Gutschrift
+# =============================================================================
+f = seite("Sonderfall", "Eine Gutschrift verschicken")
+bild(f, "20_gutschrift", RAND, INHALT_Y, BREITE - 2 * RAND, Inches(2.3))
+y = schritte(f, RAND, Inches(4.05), Inches(6.3), [
+    (1, "Gutschriften kommen **immer in Prüfung** — keine geht ohne Ihren Blick hinaus."),
+    (2, "Oben steht, **zu welcher Rechnung** die Gutschrift gehört, wenn das Programm sie sicher erkennt."),
+    (3, "Stimmt alles: Empfänger prüfen, dann **„Prüfung abgeschlossen“** — oder gleich **„Jetzt versenden“**."),
+], groesse=14.5)
+x2 = RAND + Inches(6.7)
+y2 = hinweis(f, x2, Inches(4.0), BREITE - RAND - x2, "HINWEIS",
+             "In der Gutschrift stehen die Beträge **ohne Minus** — das ist richtig so. "
+             "Dass es eine Gutschrift ist, steht in der Datei und im Betreff der Mail.")
+hinweis(f, x2, y2 + Inches(0.15), BREITE - RAND - x2, "TIPP",
+        "Steht dort **„ohne erkennbare Ursprungsrechnung“** — etwa bei einer Teilgutschrift —, "
+        "fragen Sie die Buchhaltung, bevor Sie versenden.")
 
 # =============================================================================
 # 17 Suchen
@@ -703,8 +722,8 @@ for n, teil in enumerate(seiten, 1):
 f = seite("Zum Ausdrucken", "Spickzettel")
 liste = [
     "Anmelden, Liste öffnen — Reiter **Prüfung** und **Fehler** zuerst ansehen.",
-    "„Firma an der Reservierung“? → auf **„Bezahlt über“** schauen.",
-    "**Empfänger** prüfen, **„Empfänger übernehmen“**, in Prüfung dazu **„Prüfung abgeschlossen“**.",
+    "Firma an der Reservierung oder **Gutschrift**? → Hinweis oben lesen.",
+    "**Empfänger** übernehmen, in Prüfung dazu **„Prüfung abgeschlossen“**.",
     "Hat der Kunde eine **Bestellnummer** genannt? → Käuferreferenz eintragen.",
     "**„XML erzeugen“** — nichts Rotes? Sonst Meldung lesen.",
     "**„Jetzt versenden“** — Meldung „Versendet“, Status **Gesendet**.",

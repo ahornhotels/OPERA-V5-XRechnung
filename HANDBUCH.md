@@ -69,8 +69,11 @@ Obergrenze erreicht (Vorgabe 500), sagt die Meldung es — dann gibt es womögli
 mehr, und der Zeitraum sollte kleiner oder die Grenze höher sein.
 
 Aufgenommen werden **nur abgeschlossene Rechnungen** (`INVOICE`/`OK`) des
-eingestellten Hauses **mit Firmenbezug**. Rechnungen mit Betrag 0,00 oder
-negativem Betrag werden automatisch zurückgelegt, ebenso ausländische Empfänger.
+eingestellten Hauses **mit Firmenbezug**. Rechnungen mit Betrag 0,00 werden
+automatisch zurückgelegt, ebenso ausländische Empfänger. Ein negativer Beleg
+ohne Anzahlung ist eine **Gutschrift**: Er kommt in die Sichtprüfung (siehe
+„Gutschriften“). Ein negativer Beleg *mit* Anzahlung ist meist eine überzahlte
+Rechnung und kommt ebenfalls in die Sichtprüfung.
 
 ### Zwei Arten von Firmenbezug — und warum das wichtig ist
 
@@ -523,6 +526,52 @@ jederzeit.
 In der Konfiguration legt `property.positionen` die Vorbelegung fest:
 `automatisch` (Vorgabe), oder fest `B`, `C` bzw. `A`.
 
+## Anzahlungen
+
+Eine Anzahlung ist in OPERA ein eigener Beleg auf dem Folio des Aufenthalts.
+Die Schlussrechnung führt sie als **bereits gezahlt** (BT-113) und verweist auf
+den Anzahlungsbeleg (BG-3). Abgezogen wird genau der Teil, den OPERA dieser
+Rechnung angerechnet hat — der Unterschied zwischen ihren Positionen und ihrem
+Betrag in OPERA.
+
+Das ist wichtig, wenn auf einem Folio **mehrere Schlussrechnungen** liegen,
+etwa eine Hauptrechnung und eine kleine Nebenrechnung für Minibar oder Parken.
+OPERA rechnet die Anzahlung nur einer davon an; nur diese trägt sie in der
+XRechnung. Die andere geht ohne Anzahlung hinaus, mit ihrem eigenen Betrag.
+
+Ist eine Anzahlung höher als das, was am Ende angefallen ist, wird der
+Zahlbetrag negativ — der Kunde hat ein Guthaben. Die Rechnung bleibt eine
+Rechnung; sie geht zur Sichtprüfung, weil ein Guthaben meist eine Rückfrage
+der Buchhaltung auslöst.
+
+## Gutschriften
+
+Ein Beleg, dessen Positionen zusammen negativ sind und dem keine Anzahlung
+angerechnet ist, ist eine **Gutschrift** — meist die Stornierung oder
+Teilstornierung einer Rechnung. Die Anwendung schickt sie als **Gutschrift
+(Typ 381)**: mit positiven Beträgen, wie es die Norm verlangt, und mit eigenem
+Betreff und Text in der Mail.
+
+**Jede Gutschrift geht zuerst in die Sichtprüfung.** Auf der Detailseite steht
+oben, ob die **berichtigte Rechnung** erkannt wurde:
+
+| Hinweis | Was er heißt |
+|---|---|
+| *Gutschrift zur Rechnung … vom …* | An derselben Reservierung gibt es genau eine Rechnung mit dem entgegengesetzten Betrag. Sie steht als Rechnungsbezug in der Gutschrift |
+| *ohne erkennbare Ursprungsrechnung* | Keine passende Rechnung — etwa bei einer Teilgutschrift über einen anderen Betrag. Die Gutschrift geht ohne Rechnungsbezug hinaus |
+| *mehrere Rechnungen kommen in Frage* | Zwei gleich hohe Rechnungen an derselben Reservierung. Geraten wird nicht; die Gutschrift geht ohne Rechnungsbezug hinaus |
+
+OPERA selbst führt keinen Verweis von der Gutschrift auf die Rechnung; die
+Anwendung kann ihn nur aus Reservierung und Betrag erschließen. Das gelingt bei
+vollständigen Stornos, bei Teilgutschriften nicht. Technisch ist eine
+Gutschrift ohne Rechnungsbezug gültig. Ob sie steuerlich genügt (eine
+Berichtigung muss sich eindeutig auf die berichtigte Rechnung beziehen), klärt
+das Haus mit seiner Steuerberatung — im Zweifel die Nummer der Ursprungsrechnung
+dem Kunden mitteilen.
+
+Sind die Positionen negativ **und** ist zugleich eine Anzahlung angerechnet,
+lässt sich das nicht sauber abbilden; die Vorprüfung hält den Beleg an.
+
 ## Profile ohne E-Mail-Adresse
 
 Eine XRechnung braucht die elektronische Adresse des Empfängers. Das ist ein
@@ -594,6 +643,8 @@ In der Zeile steht rot, woran es liegt.
 | **Versand begonnen, Ergebnis nicht bestätigt** | Der Versand brach unklar ab. Sehen Sie im Postfach der Blindkopie nach, ob die Mail hinausging, und halten Sie es auf der Detailseite fest: **„Ja — als versendet vermerken"** oder **„Nein — nichts ging hinaus"**. Erst danach ist die Rechnung wieder entscheidbar |
 | **Am Empfängerprofil steht keine einzelne gültige Adresse** | In OPERA stehen mehrere Adressen in einem Feld. Auf eine zurückschneiden, dann neu einlesen |
 | **Nullbeleg** | Gesamtbetrag 0,00 — gehört nicht in den Versand |
+| **Negativer Gesamtbetrag … gehört als Gutschrift (381)** | Positionen negativ, aber zugleich eine Anzahlung angerechnet. Nicht automatisch abbildbar — an die Buchhaltung |
+| **Anzahlung nur teilweise angerechnet** | Der Teil der Anzahlung, den OPERA dieser Rechnung angerechnet hat, passt zu keinem Anzahlungsbeleg. Kam in den geprüften Daten nicht vor — melden |
 | **KoSIT: …** | Das offizielle Prüfprogramm beanstandet etwas. Der Text nennt die Regel |
 | **steht nicht auf der Liste erlaubter Empfänger** | Sicherheitsnetz — Adresse oder Liste anpassen |
 
@@ -671,8 +722,15 @@ Kunde eine Leitweg-ID hinterlegt hat, läuft er über diesen Weg.
   nur und schickt eine Datei
 - Sie **korrigiert keine Rechnungen**. Stimmt etwas in OPERA nicht, gehört es
   dort korrigiert
-- **Gutschriften** und Rechnungen mit negativem Betrag sind noch nicht
-  vorgesehen; sie werden erkannt und zurückgelegt
+- **Gutschriften** gehen als Typ 381 hinaus, aber immer erst nach
+  Sichtprüfung. Den Bezug auf die berichtigte Rechnung erkennt die Anwendung
+  nur bei vollständigen Stornos — OPERA führt ihn nicht
+- **Rechnungsnummer** ist die Belegnummer aus OPERA (`BILL_NO`), dieselbe, die
+  jede Rechnung trägt. Die Debitorennummer (`INVOICE_NO`) haben nur Rechnungen
+  über das Debitorenkonto; sie wird nicht verwendet
+- **OPERAs eigene E-Rechnung** (Parameter `E-INVOICE`) sollte ausgeschaltet
+  bleiben, solange diese Anwendung versendet — sonst könnten Kunden zwei
+  E-Rechnungen bekommen. Wer sie einschalten will, stimmt das vorher ab
 - **Anzahlungen** erkennt sie am Belegstatus, nicht an Umsatzcodes — das gilt
   in jedem Haus gleich. Führt Ihr Haus Anzahlungen anders (als Umbuchung im
   selben Beleg statt als eigenen Beleg), ist das einzustellen

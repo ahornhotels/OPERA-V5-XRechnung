@@ -299,6 +299,20 @@ finally:
 pruefe(str(_alt_db).startswith(str(_sandkasten)),
        "die Arbeitsliste des Tests liegt im Sandkasten, nicht im Datenordner der Anlage")
 
+# Von Hand bearbeitete app.json mit einfachem Backslash im Windows-Pfad: Der
+# Dienst startete nicht, im Protokoll stand nur "Invalid \\escape". Die Meldung
+# muss Zeile, Einstellung und Abhilfe nennen — aber nicht den Inhalt der Zeile.
+_kaputt = _sandkasten / "kaputt.json"
+_kaputt.write_text('{\n  "datenbank": {\n    "passwort": "geheim123",\n'
+                   '    "oracle_client_pfad": "C:\\oracle\\client"\n  }\n}\n', encoding="utf-8")
+try:
+    config._json_lesen(_kaputt)
+    pruefe(False, "eine app.json mit einfachem Backslash meldet sich verstaendlich")
+except config.KonfigFehler as e:
+    pruefe("Zeile 4" in str(e) and "oracle_client_pfad" in str(e) and "C:/oracle/client" in str(e)
+           and "geheim123" not in str(e),
+           f"eine app.json mit einfachem Backslash meldet Zeile, Einstellung und Abhilfe ({str(e)[-120:]})")
+
 print("2) Anmeldung")
 store.init()
 auth.anlegen("pruefer", "Geheim!123", "verwalten")
@@ -1758,6 +1772,20 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     # wurde, und zeigte auf die falsche Ursache. Derselbe Fehler steckte in
     # der Pruefung der Konfigurationsseite.
     _vorher_repo = config.laden()["update"]["repo"]
+    # Der Oracle-Client-Pfad stand nicht auf der Seite. Wer ihn brauchte,
+    # bearbeitete app.json von Hand — mit einfachen Backslashes startete der
+    # Dienst danach nicht mehr. Ueber die Seite eingetragen, muss er sauber
+    # gespeichert werden und die Datei ladbar bleiben.
+    pruefe('name="datenbank.oracle_client_pfad"' in klient.get("/konfiguration").text,
+           "der Oracle-Client-Pfad laesst sich auf der Konfigurationsseite eintragen")
+    _vorher_pfad = config.laden()["datenbank"].get("oracle_client_pfad", "")
+    klient.post("/konfiguration", data={"datenbank.oracle_client_pfad": "C:\\oracle\\instantclient_21_13"},
+                follow_redirects=False)
+    pruefe(config._json_lesen(config.CONFIG_FILE)["datenbank"]["oracle_client_pfad"]
+           == "C:\\oracle\\instantclient_21_13",
+           "ein Windows-Pfad mit Backslashes wird so gespeichert, dass die Datei ladbar bleibt")
+    klient.post("/konfiguration", data={"datenbank.oracle_client_pfad": _vorher_pfad},
+                follow_redirects=False)
     klient.post("/konfiguration", data={"mail.bcc": "test@beispiel.de"},
                 follow_redirects=False)
     danach = config.laden()

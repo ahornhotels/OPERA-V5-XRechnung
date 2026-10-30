@@ -18,6 +18,7 @@
     "schema": "OPERA",
     "thick_mode": false,
     "oracle_client_pfad": "",
+    "_oracle_client_hinweis": "Nur fuer thick_mode = true (Fehler DPY-3015). Ordner des Oracle Instant Client, in dem oci.dll (Windows) bzw. libclntsh.so (Linux) liegt — 64 Bit, passend zu Python; ein 32-Bit-Client, wie er fuer OPERA oft installiert ist, geht nicht. Beispiele: Windows \"C:/oracle/instantclient_21_13\" (Schraegstriche, oder jeden Backslash doppelt: \"C:\\\\oracle\\\\instantclient_21_13\"), Linux \"/opt/oracle/instantclient_21_13\". Am sichersten ueber die Konfigurationsseite eintragen.",
     "_schema_hinweis": "Das Oracle-Schema, in dem die OPERA-Tabellen liegen. Heisst fast immer OPERA; leer lassen bedeutet OPERA. Der Name wird in jede Abfrage eingesetzt (@SCHEMA@) und vorher geprueft — erlaubt sind Buchstaben, Ziffern, _ $ #, beginnend mit einem Buchstaben."
   },
   "property": {

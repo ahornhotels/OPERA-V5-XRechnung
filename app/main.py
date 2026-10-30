@@ -442,7 +442,7 @@ def detail(request: Request, bill_no: int, meldung: str = "",
         positionsarten=opera.POSITIONSARTEN,
         versand_offen=ablauf.VERSAND_OFFEN in (satz.get("fehler") or ""),
         aufbereitet=aufbereitet,
-        blindkopien=mailer.blindkopien(cfg, float(satz.get("city_ledger") or 0) > 0),
+        blindkopien=mailer.blindkopien(cfg, float(satz.get("city_ledger") or 0) != 0),
         protokoll=store.protokoll_lesen(30, bill_no)))
 
 

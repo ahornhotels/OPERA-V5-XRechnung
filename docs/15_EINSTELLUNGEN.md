@@ -26,7 +26,7 @@ zweiten Haus anders sein wird als hier.
 | `benutzer`, `passwort` | **Eigener Benutzer mit `SELECT`-Recht.** Kein Schema-Eigner, keine Schreibrechte. Das Passwort wird beim ersten Start verschlüsselt |
 | `schema` | **Das Schema, in dem die OPERA-Tabellen liegen.** Fast immer `OPERA`; leer bedeutet `OPERA`. Der Name geht in jede Abfrage und wird vorher geprüft |
 | `thick_mode` | Auf `true`, wenn die Datenbank ein altes Passwortverfahren nutzt (`DPY-3015`). Braucht dann den Oracle-Client |
-| `oracle_client_pfad` | Pfad zum Instant Client, nur bei `thick_mode` |
+| `oracle_client_pfad` | Nur bei `thick_mode`: Ordner des Oracle Instant Client mit `oci.dll` (Windows) bzw. `libclntsh.so` (Linux), **64 Bit** wie Python — ein 32-Bit-Client für OPERA geht nicht. Beispiel Windows `C:/oracle/instantclient_21_13`, Linux `/opt/oracle/instantclient_21_13`. Wer `app.json` von Hand bearbeitet: Schrägstriche verwenden oder jeden Backslash verdoppeln (`C:\\oracle\\…`), sonst startet der Dienst nicht |
 
 ## `property` — das Haus und was OPERA nicht liefert
 

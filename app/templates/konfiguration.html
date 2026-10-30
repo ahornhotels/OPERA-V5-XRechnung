@@ -28,6 +28,17 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
       <input name="datenbank.passwort" type="password" placeholder="unverändert lassen"></label>
     <label class="schalter"><input type="checkbox" name="datenbank.thick_mode" value="1"
       {{ 'checked' if cfg.datenbank.thick_mode }}> Thick-Modus (nur bei Fehler DPY-3015)</label>
+    {# Fehlte hier: Wer den Thick-Modus brauchte, musste app.json von Hand
+       bearbeiten — mit einfachen Backslashes im Windows-Pfad startete der
+       Dienst danach nicht mehr. Hier eingetragen, speichert ihn die Seite
+       richtig. #}
+    <label>Oracle-Client-Pfad (nur für den Thick-Modus)
+      <input name="datenbank.oracle_client_pfad" value="{{ cfg.datenbank.oracle_client_pfad }}"
+             placeholder="C:\oracle\instantclient_21_13  oder  /opt/oracle/instantclient_21_13">
+      <span class="klein">Ordner des Oracle Instant Client mit <code>oci.dll</code>
+      (Windows) bzw. <code>libclntsh.so</code> (Linux), <strong>64 Bit</strong>. Ein
+      32-Bit-Client, wie er für OPERA oft installiert ist, geht nicht. Wirkt nach
+      einem Neustart des Dienstes.</span></label>
   </section>
 
   <section class="karte">

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime
@@ -198,6 +199,32 @@ def laden() -> dict:
     return cfg
 
 
+def _json_lesen(datei: Path) -> dict:
+    """Liest eine JSON-Datei und sagt bei einem Fehler, WO und WAS.
+
+    Gesehen bei einer Windows-Installation: In app.json war von Hand
+    "oracle_client_pfad": "C:\\oracle\\..." mit EINFACHEN Backslashes
+    eingetragen. In JSON leitet \\ ein Steuerzeichen ein; der Dienst startete
+    nicht, und im Protokoll stand nur "Invalid \\escape: line 20 column 30".
+    Die Zeile selbst wird nicht ausgegeben — dort koennte ein von Hand
+    eingetragenes Passwort stehen. Genannt werden Ort und Name der Einstellung."""
+    text = datei.read_text(encoding="utf-8")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        zeilen = text.splitlines()
+        zeile = zeilen[e.lineno - 1] if 0 < e.lineno <= len(zeilen) else ""
+        treffer = re.match(r'\s*"([^"]+)"\s*:', zeile)
+        name = f" (Einstellung „{treffer.group(1)}“)" if treffer else ""
+        rat = ""
+        if "escape" in e.msg:
+            rat = (" Windows-Pfade in dieser Datei mit doppeltem Backslash schreiben "
+                   "(C:\\\\oracle\\\\client) oder mit Schrägstrich (C:/oracle/client) — "
+                   "oder den Wert über die Konfigurationsseite eintragen, die das richtig speichert.")
+        raise KonfigFehler(f"{datei} ist kein gültiges JSON: Zeile {e.lineno}, Spalte {e.colno}"
+                           f"{name} — {e.msg}.{rat}") from None
+
+
 def _laden_von_platte() -> dict:
     """Liest die Konfiguration. Fehlende Schluessel werden aus der Vorlage
     ergaenzt, Klartext-Passwoerter einmalig verschluesselt zurueckgeschrieben.
@@ -207,7 +234,7 @@ def _laden_von_platte() -> dict:
     vorlage_datei = CONFIG_DIR / "app.example.json"
     if not CONFIG_FILE.exists():
         CONFIG_FILE.write_text(vorlage_datei.read_text(encoding="utf-8"), encoding="utf-8")
-    roh = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    roh = _json_lesen(CONFIG_FILE)
     muss_speichern = False
 
     if vorlage_datei.exists():

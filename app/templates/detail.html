@@ -11,7 +11,7 @@
 <section class="karte aktionsleiste">
   <h2>XRechnung erzeugen und versenden</h2>
   {% if blindkopien %}
-  <p class="hinweis">Blindkopie geht an: {{ blindkopien|join(', ') }}{% if satz.city_ledger and satz.city_ledger > 0 %}
+  <p class="hinweis">Blindkopie geht an: {{ blindkopien|join(', ') }}{% if satz.city_ledger and satz.city_ledger != 0 %}
      — die zweite Adresse, weil diese Rechnung über das Debitorenkonto ausgecheckt wurde{% endif %}</p>
   {% endif %}
   <div class="knoepfe">
@@ -85,7 +85,7 @@
      fuehrt keinen Verweis darauf — der Bezug ist erschlossen und gehoert
      angesehen, bevor die Gutschrift hinausgeht. #}
   {% if daten and (daten.header or {}).invoicetypecode == '381' %}
-  <p class="hinweis"><strong>Gutschrift (Typ 381).</strong>
+  <p class="hinweis gutschrift"><strong>Gutschrift (Typ 381).</strong>
      {{ daten.header.gutschrift_hinweis or '' }}</p>
   {% endif %}
   {# Nummer, Datum UND Betrag. Die Anzahl allein beantwortete die Frage nicht,
@@ -178,7 +178,7 @@
       {% if buchung.reisebuero %}<dt>Reisebüro</dt><dd>{{ buchung.reisebuero }}</dd>{% endif %}
       {% if buchung.gruppe %}<dt>Gruppe</dt><dd>{{ buchung.gruppe }}</dd>{% endif %}
       <dt>Bezahlt über</dt>
-      <dd>{% if buchung.city_ledger and buchung.city_ledger > 0 %}<strong>City Ledger</strong>
+      <dd>{% if buchung.city_ledger and buchung.city_ledger != 0 %}<strong>City Ledger</strong>
             ({{ '%.2f'|format(buchung.city_ledger) }}) — Debitorenkonto, also die Firma
           {% elif buchung.karte and buchung.karte > 0 %}Karte ({{ '%.2f'|format(buchung.karte) }})
           {% elif buchung.bar and buchung.bar > 0 %}bar ({{ '%.2f'|format(buchung.bar) }})

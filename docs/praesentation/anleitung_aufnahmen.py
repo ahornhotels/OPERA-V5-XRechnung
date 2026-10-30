@@ -133,6 +133,20 @@ def gruppe(nr, kunde):
     return rechnung_aus(nr, kopf(nr, kunde, gast="Wagner, Lena", zimmer="214"), z)
 
 
+def gutschrift(nr, zu, kunde, gast, zimmer):
+    """Eine Gutschrift, wie opera.rechnung() sie liefert: Betraege schon positiv,
+    Typ 381, die berichtigte Rechnung als Bezug."""
+    g = dict(gast=zu, zimmer=zimmer, gastname=gast, von="2026-09-07", bis="2026-09-10")
+    r = rechnung_aus(nr, kopf(nr, kunde, gast=gast, zimmer=zimmer),
+                     [buchung(1, "1000", "Übernachtung", 149.00, 7, **g)])
+    r["header"].update(invoicetypecode="381", issuedate="2026-09-12",
+                       gutschrift_zu=f" zur Rechnung {zu} vom 2026-09-10",
+                       gutschrift_hinweis=f"Gutschrift zur Rechnung {zu} vom 2026-09-10 — an "
+                                          "derselben Reservierung mit dem entgegengesetzten Betrag gefunden.")
+    r["bezug"] = [{"billingreferenceid": zu, "billingreferenceissuedate": "2026-09-10"}]
+    return r
+
+
 RECHNUNGEN = {
     1400101: einzel(1400101, "Beispiel Consulting GmbH", "Neumann, Sabine", "312"),
     1400102: gruppe(1400102, "Nordlicht Reisen GmbH"),
@@ -140,6 +154,7 @@ RECHNUNGEN = {
     1400104: einzel(1400104, "Stadtwerke Musterstadt", "Becker, Anna", "207", naechte=1),
     1400105: einzel(1400105, "Hansa Logistik KG", "Fischer, Tom", "405", naechte=2),
     1400106: einzel(1400106, "Kranich Software GmbH", "Lang, Eva", "221", naechte=2, stadt=""),
+    1400108: gutschrift(1400108, 1400101, "Beispiel Consulting GmbH", "Neumann, Sabine", "312"),
 }
 ADRESSEN = {  # Herkunft und Rolle so benannt wie in sql/opera/invoice_recipients.sql
     1400101: [{"email": "rechnungen@beispiel-consulting.example", "quelle": "Debitorenkonto",
@@ -157,6 +172,8 @@ ADRESSEN = {  # Herkunft und Rolle so benannt wie in sql/opera/invoice_recipient
                "rolle": "AR-Konto", "typ": "AR", "primaer": "Y"}],
     1400106: [{"email": "ap@kranich-software.example", "quelle": "Profil",
                "rolle": "Zahler", "typ": "EMAIL", "primaer": "Y"}],
+    1400108: [{"email": "rechnungen@beispiel-consulting.example", "quelle": "Debitorenkonto",
+               "rolle": "AR-Konto", "typ": "AR", "primaer": "Y"}],
 }
 
 
@@ -217,6 +234,10 @@ def bestand():
          "ap@kranich-software.example", None, 0),
         (1400107, "Beispiel Consulting GmbH", "EMPFAENGER", "COMPANY", "ignoriert", None,
          "Gesamtbetrag 0,00 — automatisch zurückgelegt", 0),
+        (1400108, "Beispiel Consulting GmbH", "EMPFAENGER", "COMPANY", "pruefung",
+         "rechnungen@beispiel-consulting.example",
+         "Gutschrift über 149.00 (Typ 381) — den Bezug auf die berichtigte Rechnung auf der "
+         "Detailseite prüfen", 0),
     ]
     for nr, kunde, bezug, typ, status, empf, fehler, ohne in zeilen:
         r = RECHNUNGEN.get(nr)
@@ -409,6 +430,13 @@ def aufnehmen(basis):
         markiere(seite, "form[action$='/senden'] button", 3)
         ausschnitt(seite, "13b_freigeben", "div.kopfzeile", "section.aktionsleiste", rand=14, breite=1100)
         store.setzen(1400103, empfaenger=None)
+
+        # 20 Gutschrift in der Sichtpruefung
+        neu_laden("/rechnung/1400108")
+        markiere(seite, "p.pruefhinweis", 1)
+        markiere(seite, "p.gutschrift", 2)
+        markiere(seite, "form[action$='/freigeben'] button", 3)
+        ausschnitt(seite, "20_gutschrift", "div.kopfzeile", "p.gutschrift", breite=1440)
 
         # 19 Ein Automatiklauf arbeitet gerade
         from app import automatik as _auto
