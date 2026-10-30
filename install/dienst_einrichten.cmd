@@ -11,7 +11,7 @@ if %errorlevel% neq 0 (
     pause & exit /b 1
 )
 if not exist "install\nssm.exe" (
-    echo nssm.exe fehlt. Von https://nssm.cc/download laden, entpacken und
+    echo nssm.exe fehlt. Von https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip laden, entpacken und
     echo aus dem Ordner win64 die Datei nssm.exe nach install\ kopieren.
     pause & exit /b 1
 )

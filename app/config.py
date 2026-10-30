@@ -40,7 +40,11 @@ def ordner_absichern() -> list[str]:
     Die Vorlage bleibt ausgenommen: Sie enthaelt bewusst keine Geheimnisse und
     wird beim Einrichten gelesen."""
     angefasst: list[str] = []
-    if not CONFIG_DIR.is_dir():
+    # Unter Windows gibt es keine Unix-Rechte: os.stat meldet fuer jede Datei
+    # "fuer alle lesbar", und os.chmod schaltet nur den Schreibschutz. Hier
+    # stand bei JEDEM Start "Dateirechte nachgezogen", ohne dass sich etwas
+    # aenderte. Geschuetzt wird dort ueber die Ordnerrechte (installieren.ps1).
+    if os.name == "nt" or not CONFIG_DIR.is_dir():
         return angefasst
     for datei in sorted(CONFIG_DIR.iterdir()):
         if not datei.is_file() or datei.name == "app.example.json":

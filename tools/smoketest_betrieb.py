@@ -423,6 +423,17 @@ pruefe("/setowner" in abschnitt and "/reset" in abschnitt,
        "Eigentuemer und vorhandene Einzelrechte werden mit erfasst")
 pruefe(re.search(r"Nativ icacls \$Basis\s*\|", abschnitt) is not None,
        "der Installer zeigt an, was gesetzt wurde")
+# Wer installiert, behaelt Zugriff: Mit Benutzerkontensteuerung gilt die
+# Gruppe Administratoren im normalen Explorer nicht, und der Installierende kam
+# an seinen eigenen Ordner nur noch ueber "Als Administrator ausfuehren".
+pruefe("WindowsIdentity]::GetCurrent().User" in abschnitt and "$sidBenutzer" in abschnitt[g:r],
+       "der installierende Benutzer behaelt Vollzugriff auf den Ordner")
+# NSSM: nssm.cc liefert die Veroeffentlichung 2.24 oft nicht (503). Die Fassung
+# aus dem Build-Bereich ist die erste Quelle, mit der Pruefsumme aus winget.
+pruefe("nssm.cc/ci/nssm-2.24-101-g897c7ad.zip" in ps1_text
+       and "99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8" in ps1_text
+       and ps1_text.index("nssm.cc/ci/") < ps1_text.index("nssm.cc/release/"),
+       "NSSM zuerst aus dem Build-Bereich, mit Pruefsumme; die alte Fassung als Rueckfall")
 
 # =========================================================================
 print("7) run.sh ueber programm/aktuell")

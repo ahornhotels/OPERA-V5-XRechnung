@@ -44,7 +44,12 @@ def benutzer_laden() -> dict:
         erst = config.CONFIG_DIR / "ERSTES_PASSWORT.txt"
         erst.write_text(
             f"Benutzer: admin\nPasswort: {start_passwort}\n"
-            f"Bitte nach der ersten Anmeldung aendern und diese Datei loeschen.\n",
+            # Nur ASCII: Der Windows-Installer gibt die Datei mit Get-Content
+            # aus, und Windows PowerShell 5.1 liest ohne BOM nicht als UTF-8.
+            # "Diese Datei loeschen" stand hier frueher — gemeint war sie selbst,
+            # gefragt wurde trotzdem, welche. Und loeschen muss sie niemand.
+            f"Nach der ersten Anmeldung oben unter 'Benutzer' ein eigenes Passwort setzen.\n"
+            f"Diese Datei ({erst}) verschwindet dabei von selbst.\n",
             encoding="utf-8")
         # Sie traegt ein gueltiges Passwort im Klartext.
         try:

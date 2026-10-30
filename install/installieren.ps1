@@ -436,7 +436,17 @@ foreach ($ordner in @("data", "logs", "data\xml", "data\archiv")) {
 # Abbruch dort liesse einen Ordner zurueck, an den nur noch mit Besitzuebernahme
 # heranzukommen ist. Jeder Lauf fuehrt zum selben Ergebnis.
 Titel "Ordnerrechte"
-Ansage "Zugriff auf $Basis auf SYSTEM und Administratoren beschraenken" "" `
+# Wer installiert, behaelt Zugriff. Bisher standen nur SYSTEM und die Gruppe
+# Administratoren in der Liste — mit Benutzerkontensteuerung gilt die
+# Gruppenmitgliedschaft im normalen Explorer aber nicht, und der Installierende
+# kam an seinen eigenen Ordner nur noch ueber "Als Administrator ausfuehren".
+# Eingetragen wird das Konto, unter dem dieser (erhoehte) Lauf laeuft — das
+# ist ohnehin eines mit Administratorrechten, die Sicherheit bleibt also gleich.
+$sidBenutzer = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$benutzerName = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$benutzerEigens = $sidBenutzer -notin @("S-1-5-18", "S-1-5-32-544")
+$wer = if ($benutzerEigens) { "SYSTEM, Administratoren und $benutzerName" } else { "SYSTEM und Administratoren" }
+Ansage "Zugriff auf $Basis auf $wer beschraenken" "" `
        "Schluessel, Zugangsdaten und Programmdateien sind sonst fuer alle Benutzer lesbar bzw. aenderbar"
 if (-not (Frage)) {
     Uebergangen "Ordnerrechte - $Basis bleibt fuer normale Benutzer lesbar. Nachholen: installieren.ps1 erneut ausfuehren"
@@ -452,7 +462,8 @@ if (-not (Frage)) {
     $schritte = @(
         @($Basis, "/setowner", $adminName, "/T", "/C", "/Q"),
         @($Basis, "/reset", "/T", "/C", "/Q"),
-        @($Basis, "/grant:r", "*$($sidSystem):(OI)(CI)F", "*$($sidAdmins):(OI)(CI)F", "/C", "/Q"),
+        (@($Basis, "/grant:r", "*$($sidSystem):(OI)(CI)F", "*$($sidAdmins):(OI)(CI)F") +
+         @(if ($benutzerEigens) { "*$($sidBenutzer):(OI)(CI)F" }) + @("/C", "/Q")),
         @($Basis, "/inheritance:r", "/C", "/Q")
     )
     foreach ($schritt in $schritte) {
@@ -462,14 +473,16 @@ if (-not (Frage)) {
         }
     }
     if ($rechteFehler.Count -eq 0) {
-        Gut "Vererbung entfernt; Vollzugriff nur fuer SYSTEM und $adminName (Eigentuemer: $adminName)"
+        Gut "Vererbung entfernt; Vollzugriff nur fuer $wer (Eigentuemer: $adminName)"
     } else {
         Schlecht "Ordnerrechte nicht vollstaendig gesetzt: $($rechteFehler -join '; ')"
     }
     Info "Jetzt gilt fuer $($Basis):"
     Nativ icacls $Basis | Where-Object { $_ -and $_ -notmatch '^(Successfully|Erfolgreich)' } |
         ForEach-Object { Info "  $($_.Trim())" }
-    Info "run.cmd von Hand geht damit nur noch in einer Eingabeaufforderung als Administrator."
+    if ($benutzerEigens) {
+        Info "$benutzerName behaelt Vollzugriff, auch ohne 'Als Administrator ausfuehren'."
+    }
 }
 
 # ------------------------------------------------------------------ 6. Dienst
@@ -483,7 +496,7 @@ if ($OhneDienst) {
         Move-Item (Join-Path $Basis "nssm.exe") $nssm -Force
     }
     if (-not (Test-Path $nssm)) {
-        Ansage "NSSM laden (etwa 350 KB)" "nssm.cc" `
+        Ansage "NSSM laden (etwa 400 KB)" "nssm.cc" `
                "damit die Anwendung als Windows-Dienst laeuft und beim Hochfahren mitstartet"
         if (-not (Frage)) {
             Uebergangen "NSSM - ohne das Werkzeug kein Dienst. Start bis dahin ueber run.cmd"
@@ -491,14 +504,42 @@ if ($OhneDienst) {
             try {
                 $tmp = Join-Path $env:TEMP ("nssm-" + [Guid]::NewGuid().ToString("N"))
                 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-                Laden "https://nssm.cc/release/nssm-2.24.zip" (Join-Path $tmp "nssm.zip")
-                Expand-Archive -Path (Join-Path $tmp "nssm.zip") -DestinationPath $tmp -Force
+                # nssm.cc liefert die Veroeffentlichung 2.24 haeufig nicht aus (503),
+                # die Fassung 2.24-101 aus dem Build-Bereich aber schon. Sie ist
+                # zudem die, die fuer Windows 10/11 und Server 2016+ empfohlen wird,
+                # und dieselbe, die auch ueber winget kommt. Deren Pruefsumme steht im
+                # winget-Verzeichnis (NSSM.NSSM 2.24-101-g897c7ad) — sie wird
+                # geprueft. Die alte Fassung bleibt Rueckfall, wie bisher ungeprueft.
+                $quellen = @(
+                    @{ url = "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip"
+                       sha256 = "99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8" },
+                    @{ url = "https://nssm.cc/release/nssm-2.24.zip"; sha256 = "" }
+                )
+                $zipPfad = Join-Path $tmp "nssm.zip"
+                $geladen = $false
+                foreach ($q in $quellen) {
+                    try {
+                        Laden $q.url $zipPfad
+                        if ($q.sha256 -and (Get-FileHash -Path $zipPfad -Algorithm SHA256).Hash -ne $q.sha256) {
+                            Info "Pruefsumme passt nicht: $($q.url)"
+                            continue
+                        }
+                        $geladen = $true
+                        break
+                    } catch {
+                        Info "nicht erreichbar: $($q.url) ($($_.Exception.Message))"
+                    }
+                }
+                if (-not $geladen) { throw "keine der Quellen auf nssm.cc erreichbar" }
+                Expand-Archive -Path $zipPfad -DestinationPath $tmp -Force
                 $gefunden = Get-ChildItem -Path $tmp -Filter "nssm.exe" -Recurse |
                             Where-Object { $_.DirectoryName -like "*win64*" } | Select-Object -First 1
                 if ($gefunden) { Copy-Item $gefunden.FullName $nssm -Force }
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
             } catch {
-                Schlecht "nssm.exe konnte nicht geladen werden: $($_.Exception.Message)"
+                Schlecht ("nssm.exe konnte nicht geladen werden: $($_.Exception.Message). Von Hand: " +
+                          "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip laden, aus dem Ordner win64 die " +
+                          "nssm.exe nach $Basis\install kopieren und den Installer erneut starten")
             }
         }
     }

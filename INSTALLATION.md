@@ -64,12 +64,15 @@ der Rest weiter, und am Ende steht, was nachzuholen ist.
 > `install\installieren.ps1 -OhneRueckfrage -OhneDienst -OhnePruefer -Port 9000`
 
 > **Ordnerrechte.** Der Installer schneidet die Vererbung von `C:\` ab: Auf
-> `C:\XRechnung` haben danach nur noch **SYSTEM** (der Dienst) und die
-> **Administratoren** Zugriff. Sonst könnte jeder angemeldete Benutzer
-> `config\secret.key` und die Zugangsdaten lesen und Programmdateien ändern,
-> die der Dienst als SYSTEM ausführt. Folge: `run.cmd` von Hand geht nur noch in
-> einer Eingabeaufforderung **als Administrator**. Ein erneuter Lauf des
-> Installers setzt die Rechte wieder so.
+> `C:\XRechnung` haben danach nur noch **SYSTEM** (der Dienst), die
+> **Administratoren** und **der Benutzer, der den Installer gestartet hat**,
+> Zugriff. Sonst könnte jeder angemeldete Benutzer `config\secret.key` und die
+> Zugangsdaten lesen und Programmdateien ändern, die der Dienst als SYSTEM
+> ausführt. Der Installierende steht eigens in der Liste: Mit
+> Benutzerkontensteuerung gilt die Gruppe Administratoren im normalen Explorer
+> nicht, er käme sonst nur noch über „Als Administrator ausführen“ an den
+> Ordner. Ein erneuter Lauf des Installers setzt die Rechte wieder so — für den,
+> der ihn startet.
 
 ## Rocky Linux
 
@@ -201,8 +204,13 @@ liegen.
 bis drei Minuten. Steht `Uvicorn running on http://0.0.0.0:8022`, läuft es.
 **Fenster offen lassen** — schließen beendet das Programm.
 
-**6. Dienst.** <https://nssm.cc/download>, ZIP laden, entpacken, aus `win64` die
-`nssm.exe` nach `C:\XRechnung\install` kopieren. Dann Rechtsklick auf
+**6. Dienst.** <https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip> laden (die Seite
+`nssm.cc/download` und die Fassung 2.24 sind oft nicht erreichbar), entpacken,
+aus `win64` die `nssm.exe` nach `C:\XRechnung\install` kopieren. Prüfsumme des
+Zips (SHA-256, wie im winget-Verzeichnis):
+`99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8`. Der
+Installer lädt sie selbst — scheitert er an nssm.cc, die Datei so ablegen und
+ihn erneut starten. Dann Rechtsklick auf
 `install\dienst_einrichten.cmd` → **„Als Administrator ausführen"**.
 
 **7. Ordnerrechte.** In einer Eingabeaufforderung als Administrator — die SIDs
@@ -212,10 +220,12 @@ statt Namen, damit es auch auf einem deutschen Windows greift:
 icacls C:\XRechnung /setowner *S-1-5-32-544 /T /C /Q
 icacls C:\XRechnung /reset /T /C /Q
 icacls C:\XRechnung /grant:r *S-1-5-18:(OI)(CI)F *S-1-5-32-544:(OI)(CI)F /C /Q
+icacls C:\XRechnung /grant "%USERDOMAIN%\%USERNAME%":(OI)(CI)F /C /Q
 icacls C:\XRechnung /inheritance:r /C /Q
 ```
 
-Danach haben nur SYSTEM und Administratoren Zugriff (siehe oben unter Windows).
+Danach haben nur SYSTEM, Administratoren und Sie selbst Zugriff (siehe oben
+unter Windows).
 
 ## Rocky Linux von Hand
 
