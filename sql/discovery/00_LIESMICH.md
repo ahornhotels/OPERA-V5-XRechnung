@@ -27,6 +27,13 @@ in einer anderen Installation nachzuprüfen: Eine Spalte `SUPPLEMENT` gibt es
 in `FINANCIAL_TRANSACTIONS` nicht, und die Druckansicht speist sich aus einer
 Tabelle, die nach dem Druck wieder geleert wird.
 
+`08_datenwoerterbuch.sql` schreibt den Aufbau des OPERA-Schemas — alle Tabellen
+und Views mit Spalten, Typen, Schlüsseln und Kommentaren — als CSV-Datei. Keine
+Daten, nur die Struktur. Gedacht für ein Haus, in dem installiert werden soll:
+Mit der Datei lässt sich vorab prüfen, ob dessen OPERA-Version alle Spalten hat,
+die die Anwendung braucht. Nach der Installation prüft „Datenbank testen“
+dasselbe direkt.
+
 Ausgabe jeweils sichern (`spool`), dann werten wir sie gemeinsam aus.
 
 Ausführen z. B. mit SQL*Plus/SQLcl als Benutzer mit Lesezugriff auf das

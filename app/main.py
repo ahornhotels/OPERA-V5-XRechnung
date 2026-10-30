@@ -1078,8 +1078,16 @@ def dbtest(request: Request):
         return RedirectResponse("/konfiguration?meldung=" + BESCHAEFTIGT, status_code=303)
     try:
         db.stop()
-        banner = db.pruefen(config.laden())
-        meldung = f"Verbindung steht: {banner}"
+        cfg = config.laden()
+        banner = db.pruefen(cfg)
+        # Nicht nur die Verbindung: Passen die Abfragen zu dieser OPERA-Version?
+        befunde = opera.abfragen_pruefen(cfg)
+        if befunde:
+            meldung = (f"Verbindung steht ({banner}), aber {len(befunde)} Abfrage(n) passen nicht "
+                       f"zu dieser OPERA-Datenbank — in diesem Punkt wird sie nicht unterstützt: "
+                       + " · ".join(befunde))
+        else:
+            meldung = f"Verbindung steht: {banner}. Alle Abfragen passen zu dieser OPERA-Datenbank."
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)

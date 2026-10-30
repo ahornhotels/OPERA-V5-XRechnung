@@ -183,6 +183,68 @@ def _resort() -> str:
     return config.laden()["property"]["resort"]
 
 
+# Bindvariablen, die eine Zahl erwarten. Beim Abfragentest ist der Wert
+# gleichgueltig — WHERE ROWNUM < 1 liefert keine Zeile —, er muss nur passen.
+_ZAHLEN_BINDS = {"bill_no", "folio_no", "name_id", "days", "tage", "hoechstens", "invoice_no"}
+
+
+def _bindnamen(sql: str) -> list[str]:
+    """Die Bindvariablen einer Abfrage — ohne Kommentare und Textkonstanten,
+    sonst hielte man ':MI' in 'HH24:MI' fuer eine."""
+    ohne = "\n".join(z.split("--")[0] for z in sql.splitlines())
+    ohne = re.sub(r"/\*.*?\*/", "", ohne, flags=re.S)
+    ohne = re.sub(r"'[^']*'", "''", ohne)
+    return sorted(set(re.findall(r":([a-z_][a-z0-9_]*)", ohne)))
+
+
+def abfragen_pruefen(cfg: dict) -> list[str]:
+    """Passt jede Abfrage der Anwendung zu DIESER OPERA-Datenbank?
+    Gibt eine Liste von Befunden zurueck, leer heisst: alles da.
+
+    "Datenbank testen" fragte bisher nur die Oracle-Version ab und meldete
+    "Verbindung steht" — auch dann, wenn einer OPERA-Version eine Spalte fehlt,
+    die die Anwendung braucht (DOCUMENT_TYPE gibt es etwa im Datenwoerterbuch
+    von 2010 noch nicht). Gemerkt haette man es erst beim ersten Einlesen, an
+    einem ORA-00904 ohne Zusammenhang.
+
+    Geprueft wird keine gepflegte Spaltenliste, die mit der Zeit veraltet,
+    sondern jede Abfrage im Wortlaut, so wie sie spaeter laeuft — eingepackt in
+    SELECT * FROM (...) WHERE ROWNUM < 1. Oracle loest beim Parsen jede Tabelle
+    und Spalte auf (ORA-00904/00942 kommen dort) und bricht vor der ersten
+    Zeile ab.
+
+    Nicht WHERE 1 = 0, obwohl das naeher laege: An der echten Datenbank
+    gemessen (30.10.2026) schob Oracle die Bedingung bei udf_uebersicht.sql in
+    die Unterabfrage hinein, unter ein Aggregat — gezaehlt wurde trotzdem ueber
+    alle 1,1 Mio. Profile, 1,1 s und 228.000 Lesezugriffe je Test. Mit
+    ROWNUM < 1 steht COUNT STOPKEY ganz oben: 8 Lesezugriffe. Keine der
+    Abfragen benutzt selbst ROWNUM, es kollidiert nichts."""
+    p = cfg.get("property") or {}
+    befunde: list[str] = []
+    for datei in sorted(SQL_DIR.glob("*.sql")):
+        name = datei.name
+        sql = _sql(name, cfg)
+        if "@SPALTE@" in sql:
+            spalte = (p.get("udf_leitweg") or "").strip().upper()
+            if spalte not in UDF_SPALTEN:
+                continue   # kein Feld eingerichtet — die Abfrage laeuft nie
+            sql = sql.replace("@SPALTE@", spalte)
+        if name == "invoice_list.sql":
+            sql = _mit_anzahlungscodes(_mit_firmenprofilen(
+                _mit_udf(sql, p.get("udf_erechnung", "")), cfg), cfg)
+        elif name in ("invoice_guard.sql",):
+            sql = _mit_anzahlungscodes(sql, cfg)
+        elif name == "invoice_suche.sql":
+            sql = _mit_firmenprofilen(sql, cfg)
+        binds = {b: (0 if b in _ZAHLEN_BINDS else "-") for b in _bindnamen(sql)}
+        try:
+            db.abfrage(f"SELECT * FROM (\n{sql}\n) WHERE ROWNUM < 1", binds)
+        except Exception as e:
+            meldung = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
+            befunde.append(f"{name}: {meldung}")
+    return befunde
+
+
 def kandidaten(cfg: dict, tage: int | None = None) -> list[dict]:
     """Rechnungen der letzten n Tage samt Kennzeichen. Zeitraum und Obergrenze
     stehen in der Konfiguration und lassen sich beim Einlesen uebersteuern."""

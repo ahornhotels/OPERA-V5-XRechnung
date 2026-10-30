@@ -3927,6 +3927,56 @@ pruefe("<ubl:Invoice " in _ix and "<cbc:InvoiceTypeCode>380" in _ix and "<cbc:Pa
        and "PayeeFinancialAccount" in _ix and "CreditNote" not in _ix,
        "eine gewoehnliche Rechnung bleibt unveraendert ein Invoice mit 380")
 
+# --- "Datenbank testen" prueft auch die Abfragen ------------------------------
+# Bisher meldete der Test "Verbindung steht", auch wenn einer OPERA-Version eine
+# Spalte fehlt, die die Anwendung braucht — gemerkt haette man es erst beim
+# Einlesen. Nachgestellt: ein OPERA ohne FOLIO$_TAX.DOCUMENT_TYPE.
+print("8e) Abfragen gegen die OPERA-Version pruefen")
+_abgesetzt = []
+
+
+def _db_ohne_doctype(sql, parameter=None):
+    _abgesetzt.append((sql, dict(parameter or {})))
+    ohne_kommentar = "\n".join(z.split("--")[0] for z in sql.splitlines())
+    if "document_type" in ohne_kommentar.lower():
+        raise RuntimeError('ORA-00904: "F"."DOCUMENT_TYPE": invalid identifier\nHelp: ...')
+    return []
+
+
+_echt_abf_pr = opera.db.abfrage
+opera.db.abfrage = _db_ohne_doctype
+try:
+    _pcfg = json.loads(json.dumps(cfg))
+    _pcfg["property"].update(udf_leitweg="UDFC05")
+    _befunde = opera.abfragen_pruefen(_pcfg)
+finally:
+    opera.db.abfrage = _echt_abf_pr
+_alle_sql = sorted(f.name for f in (BASE / "sql" / "opera").glob("*.sql"))
+pruefe(len(_abgesetzt) == len(_alle_sql),
+       f"jede Abfrage der Anwendung wird geprueft ({len(_abgesetzt)} von {len(_alle_sql)})")
+pruefe(all(q.startswith("SELECT * FROM (") and q.rstrip().endswith(") WHERE ROWNUM < 1") for q, _ in _abgesetzt),
+       "eingepackt in WHERE ROWNUM < 1 — Oracle loest Tabellen und Spalten auf, bricht vor der ersten Zeile ab")
+# WHERE 1 = 0 schob Oracle bei der UDF-Uebersicht unter ein Aggregat und zaehlte
+# doch ueber alle Profile (gemessen 1,1 s). ROWNUM < 1 kollidiert nur, wenn eine
+# Abfrage selbst ROWNUM benutzt — dann waere die Einpackung zu ueberdenken.
+pruefe(not [n for n in _alle_sql if "rownum" in "\n".join(z.split("--")[0] for z in
+            (BASE / "sql" / "opera" / n).read_text(encoding="utf-8").splitlines()).lower()],
+       "keine Abfrage benutzt selbst ROWNUM")
+pruefe(all(set(b) == set(opera._bindnamen(q)) for q, b in _abgesetzt),
+       "jede Bindvariable bekommt einen Wert, keine zu viel (sonst lehnt oracledb ab)")
+pruefe(not any("@SPALTE@" in q or "@SCHEMA@" in q for q, _ in _abgesetzt),
+       "die Platzhalter sind ersetzt, wie im Betrieb")
+_doctype_dateien = {n for n in _alle_sql
+                    if "document_type" in "\n".join(z.split("--")[0] for z in
+                       (BASE / "sql" / "opera" / n).read_text(encoding="utf-8").splitlines()).lower()}
+pruefe({b.split(":")[0] for b in _befunde} == _doctype_dateien and _doctype_dateien,
+       f"fehlt DOCUMENT_TYPE, nennt der Test genau die betroffenen Abfragen ({len(_befunde)}: "
+       f"{sorted(b.split(':')[0] for b in _befunde)})")
+pruefe(all("ORA-00904" in b and "Help" not in b for b in _befunde),
+       "mit der Oracle-Meldung, auf eine Zeile gekuerzt")
+pruefe(opera._bindnamen("SELECT TO_CHAR(d, 'HH24:MI') FROM t WHERE a = :eins -- :zwei\n /* :drei */") == ["eins"],
+       "Doppelpunkte in Texten und Kommentaren sind keine Bindvariablen")
+
 # --- opera: Leitweg, Bemerkung, Vorlagen, Suche, Firmenprofile, Resort -------
 _gerufen = []
 

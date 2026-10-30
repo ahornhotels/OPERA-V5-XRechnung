@@ -273,6 +273,7 @@ Unit lässt sich vorab ansehen mit `install/unit_erzeugen.sh`.
 
 | Beobachtung | Ursache und Abhilfe |
 |---|---|
+| „Datenbank testen" meldet „… Abfrage(n) passen nicht zu dieser OPERA-Datenbank" | Die Verbindung steht, aber dieser OPERA-Version fehlt eine Tabelle oder Spalte, die die Anwendung braucht — die Meldung nennt Abfrage und Oracle-Fehler (meist `ORA-00904`). Das lässt sich nicht einstellen; bitte mit der Ausgabe von `sql/discovery/08_datenwoerterbuch.sql` melden |
 | „Datenbank testen" meldet `DPY-3015` | Die Datenbank nutzt ein altes Passwortverfahren. In der Konfiguration „Thick-Modus" anhaken und den Oracle-Client-Pfad eintragen |
 | „Datenbank testen" meldet `DPY-6005` oder Zeitüberschreitung | Der Server erreicht die Datenbank nicht — Firewall, Host oder Port prüfen |
 | Kollegen kommen nicht auf die Seite | Port nicht freigegeben, oder das eigene Netz steht nicht unter „Erlaubte Netze" |
