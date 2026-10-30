@@ -208,6 +208,18 @@ def _normalisieren(rechnung: dict) -> dict:
             z["lineextensionamountnet"] = str(netto)
             _preis_setzen(z, netto)
             zeilen.append(z)
+    # Verrechnete Anzahlungen: Abzug je Steuersatz mit Netto (opera.anzahlung_abzuege).
+    # Die Steuer der Gruppe wird danach aus dem Rest gerechnet — so setzt die
+    # Endrechnung auch die Steuer der Anzahlung ab (§ 14 Abs. 5 UStG).
+    for a in rechnung.get("anzahlung_abzuege") or []:
+        kategorie = str(a.get("taxcategoryid") or "S").upper()
+        abschlaege.append({
+            "amount": str(_rund(a.get("netto"))),
+            "category": kategorie,
+            "percent": 0 if kategorie == "Z" else (a.get("taxcategorypercent") or 0),
+            "reason": a.get("grund") or "Abzüglich Anzahlung",
+            "_anzahlung": True,
+        })
 
     # --- Steuergruppen: eine je Kategorie und Satz ---------------------------
     # Die Aufteilung wird aus dem gebildet, was tatsaechlich im Dokument steht.
@@ -228,16 +240,20 @@ def _normalisieren(rechnung: dict) -> dict:
     for i, z in enumerate(zeilen):
         g = gruppen.setdefault(
             _gruppe(z.get("classifiedtaxcategoryid"), z.get("classifiedtaxcategorypercent")),
-            {"zeilen": [], "abzug": Decimal(0), "abzuege": 0})
+            {"zeilen": [], "abzug": Decimal(0), "abzuege": 0, "anzahlung": Decimal(0)})
         g["zeilen"].append(i)
     for a in abschlaege:
         g = gruppen.setdefault(_gruppe(a.get("category"), a.get("percent")),
-                               {"zeilen": [], "abzug": Decimal(0), "abzuege": 0})
+                               {"zeilen": [], "abzug": Decimal(0), "abzuege": 0,
+                                "anzahlung": Decimal(0)})
         g["abzug"] += _dez(a.get("amount"))
         g["abzuege"] += 1
+        if a.pop("_anzahlung", False):
+            g["anzahlung"] += _dez(a.get("amount"))
     for schluessel, b in opera_buckets.items():
         if _dez(b.get("taxableamount")) or _dez(b.get("taxamount")):
-            gruppen.setdefault(schluessel, {"zeilen": [], "abzug": Decimal(0), "abzuege": 0})
+            gruppen.setdefault(schluessel, {"zeilen": [], "abzug": Decimal(0), "abzuege": 0,
+                                            "anzahlung": Decimal(0)})
 
     steuer = []
     for (kategorie, prozent), g in gruppen.items():
@@ -266,7 +282,13 @@ def _normalisieren(rechnung: dict) -> dict:
             # Betraegen einzeln bleiben — die Grenze sank auf 0,02 bei einem
             # echten Rundungsrest von 0,03, und eine gueltige Rechnung wurde
             # gesperrt.
-            rest = _rund(bucket.get("taxableamount")) - basis
+            #
+            # DIE ANZAHLUNG ZAEHLT NICHT MIT: opera_buckets kommt aus den
+            # Positionen, und unter denen steht die abgesetzte Anzahlung nicht.
+            # Ohne das Zurueckrechnen waere der Rest genau die Anzahlung — und
+            # eine kleine (unter der Grenze) wuerde als Rundungsrest auf die
+            # groesste Position gelegt, der Abzug hoebe sich still auf.
+            rest = _rund(bucket.get("taxableamount")) - (basis + g["anzahlung"])
             grenze = (Decimal("0.005") * (len(g["zeilen"]) + g["abzuege"] + 1)).max(Decimal("0.01"))
             if rest and abs(rest) <= grenze and g["zeilen"]:
                 groesste = max(g["zeilen"],
@@ -370,6 +392,58 @@ def ausgleich_vorab(rechnung: dict) -> Decimal:
     return _dez((rechnung.get("totals") or {}).get("roundingamount"))
 
 
+def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
+    """Gegenprobe einer Schlussrechnung mit abgesetzter Anzahlung gegen die
+    Buckets ihres Kopfs. OPERA fuehrt dort zwei Gruppen (gemessen 30.10.2026,
+    2.783 Schlussrechnungen, 90 Tage):
+      MIT Satz  = die Positionen je Satz        -> gegen invoice_tax.sql
+      OHNE Satz = der Abzug der Anzahlung, negativ -> gegen die Abzuege
+    Beides zusammen ging in 2.698 Faellen auf den Cent auf. Was nicht aufging,
+    war meist ein Betrag, der zwischen zwei Belegnummern am selben Folio
+    gewandert ist — das gehoert in die Sichtpruefung.
+
+    Der Satz des Abzugs kommt nie vom Kopf der Schlussrechnung, sondern vom
+    Anzahlungsbeleg (opera.anzahlung_abzuege)."""
+    abzuege = roh.get("anzahlung_abzuege") or []
+    kopf = roh.get("tax_kopf") or []
+    if not abzuege or not kopf:
+        return []
+    fehler: list[str] = []
+    mit_satz: dict[Decimal, list[Decimal]] = {}
+    ohne_netto = ohne_steuer = Decimal(0)
+    for b in kopf:
+        if str(b.get("satz_fehlt") or "").upper() == "J":
+            ohne_netto += _dez(b.get("taxableamount"))
+            ohne_steuer += _dez(b.get("taxamount"))
+        else:
+            s = mit_satz.setdefault(_rund(b.get("taxcategorypercent") or 0), [Decimal(0), Decimal(0)])
+            s[0] += _dez(b.get("taxableamount"))
+            s[1] += _dez(b.get("taxamount"))
+    abzug_netto = sum(_dez(a.get("netto")) for a in abzuege)
+    abzug_steuer = sum(_dez(a.get("steuer")) for a in abzuege)
+    if abs(abzug_netto + ohne_netto) > Decimal("0.02") or abs(abzug_steuer + ohne_steuer) > Decimal("0.02"):
+        fehler.append(
+            f"Anzahlung: abgesetzt werden netto {_rund(abzug_netto)} / Steuer {_rund(abzug_steuer)}, "
+            f"der Rechnungskopf in OPERA zieht netto {_rund(-ohne_netto)} / Steuer "
+            f"{_rund(-ohne_steuer)} ab. Bitte in OPERA prüfen.")
+    positionen: dict[Decimal, list[Decimal]] = {}
+    for b in roh.get("tax_breakdown") or []:
+        satz = _rund(0 if str(b.get("taxcategoryid") or "").upper() == "Z"
+                     else b.get("taxcategorypercent") or 0)
+        s = positionen.setdefault(satz, [Decimal(0), Decimal(0)])
+        s[0] += _dez(b.get("taxableamount"))
+        s[1] += _dez(b.get("taxamount"))
+    for satz in sorted(set(mit_satz) | set(positionen)):
+        p = positionen.get(satz, [Decimal(0), Decimal(0)])
+        k = mit_satz.get(satz, [Decimal(0), Decimal(0)])
+        if abs(p[0] - k[0]) > Decimal("0.02") or abs(p[1] - k[1]) > Decimal("0.02"):
+            fehler.append(
+                f"Steuersatz {satz} %: Die Positionen ergeben netto {_rund(p[0])} / Steuer "
+                f"{_rund(p[1])}, der Rechnungskopf in OPERA führt {_rund(k[0])} / {_rund(k[1])}. "
+                "Bitte in OPERA prüfen.")
+    return fehler
+
+
 def pruefsummen(rechnung: dict) -> list[str]:
     """Rechnerische Vorpruefung. Leere Liste heisst: sauber.
     Faengt die Regeln ab, an denen KoSIT sonst scheitert.
@@ -419,6 +493,13 @@ def pruefsummen(rechnung: dict) -> list[str]:
         prozent = 0 if str(b.get("taxcategoryid") or "").upper() == "Z" \
             else b.get("taxcategorypercent")
         opera_basis[_gruppe(b.get("taxcategoryid"), prozent)] = _rund(b.get("taxableamount"))
+    # OPERAs Aufteilung kommt aus den Positionen; die abgesetzte Anzahlung
+    # gehoert fuer den Vergleich wieder abgezogen.
+    for a in roh.get("anzahlung_abzuege") or []:
+        kategorie = str(a.get("taxcategoryid") or "S").upper()
+        g = _gruppe(kategorie, 0 if kategorie == "Z" else a.get("taxcategorypercent"))
+        if g in opera_basis:
+            opera_basis[g] -= _rund(a.get("netto"))
     for e in rechnung.get("tax_breakdown") or []:
         g = _gruppe(e.get("taxcategoryid"), e.get("taxcategorypercent"))
         if g in opera_basis and abs(_dez(e.get("taxableamount")) - opera_basis[g]) > Decimal("0.02"):
@@ -447,7 +528,7 @@ def pruefsummen(rechnung: dict) -> list[str]:
     if kopf.get("anzahlung_befund"):
         fehler.append(kopf["anzahlung_befund"])
     anz_brutto = sum(_dez(a.get("total_gross")) for a in rechnung.get("deposits") or [])
-    if anz_brutto and prepaid < anz_brutto:
+    if anz_brutto and prepaid < anz_brutto and not roh.get("anzahlung_abzuege"):
         fehler.append(
             f"BT-113: Anzahlungsbelege brutto {anz_brutto}, gemeldet {prepaid} — "
             "vermutlich das Netto statt des Bruttos verwendet")
@@ -561,14 +642,22 @@ def pruefsummen(rechnung: dict) -> list[str]:
     # Einlesen war er es; waehrend der Wartezeit kann er storniert worden
     # sein (VOID) und fiel dann aus der Einleseliste — versendet wurde er
     # trotzdem. Gelesen wird der Status bei jedem Erzeugen neu.
+    #
+    # Jeder gueltige Beleg ist eine Rechnung, gleich welcher Belegart: Status
+    # OK, oder ein Anzahlungsbeleg (opera.rechnung setzt ist_anzahlungsbeleg;
+    # er geht als Typ 380 mit Vermerk hinaus). Vorher galt nur DOCUMENT_TYPE 'INVOICE' — siehe
+    # docs/16_OPERA_OHNE_DOCUMENT_TYPE.md.
     status = str(kopf.get("beleg_status") or "").strip().upper()
     art = str(kopf.get("document_type") or "").strip().upper()
-    if "beleg_status" in kopf and status != "OK":
+    if "beleg_status" in kopf and status != "OK" and not kopf.get("ist_anzahlungsbeleg"):
         fehler.append(f"Der Beleg hat in OPERA den Status „{status or 'leer'}“, nicht OK — "
                       "vermutlich storniert. Nicht versenden.")
-    if "document_type" in kopf and art != "INVOICE":
-        fehler.append(f"Der Beleg ist in OPERA ein „{art or 'leer'}“, keine Endrechnung "
-                      "(INVOICE). Nicht als Rechnung versenden.")
+    if art == "COPY OF INVOICE":
+        fehler.append("Der Beleg ist in OPERA eine „COPY OF INVOICE“. Was dieser Beleg im Haus "
+                      "bedeutet, ist nicht geklärt — nicht als Rechnung versenden.")
+    if str(kopf.get("folio_type") or "").strip().upper() == "INTERNAL":
+        fehler.append("Der Beleg ist eine interne Umbuchung (FOLIO_TYPE INTERNAL), keine "
+                      "Rechnung. Nicht versenden.")
 
     # Unabhaengige Gegenprobe gegen die Buckets des RECHNUNGSKOPFS. Die
     # Steueraufteilung oben kommt aus den Positionen; die Probe dagegen
@@ -609,6 +698,7 @@ def pruefsummen(rechnung: dict) -> list[str]:
                         fehler.append(
                             f"Steuersatz {satz} %: Die Positionen ergeben {a}, der Rechnungskopf in "
                             f"OPERA fuehrt {b}. Bitte in OPERA prüfen.")
+    fehler.extend(_kopf_gegenprobe_anzahlung(roh))
     # Nullbelege: Gesamtbetrag 0,00, aber eine City-Ledger-Zahlung dagegen.
     # In der Zielmenge drei Stueck in 90 Tagen — vermutlich Ausgleichs- oder
     # Umbuchungspaare. Daraus entstuende eine Rechnung ueber 0,00 EUR mit einem

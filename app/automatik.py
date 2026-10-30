@@ -104,6 +104,29 @@ def _durchlauf_sync() -> None:
                         aktuell.get("fehler"), str(e)[:500]))
                 store.protokoll("automatik", f"Versand fehlgeschlagen: {e}",
                                 bill_no=bill_no, benutzer="automatik", erfolg=False)
+
+        # Einmal am Tag nach dem Tagesabschluss: Sind versendete Belege
+        # inzwischen storniert, oder hat der Empfaenger gewechselt?
+        if ablauf.nachpruefung_faellig():
+            try:
+                ablauf.nachpruefen(cfg)
+            except Exception as e:
+                log.exception("Nachpruefung fehlgeschlagen")
+                store.protokoll("nachpruefung", f"fehlgeschlagen: {e}", erfolg=False)
+    finally:
+        _laeuft.clear()
+        _lauf_sperre.release()
+
+
+def nachpruefen_jetzt(cfg: dict) -> dict | None:
+    """Die Nachpruefung von Hand, unter derselben Sperre wie ein Durchlauf.
+    None, wenn gerade einer laeuft — sonst liefen zwei Nachpruefungen
+    nebeneinander und meldeten denselben Befund doppelt."""
+    if _neustart_steht.is_set() or not _lauf_sperre.acquire(blocking=False):
+        return None
+    _laeuft.set()
+    try:
+        return ablauf.nachpruefen(cfg)
     finally:
         _laeuft.clear()
         _lauf_sperre.release()

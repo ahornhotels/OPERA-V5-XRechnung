@@ -8,8 +8,15 @@
 -- stillschweigend nur die letzte Woche. Genau das ist beim ersten echten Lauf
 -- passiert: 86 Belege aus acht Tagen statt aus dreissig.
 --
--- Nur Endrechnungen. VOID, DEPOSIT, COPY, INTERIM und leerer Dokumenttyp
--- fallen raus.
+-- Jeder gueltige Beleg ist eine Rechnung (docs/16_OPERA_OHNE_DOCUMENT_TYPE.md):
+-- Schluss-, Voraus- und Zwischenrechnungen mit STATUS 'OK', dazu die
+-- Anzahlungsbelege (:anzahlung_status, Typ 380 mit Vermerk Anzahlungsrechnung). Die Belegart
+-- entscheidet nicht mehr — im gemessenen Haus enthaelt jede Buchung genau
+-- einen Beleg, Voraus- und Schlussrechnung rechnen verschiedene Buchungen ab.
+-- Draussen bleiben VOID und ZERO (Status), interne Umbuchungen (FOLIO_TYPE)
+-- und 'COPY OF INVOICE', bis das Haus geklaert hat, was dieser Belegtyp ist.
+-- Ob ein Beleg TSE-signiert ist (FISCAL_BILL_NO), prueft app/ablauf.py: Ein
+-- Haus ohne TSE haette sonst eine leere Liste.
 --
 -- FIRMENBEZUG — die zentrale Unterscheidung:
 --   'EMPFAENGER'   Der Rechnungsempfaenger selbst ist eine Firma: Firmenprofil,
@@ -36,6 +43,9 @@ SELECT f.bill_no,
        -- Fuer die Spalte "Kunde" der Arbeitsliste. Fehlte, dann blieb bei
        -- Belegen ohne Firmennamen die Spalte leer.
        f.payee_name,
+       f.status                                      AS beleg_status,
+       f.document_type,
+       f.fiscal_bill_no,
        -- Platzhalter fuer das benutzerdefinierte Kennzeichen an der
        -- Firmenkartei. app/opera.py ersetzt "NULL AS erechnung_kennzeichen"
        -- durch die konfigurierte Spalte (nur UDFC01..UDFC40 zugelassen) —
@@ -44,7 +54,13 @@ SELECT f.bill_no,
        NULL AS erechnung_kennzeichen,
        NVL(f.clpay, 0)                               AS city_ledger,
        n.name_type                                   AS empfaenger_typ,
-       adr.country                                   AS empfaenger_land,
+       -- Als Unterabfrage, nicht als Join: Sie laeuft erst fuer die
+       -- Ergebniszeilen. Der Join las NAME_ADDRESS vollstaendig (619.000
+       -- Zeilen, gemessen 30.10.2026), bevor die Obergrenze griff.
+       (SELECT MAX(adr.country)
+          FROM @SCHEMA@.name_address adr
+         WHERE adr.name_id    = NVL(f.payee_name_id, f.name_id)
+           AND adr.primary_yn = 'Y')                 AS empfaenger_land,
        -- Kennzeichnungen am Profil
        (SELECT MAX(m.membership_card_no)
           FROM @SCHEMA@.memberships m
@@ -87,11 +103,9 @@ SELECT f.bill_no,
   FROM @SCHEMA@.folio$_tax f
   LEFT JOIN @SCHEMA@.name n
     ON n.name_id = NVL(f.payee_name_id, f.name_id)
-  LEFT JOIN @SCHEMA@.name_address adr
-    ON adr.name_id = n.name_id AND adr.primary_yn = 'Y'
  WHERE f.resort          = :resort
-   AND f.document_type   = 'INVOICE'
-   AND f.status          = 'OK'
+   AND (f.status = 'OK' OR f.status = :anzahlung_status)
+   AND NVL(f.document_type, '-') <> 'COPY OF INVOICE'
    -- Interne Umbuchungen zwischen Folios sind keine Rechnungen an Gaeste. Sie
    -- verwenden obendrein Belegnummern echter Rechnungen wieder (invoice_folio.sql).
    AND NVL(f.folio_type, '-') <> 'INTERNAL'

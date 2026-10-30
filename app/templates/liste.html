@@ -41,6 +41,30 @@
   {% if automatik.testlauf %} · <strong>Testlauf: es wird nichts wirklich verschickt</strong>{% endif %}
 </p>
 
+{# Aufgaben nach dem Versand: In OPERA storniert oder anderer Empfaenger.
+   Die Rechnung ist beim Kunden — hier muss jemand handeln, deshalb oben. #}
+{% if aufgaben or verwalten %}
+<section class="aufgaben{{ ' offen' if aufgaben }}">
+  {% if aufgaben %}
+  <h2>{{ aufgaben|length }} Aufgabe(n) nach dem Versand</h2>
+  <ul>
+    {% for r in aufgaben %}
+    <li><a href="/rechnung/{{ r.bill_no }}">Rechnung {{ r.bill_no }}</a>
+        {% if r.kunde %}({{ r.kunde }}){% endif %}, versendet {{ (r.gesendet_am or '')[:10] }}:
+        {{ r.nachpruefung }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if verwalten %}
+  <form method="post" action="/nachpruefen" class="nachpruefen">
+    <button {{ 'disabled' if automatik.arbeitet }}
+            title="Prüft die versendeten Rechnungen der letzten Tage gegen OPERA: storniert oder anderer Empfänger? Läuft sonst einmal am Tag nach dem Tagesabschluss.">
+      Versendete jetzt nachprüfen</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
 {# Der Filter ist der Knopf, den der Anwender am haeufigsten drueckt. Er sah
    aus wie eine Fussnote und trug die Statusnamen so, wie sie in der Datenbank
    stehen — "pruefung" ohne Umlaut. Beides ist jetzt anders: Reiter statt

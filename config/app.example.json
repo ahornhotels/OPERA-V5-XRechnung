@@ -88,8 +88,8 @@
   "auswahl": {
     "_hinweis": "Firma als Empfaenger laeuft automatisch; Firma nur an der Reservierung kommt in die Pruefung, weil dort erfahrungsgemaess in rund jedem zehnten Fall eine Privatperson zahlt.",
     "zeitraum_tage": 30,
-    "_hoechstens_hinweis": "Obergrenze je Lauf. Sie wirkt auf die Belege MIT Firmenbezug, nicht auf alle Rechnungen des Hauses — bei einem mittelgrossen Stadthotel sind das Groessenordnungen weniger. Wird die Grenze erreicht, sagt die Meldung es; dann entweder den Zeitraum verkleinern oder die Grenze anheben.",
-    "hoechstens": 2000,
+    "_hoechstens_hinweis": "Obergrenze je Lauf. Sie wirkt auf die Belege MIT Firmenbezug, nicht auf alle Rechnungen des Hauses — bei einem mittelgrossen Stadthotel sind das Groessenordnungen weniger. Seit auch Voraus-, Zwischen- und Anzahlungsrechnungen eingelesen werden, sind es rund doppelt so viele wie vorher; 2000 reichten im gemessenen Haus nur noch fuer drei Wochen. Wird die Grenze erreicht, sagt die Meldung es; dann entweder den Zeitraum verkleinern oder die Grenze anheben.",
+    "hoechstens": 10000,
     "firmenprofile": [
       "COMPANY",
       "TRAVEL_AGENT",

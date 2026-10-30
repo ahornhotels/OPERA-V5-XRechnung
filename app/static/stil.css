@@ -267,3 +267,12 @@ label:has(> .tipp){position:relative}
   top:100%;margin-top:.3rem;z-index:20;padding:.55rem .7rem;background:var(--text);color:#fff;
   border-radius:6px;font-size:.82rem;font-weight:400;line-height:1.45;text-align:left;
   white-space:normal;box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}
+/* Aufgaben nach dem Versand (Nachpruefung): oben auf der Liste, nur auffaellig,
+   wenn wirklich etwas offen ist. */
+.aufgaben{display:flex;flex-wrap:wrap;align-items:flex-start;gap:.6rem 1rem;margin:.6rem 0}
+.aufgaben.offen{background:var(--karte);border:1px solid var(--warn);border-left:4px solid var(--warn);
+  border-radius:6px;padding:.6rem .9rem}
+.aufgaben h2{flex-basis:100%;margin:0;font-size:1rem;color:var(--warn)}
+.aufgaben ul{flex:1 1 100%;margin:0;padding-left:1.2rem}
+.aufgaben li{margin:.2rem 0}
+.hinweis.aufgabe{border-left:4px solid var(--warn);padding:.3rem .7rem;color:var(--text)}

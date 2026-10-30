@@ -245,6 +245,9 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
         sortieren=sortieren if sortieren in store.SORTIERBAR else "",
         richtung=("auf" if (richtung or "").lower() == "auf" else "ab"),
         ohne_adresse=ohne_adresse,
+        # Aufgaben aus der Nachpruefung: versendete Rechnungen, die in OPERA
+        # inzwischen storniert sind oder einen anderen Empfaenger haben.
+        aufgaben=store.offene_aufgaben(),
         zeitraum=(cfg.get("auswahl") or {}).get("zeitraum_tage", 30)))
 
 
@@ -405,6 +408,39 @@ async def automatik_jetzt(request: Request):
                     benutzer=request.state.benutzer)
     await automatik.einmal_jetzt()
     return RedirectResponse("/?meldung=Durchlauf ausgeführt", status_code=303)
+
+
+@app.post("/nachpruefen")
+def nachpruefen(request: Request):
+    """Die Nachpruefung der versendeten Belege sofort, statt erst nach dem
+    naechsten Tagesabschluss. Liest nur aus OPERA und schreibt Aufgaben."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/?meldung=Keine Berechtigung", status_code=303)
+    try:
+        z = automatik.nachpruefen_jetzt(config.laden())
+        if z is None:
+            return RedirectResponse("/?meldung=" + BESCHAEFTIGT, status_code=303)
+        meldung = (f"Nachprüfung: {z['geprueft']} versendete Rechnung(en) geprüft, "
+                   f"{z['neu']} neue Aufgabe(n)"
+                   + (f", {z['fehler']} nicht prüfbar" if z["fehler"] else ""))
+    except Exception as e:
+        meldung = f"Fehler: {e}"
+    return RedirectResponse(f"/?meldung={meldung}", status_code=303)
+
+
+@app.post("/rechnung/{bill_no}/nachpruefung_erledigt")
+def nachpruefung_erledigt(request: Request, bill_no: int):
+    """Eine Aufgabe aus der Nachpruefung abhaken. Der Befund bleibt stehen —
+    er erscheint nur nicht mehr in der Aufgabenliste."""
+    if not _darf_verwalten(request):
+        return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
+    satz = store.rechnung(bill_no) or {}
+    if not (satz.get("nachpruefung") or "").strip():
+        return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine offene Aufgabe", status_code=303)
+    store.setzen(bill_no, nachpruefung_erledigt=store.jetzt())
+    store.protokoll("nachpruefung erledigt", satz["nachpruefung"], bill_no=bill_no,
+                    benutzer=request.state.benutzer)
+    return RedirectResponse(f"/rechnung/{bill_no}?meldung=Aufgabe erledigt", status_code=303)
 
 
 # -------------------------------------------------------------------- Detail

@@ -125,6 +125,20 @@ SOLL_SPALTEN = {
         # Automatik auch eine Gruppenrechnung schicken, deren Gastzuordnung
         # noch nicht an Daten bestaetigt ist — er hat sie ja angesehen.
         "freigabe_am": "TEXT",
+        # Nachpruefung nach dem Versand (ablauf.nachpruefen): was sich in OPERA
+        # seitdem geaendert hat — storniert oder anderer Rechnungsempfaenger.
+        # Gefuellt heisst: eine offene Aufgabe, bis nachpruefung_erledigt
+        # gesetzt ist. Der Status bleibt 'gesendet'; die Rechnung IST beim Kunden.
+        "nachpruefung": "TEXT",
+        "nachpruefung_am": "TEXT",
+        "nachpruefung_erledigt": "TEXT",
+        # Woran ein Befund wiedererkannt wird ("VOID>960043|NAME:12>99"). Der
+        # Text taugt dafuer nicht: Er nennt den Stand des Ersatzbelegs in der
+        # Arbeitsliste und Profilnamen, beides aendert sich, und eine erledigte
+        # Aufgabe kam damit wieder.
+        "nachpruefung_schluessel": "TEXT",
+        # Empfaengerprofil (NVL(PAYEE_NAME_ID, NAME_ID)) beim Versand.
+        "name_id_versand": "INTEGER",
         "empfaenger": "TEXT", "status": "TEXT", "xml_pfad": "TEXT",
         "fehler": "TEXT", "zuerst_gesehen": "TEXT", "faellig_ab": "TEXT",
         "gesendet_am": "TEXT",
@@ -161,6 +175,8 @@ def init() -> None:
         # Anfang an gibt — er kann also vor der Wanderung angelegt werden.
         con.executescript(SCHEMA)
         ergaenzt = wanderung(con)
+        # Fuer letzte_aktion(): Die Automatik fragt bei jedem Takt danach.
+        con.execute("CREATE INDEX IF NOT EXISTS protokoll_aktion ON protokoll (aktion, zeit)")
     if ergaenzt:
         logging.getLogger(__name__).info(
             "Arbeitsliste erweitert: %s", ", ".join(ergaenzt))
@@ -296,3 +312,36 @@ def protokoll_lesen(limit: int = 200, bill_no: int | None = None) -> list[dict]:
     args.append(limit)
     with verbindung() as con:
         return [dict(r) for r in con.execute(sql, args)]
+
+
+def erste_aktion(aktion: str) -> str | None:
+    """Zeitpunkt des aeltesten Protokolleintrags dieser Aktion, oder None."""
+    with verbindung() as con:
+        z = con.execute("SELECT MIN(zeit) FROM protokoll WHERE aktion = ?", (aktion,)).fetchone()
+    return z[0] if z and z[0] else None
+
+
+def letzte_aktion(aktion: str) -> str | None:
+    """Zeitpunkt des juengsten Protokolleintrags dieser Aktion, oder None."""
+    with verbindung() as con:
+        z = con.execute("SELECT MAX(zeit) FROM protokoll WHERE aktion = ?", (aktion,)).fetchone()
+    return z[0] if z and z[0] else None
+
+
+def offene_aufgaben() -> list[dict]:
+    """Versendete Belege mit einem Befund der Nachpruefung, der noch nicht
+    erledigt ist — die Aufgabenliste."""
+    with verbindung() as con:
+        zeilen = con.execute(
+            "SELECT * FROM rechnungen WHERE nachpruefung IS NOT NULL AND nachpruefung <> '' "
+            "AND (nachpruefung_erledigt IS NULL OR nachpruefung_erledigt = '') "
+            "ORDER BY nachpruefung_am DESC, bill_no DESC").fetchall()
+    return [dict(z) for z in zeilen]
+
+
+def gesendet_seit(grenze: str) -> list[dict]:
+    """Versendete Belege mit gesendet_am ab grenze (ISO-Zeit)."""
+    with verbindung() as con:
+        zeilen = con.execute("SELECT * FROM rechnungen WHERE status = 'gesendet' "
+                             "AND gesendet_am >= ? ORDER BY gesendet_am", (grenze,)).fetchall()
+    return [dict(z) for z in zeilen]

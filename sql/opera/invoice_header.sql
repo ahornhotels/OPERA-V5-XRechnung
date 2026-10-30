@@ -125,6 +125,17 @@ SELECT f.bill_no                                              AS id,
        -- wird (VOID), faellt aus der Einleseliste heraus und wurde sonst
        -- trotzdem versendet. Geprueft in xml_build.pruefsummen.
        f.status                                               AS beleg_status,
+       -- TSE-Nummer: ein ausgegebener Beleg traegt sie. Fehlt sie, war der
+       -- Beleg nie beim Fiskalsystem (oder das Haus hat keine TSE).
+       f.fiscal_bill_no,
+       f.folio_type,
+       -- Pseudozimmer (PM-Konto): Die Reservierung laeuft oft ueber Monate,
+       -- der Leistungszeitraum (BT-73/74) kommt dann aus den Positionen.
+       -- Ohne Zimmer (rund 2.000 Belege in 90 Tagen) 'N', nicht NULL.
+       NVL((SELECT MAX(rm.pseudo_yn)
+              FROM @SCHEMA@.room rm
+             WHERE rm.resort = f.resort
+               AND rm.room   = f.room), 'N')                  AS pseudozimmer,
        f.invoice_no,
        f.account_code,
        -- Verkaeufer (BG-4): Hausdaten, wo moeglich aus dem eingefrorenen Beleg

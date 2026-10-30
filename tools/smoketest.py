@@ -3748,7 +3748,14 @@ def _db_anzahlung(sql, parameter=None):
                  "classifiedtaxcategorypercent": 0}]
     if "invoice_deposits.sql" in kopfzeile:
         return [{"billingreferenceid": 1400090, "billingreferenceissuedate": "2026-09-20",
-                 "total_net": 440.0, "total_gross": 440.0, "status": "DEPOSIT"}]
+                 "total_net": _anz_fall.get("anz_netto", 440.0),
+                 "total_gross": _anz_fall.get("anz_brutto", 440.0),
+                 "status": "DEPOSIT", "folio_no": 77}]
+    if "invoice_tax_kopf.sql" in kopfzeile and (parameter or {}).get("bill_no") == 1400090:
+        return list(_anz_fall.get("anz_buckets", [{"taxableamount": 440.0, "taxamount": 0.0,
+                                                   "taxcategorypercent": 0}]))
+    if "invoice_tax_kopf.sql" in kopfzeile:
+        return list(_anz_fall.get("kopf_buckets", []))
     if "invoice_totals.sql" in kopfzeile:
         return [{"invoicenet": _anz_fall["kopf"], "invoicegross": _anz_fall["kopf"]}]
     return []
@@ -3761,10 +3768,22 @@ try:
     _acfg["property"].update(udf_leitweg="")
     _anz_fall.update(kopf=30.85, zeilen=470.85, gezahlt=0)
     _haupt = opera.rechnung(_acfg, 1400097)
-    pruefe(len(_haupt["deposits"]) == 1 and _haupt["header"]["prepaidamount"] == 440.0
-           and _haupt["header"]["payableamount"] == 30.85,
-           f"die Hauptrechnung traegt die Anzahlung ({_haupt['header']['prepaidamount']} / "
+    # Seit die Anzahlungsrechnung selbst als XRechnung hinausgeht: Die
+    # Anzahlung wird mit ihrer Steuer abgesetzt (Abschlag je Steuersatz),
+    # nicht mehr als "bereits gezahlt" gefuehrt (§ 14 Abs. 5 UStG).
+    pruefe(len(_haupt["deposits"]) == 1 and len(_haupt["anzahlung_abzuege"]) == 1
+           and _haupt["header"]["prepaidamount"] == 0.0 and _haupt["header"]["payableamount"] == 30.85,
+           f"die Hauptrechnung setzt die Anzahlung ab ({_haupt['header']['prepaidamount']} / "
            f"{_haupt['header']['payableamount']})")
+    _hx = xml_build.bauen(_haupt).decode()
+    pruefe("Abzüglich Anzahlungsrechnung 1400090 vom 2026-09-20" in _hx and "BillingReference" in _hx
+           and _betrag(_hx, "PayableAmount") == 30.85 and _betrag(_hx, "AllowanceTotalAmount") == 440.0,
+           "im XML: Abschlag mit Verweis, Zahlbetrag der Rest")
+    # Nur die Rechenregeln: Haus und Empfaenger fehlen in diesen Testdaten absichtlich.
+    _rechnerisch = lambda r: [h for h in xml_build.pruefsummen(r)
+                              if not h.startswith(("BT-", "BR-DE-", "BG-17"))]
+    pruefe(_rechnerisch(_haupt) == [],
+           f"die Vorpruefung laesst die Hauptrechnung durch ({_rechnerisch(_haupt)})")
     _anz_fall.update(kopf=80.0, zeilen=80.0, gezahlt=80.0)
     _neben = opera.rechnung(_acfg, 1400098)
     pruefe(not _neben["deposits"] and _neben["header"]["prepaidamount"] == 80.0
@@ -3779,6 +3798,85 @@ try:
     _teil = opera.rechnung(_acfg, 1400099)
     pruefe(any("teilweise angerechnet" in h for h in xml_build.pruefsummen(_teil)),
            "eine Teilanrechnung haelt den Beleg zur Pruefung an, statt zu raten")
+    # Steuer der Anzahlung wird abgesetzt: Zeilen 1.190,00 (1.000 netto, 19 %),
+    # Anzahlung 440,00 brutto = 369,75 netto + 70,25 Steuer. Rest 750,00.
+    _anz_fall.update(kopf=750.0, zeilen=1190.0, gezahlt=0, anz_netto=369.75,
+                     anz_buckets=[{"taxableamount": 369.75, "taxamount": 70.25, "taxcategorypercent": 19}])
+    def _db_anz19(sql, parameter=None):
+        kz = sql.splitlines()[0]
+        if "invoice_lines.sql" in kz:
+            return [{"lineextensionamount": 1190.0, "lineextensionamountnet": 1000.0, "invoicedquantity": 1,
+                     "itemname": "Tagung", "classifiedtaxcategoryid": "S", "classifiedtaxcategorypercent": 19}]
+        if "invoice_tax.sql" in kz:
+            return [{"taxcategoryid": "S", "taxcategorypercent": 19, "taxableamount": 1000.0, "taxamount": 190.0}]
+        if "invoice_totals.sql" in kz:
+            return [{"invoicenet": 630.25, "invoicegross": 750.0}]
+        if "invoice_header.sql" in kz:
+            return [{"issuedate": "2026-10-01", "reservierungsnummer": "4711", "invoicegross": 750.0,
+                     "invoicenet": 630.25, "prepaidamount": 0}]
+        return _db_anzahlung(sql, parameter)
+    opera.db.abfrage = _db_anz19
+    _r19 = opera.rechnung(_acfg, 1400100)
+    _x19 = xml_build.bauen(_r19).decode()
+    pruefe(_betrag(_x19, "TaxExclusiveAmount") == 630.25 and _betrag(_x19, "PayableAmount") == 750.0
+           and ">119.75</cbc:TaxAmount>" in _x19,
+           "die Endrechnung weist nur noch die Steuer auf den Rest aus (190,00 - 70,25 = 119,75)")
+    pruefe(_rechnerisch(_r19) == [],
+           f"und die Vorpruefung ist sauber ({_rechnerisch(_r19)})")
+    # Der Kopf der Schlussrechnung, wie OPERA ihn fuehrt: Positionen in den
+    # Buckets MIT Satz, der Abzug der Anzahlung negativ in Buckets OHNE Satz
+    # (gemessen 30.10.2026; dort meist Bucket 7, den die Abfrage frueher
+    # gar nicht las).
+    _kopf19 = [{"bucket": 1, "taxableamount": 1000.0, "taxamount": 190.0, "taxcategorypercent": 19,
+                "satz_fehlt": "N"},
+               {"bucket": 7, "taxableamount": -369.75, "taxamount": -70.25, "taxcategorypercent": None,
+                "satz_fehlt": "J"}]
+    _anz_fall.update(kopf_buckets=_kopf19)
+    _r19k = opera.rechnung(_acfg, 1400100)
+    pruefe(_rechnerisch(_r19k) == [],
+           f"Kopf mit Abzug ohne Satz: die Gegenprobe geht auf ({_rechnerisch(_r19k)})")
+    _anz_fall.update(kopf_buckets=[_kopf19[0], dict(_kopf19[1], taxableamount=-300.0, taxamount=-57.0)])
+    _r19f = opera.rechnung(_acfg, 1400100)
+    pruefe(any(h.startswith("Anzahlung: abgesetzt") for h in xml_build.pruefsummen(_r19f)),
+           "zieht der Kopf in OPERA etwas anderes ab als die Anzahlung, haelt der Beleg an")
+    _anz_fall.update(kopf_buckets=[dict(_kopf19[0], taxableamount=1693.65, taxamount=321.79), _kopf19[1]])
+    _r19w = opera.rechnung(_acfg, 1400100)
+    pruefe(any(h.startswith("Steuersatz 19") for h in xml_build.pruefsummen(_r19w)),
+           "fuehrt der Kopf je Satz andere Positionen (Betrag zwischen Belegen gewandert), haelt er an")
+    _anz_fall.update(anz_buckets=[{"taxableamount": 369.75, "taxamount": 70.25, "taxcategorypercent": None,
+                                   "satz_fehlt": "J"}], kopf_buckets=[])
+    _r19s = opera.rechnung(_acfg, 1400100)
+    pruefe(any("ohne Steuersatz" in h for h in xml_build.pruefsummen(_r19s)),
+           "traegt der Anzahlungsbeleg einen Betrag ohne Satz, wird nicht geraten")
+    _anz_fall.update(anz_buckets=[])
+    _r19b = opera.rechnung(_acfg, 1400100)
+    pruefe(any("Steueraufteilung der Anzahlungsrechnung" in h for h in xml_build.pruefsummen(_r19b)),
+           "ohne lesbare Steueraufteilung der Anzahlung wird nicht geraten, der Beleg haelt an")
+    # Eine Anzahlung unter der Rundungsgrenze darf nicht als Rundungsrest auf
+    # die groesste Position wandern — sonst hoebe sich der Abzug still auf.
+    # Zehn Positionen, damit die Rundungsgrenze (0,005 je Zeile) bei 0,06
+    # liegt; 0,05 liegt darueber nicht, aber ueber der Anrechnungsgrenze 0,02.
+    _anz_fall.update(anz_netto=0.05, anz_brutto=0.05,
+                     anz_buckets=[{"taxableamount": 0.05, "taxamount": 0.0, "taxcategorypercent": 19}])
+    def _db_klein(sql, parameter=None):
+        kz = sql.splitlines()[0]
+        if "invoice_lines.sql" in kz:
+            return [{"lineextensionamount": 119.0, "lineextensionamountnet": 100.0, "invoicedquantity": 1,
+                     "itemname": f"Tagung {i}", "classifiedtaxcategoryid": "S",
+                     "classifiedtaxcategorypercent": 19} for i in range(10)]
+        if "invoice_totals.sql" in kz:
+            return [{"invoicenet": 999.95, "invoicegross": 1189.95}]
+        if "invoice_header.sql" in kz:
+            return [{"issuedate": "2026-10-01", "reservierungsnummer": "4711", "invoicegross": 1189.95,
+                     "invoicenet": 999.95, "prepaidamount": 0}]
+        return _db_anz19(sql, parameter)
+    opera.db.abfrage = _db_klein
+    _rk = opera.rechnung(_acfg, 1400101)
+    _xk = xml_build.bauen(_rk).decode()
+    pruefe(len(_rk["anzahlung_abzuege"]) == 1 and _betrag(_xk, "LineExtensionAmount") == 1000.0
+           and _betrag(_xk, "TaxExclusiveAmount") == 999.95,
+           f"eine Anzahlung von 0,05 bleibt ein Abzug und wird nicht weggerundet "
+           f"({_betrag(_xk, 'LineExtensionAmount')} / {_betrag(_xk, 'TaxExclusiveAmount')})")
 finally:
     opera.db.abfrage = _echt_abf_anz
 _kopf_sql_anz = "\n".join(z.split("--")[0] for z in
@@ -3857,6 +3955,60 @@ try:
            "ohne passende Rechnung: kein Bezug, aber ein Hinweis fuer die Sichtpruefung")
 finally:
     opera.db.abfrage = _echt_abf_gs
+
+# Anzahlungsbeleg: Typ 380 mit Vermerk, nicht 386. XRechnung 3.0.2 laesst 386
+# nicht zu (BR-DE-17); der lokale Validator setzt dann das Gesamturteil auf
+# ungueltig, und die Anwendung haette jede Anzahlungsrechnung gesperrt.
+def _db_anzahlungsbeleg(sql, parameter=None):
+    kopfzeile = sql.splitlines()[0]
+    if "invoice_header.sql" in kopfzeile:
+        return [{"issuedate": "2026-10-29", "invoicegross": 119.0, "invoicenet": 100.0,
+                 "prepaidamount": 119.0, "beleg_status": "DEPOSIT", "document_type": "INVOICE", "invoicetypecode": "380",
+                 "note": "Gast: Muster"}]
+    if "invoice_lines.sql" in kopfzeile:
+        return [{"lineextensionamount": 119.0, "lineextensionamountnet": 100.0, "invoicedquantity": 1,
+                 "itemname": "Anzahlung", "classifiedtaxcategoryid": "S", "classifiedtaxcategorypercent": 19}]
+    if "invoice_tax.sql" in kopfzeile:
+        return [{"taxcategoryid": "S", "taxcategorypercent": 19, "taxableamount": 100.0, "taxamount": 19.0}]
+    if "invoice_totals.sql" in kopfzeile:
+        return [{"invoicenet": 100.0, "invoicegross": 119.0, "spay_cl": 0.0}]
+    return []
+
+
+_echt_abf_ab = opera.db.abfrage
+opera.db.abfrage = _db_anzahlungsbeleg
+try:
+    _ab = opera.rechnung(_gcfg, 1400096)
+    pruefe(_ab["header"].get("ist_anzahlungsbeleg") and _ab["header"]["invoicetypecode"] == "380",
+           f"ein Anzahlungsbeleg geht als Typ 380 hinaus ({_ab['header'].get('invoicetypecode')})")
+    pruefe(str(_ab["header"].get("note") or "").startswith("Anzahlungsrechnung")
+           and "Gast: Muster" in _ab["header"]["note"],
+           f"mit dem Vermerk Anzahlungsrechnung vor der Gastzeile in BT-22 ({_ab['header'].get('note')})")
+    _abx = xml_build.bauen(_ab).decode()
+    pruefe("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>" in _abx and "Anzahlungsrechnung" in _abx,
+           "im XML: Typ 380 und der Vermerk")
+    _ab_neg = [True]
+    def _db_anzahlung_zurueck(sql, parameter=None):
+        zeilen = _db_anzahlungsbeleg(sql, parameter)
+        for z in zeilen:
+            for f in ("invoicegross", "invoicenet", "lineextensionamount", "lineextensionamountnet",
+                      "taxableamount", "taxamount"):
+                if z.get(f) is not None:
+                    z[f] = -z[f]
+            if "invoicedquantity" in z:
+                z["invoicedquantity"] = -1
+            if "prepaidamount" in z:
+                z["prepaidamount"] = 0.0
+        return zeilen
+    opera.db.abfrage = _db_anzahlung_zurueck
+    _abz = opera.rechnung(_gcfg, 1400097)
+    pruefe(_abz["header"]["invoicetypecode"] == "381" and _abz["header"].get("ist_anzahlungsbeleg")
+           and "Anzahlungsrechnung" not in str(_abz["header"].get("note") or ""),
+           f"die Rueckzahlung einer Anzahlung ist eine Gutschrift ohne den Vermerk ({_abz['header'].get('note')})")
+    pruefe(not any("Status" in h for h in xml_build.pruefsummen(_abz)),
+           "und sie wird nicht wegen ihres Status DEPOSIT gesperrt")
+finally:
+    opera.db.abfrage = _echt_abf_ab
 
 # Am 30.10.2026 an allen 134 negativen Belegen eines Quartals nachgerechnet:
 # 57 echte Gutschriften, 76 ueberzahlte Rechnungen. 27 der Gutschriften haben
@@ -4310,10 +4462,30 @@ for _feld, _regel in (("suppliercontacttelephone", "BR-DE-6"), ("suppliercontact
 _void = json.loads(json.dumps(rechnung))
 _void["header"].update(beleg_status="VOID", document_type="INVOICE")
 pruefe(any("storniert" in h for h in xml_build.pruefsummen(_void)), "B7: ein stornierter Beleg wird nicht versendet")
+# Seit 30.10.2026: Jeder gueltige Beleg ist eine Rechnung, gleich welcher
+# Belegart (docs/16). Die Vorausrechnung geht hinaus; gesperrt bleiben Kopie,
+# interne Umbuchung und ein Anzahlungsbeleg, den opera.rechnung nicht als
+# solchen erkannt hat.
 _adv = json.loads(json.dumps(rechnung))
 _adv["header"].update(beleg_status="OK", document_type="ADVANCE INVOICE")
-pruefe(any("keine Endrechnung" in h for h in xml_build.pruefsummen(_adv)),
-       "B11: eine Anzahlungsrechnung wird nicht als Rechnung versendet")
+pruefe(not any("storniert" in h or "Endrechnung" in h or "COPY" in h
+               for h in xml_build.pruefsummen(_adv)),
+       f"eine Vorausrechnung (Status OK) geht als Rechnung hinaus ({xml_build.pruefsummen(_adv)})")
+_kop = json.loads(json.dumps(rechnung))
+_kop["header"].update(beleg_status="DEPOSIT", document_type="COPY OF INVOICE", ist_anzahlungsbeleg=True)
+pruefe(any("COPY OF INVOICE" in h for h in xml_build.pruefsummen(_kop)),
+       "eine 'COPY OF INVOICE' wird nicht versendet, solange das Haus sie nicht geklaert hat")
+_int = json.loads(json.dumps(rechnung))
+_int["header"].update(beleg_status="OK", folio_type="INTERNAL")
+pruefe(any("interne Umbuchung" in h for h in xml_build.pruefsummen(_int)),
+       "eine interne Umbuchung wird nicht versendet")
+_dep = json.loads(json.dumps(rechnung))
+_dep["header"].update(beleg_status="DEPOSIT", document_type="INVOICE")
+pruefe(any("Status „DEPOSIT“" in h for h in xml_build.pruefsummen(_dep)),
+       "ein Anzahlungsbeleg ohne Kennzeichen aus opera.rechnung wird gesperrt")
+_dep["header"].update(ist_anzahlungsbeleg=True)
+pruefe(not any("Status" in h for h in xml_build.pruefsummen(_dep)),
+       "als Anzahlungsrechnung erkannt geht er hinaus")
 _kb = json.loads(json.dumps(rechnung))
 _kb["tax_kopf"] = [{"taxcategorypercent": 7, "taxableamount": 3094.04},
                    {"taxcategorypercent": 19, "taxableamount": 113.40},
@@ -4401,23 +4573,223 @@ finally:
     with store.verbindung() as con:
         con.execute("DELETE FROM rechnungen WHERE bill_no IN (960001, 960002)")
 
-# --- Aufnehmen: Dokumentart --------------------------------------------------
+# --- Aufnehmen: Belegart -----------------------------------------------------
+# Eine Vorausrechnung ist eine Rechnung — sie bekommt keinen Pruefgrund mehr
+# wegen ihrer Belegart. Eine Kopie, ein stornierter Beleg und ein Beleg ohne
+# TSE-Nummer dagegen schon.
 _echt_s7, _echt_e7 = opera.suchen, opera.empfaenger
-opera.suchen = lambda cfg, begriff: [{"bill_no": 960003, "invoice_no": "3", "issuedate": "2026-09-01",
-                                      "document_type": "ADVANCE INVOICE", "beleg_status": "OK",
-                                      "total_net": 100.0, "total_gross": 119.0, "kunde": "Firma",
-                                      "empfaenger_typ": "COMPANY", "empfaenger_land": "DE",
-                                      "firmenbezug": "EMPFAENGER"}]
+_such7 = {"bill_no": 960003, "invoice_no": "3", "issuedate": "2026-09-01",
+          "document_type": "ADVANCE INVOICE", "beleg_status": "OK", "fiscal_bill_no": "900000001",
+          "total_net": 100.0, "total_gross": 119.0, "kunde": "Firma",
+          "empfaenger_typ": "COMPANY", "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER"}
+opera.suchen = lambda cfg, begriff: [dict(_such7)]
 opera.empfaenger = lambda bill_no: [{"email": "rechnung@firma.example"}]
 try:
     ablauf.aufnehmen(_ecfg, 960003)
     _r3 = store.rechnung(960003)
-    pruefe(_r3["status"] == "pruefung" and "Dokumentart" in (_r3["fehler"] or ""),
-           f"B11: eine Anzahlungsrechnung aus der Suche kommt in die Pruefung ({_r3['fehler']})")
+    pruefe("Belegart" not in (_r3["fehler"] or "") and "Dokumentart" not in (_r3["fehler"] or "")
+           and "TSE" not in (_r3["fehler"] or ""),
+           f"B11: eine Vorausrechnung aus der Suche hat keinen Pruefgrund wegen ihrer Art ({_r3['fehler']})")
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no = 960003")
+    _such7.update(document_type="COPY OF INVOICE", beleg_status="DEPOSIT", fiscal_bill_no=None)
+    _tse_vorher = ablauf._tse_im_haus
+    ablauf._tse_im_haus = True        # das Einlesen hat TSE-Nummern gesehen
+    ablauf.aufnehmen(_ecfg, 960003)
+    ablauf._tse_im_haus = _tse_vorher
+    _r3 = store.rechnung(960003)
+    pruefe(_r3["status"] == "pruefung" and "COPY OF INVOICE" in (_r3["fehler"] or "")
+           and "TSE-Nummer" in (_r3["fehler"] or ""),
+           f"eine Kopie ohne TSE-Nummer aus der Suche kommt mit beiden Gruenden in die Pruefung ({_r3['fehler']})")
 finally:
     opera.suchen, opera.empfaenger = _echt_s7, _echt_e7
     with store.verbindung() as con:
         con.execute("DELETE FROM rechnungen WHERE bill_no = 960003")
+
+# --- Belegart beim Einlesen ---------------------------------------------------
+_bcfg = json.loads(json.dumps(_ecfg))
+pruefe(ablauf.belegart_gruende(_bcfg, {"beleg_status": "OK", "document_type": "INTERIM INVOICE",
+                                       "fiscal_bill_no": "9001"}) == [],
+       "eine Zwischenrechnung mit TSE-Nummer ist eine Rechnung")
+pruefe(ablauf.belegart_gruende(_bcfg, {"beleg_status": "DEPOSIT", "document_type": "INVOICE",
+                                       "fiscal_bill_no": "9002"}) == [],
+       "ein Anzahlungsbeleg mit TSE-Nummer ist eine Rechnung")
+pruefe(any("VOID" in g for g in ablauf.belegart_gruende(_bcfg, {"beleg_status": "VOID"})),
+       "ein stornierter Beleg nicht")
+pruefe(ablauf.belegart_gruende(_bcfg, {"beleg_status": "OK", "fiscal_bill_no": None},
+                               tse_im_haus=False) == [],
+       "in einem Haus ohne TSE ist eine fehlende TSE-Nummer kein Befund")
+pruefe(any("TSE" in g for g in ablauf.belegart_gruende(_bcfg, {"beleg_status": "OK", "fiscal_bill_no": ""})),
+       "in einem Haus mit TSE schon")
+_liste_sql = (BASE / "sql" / "opera" / "invoice_list.sql").read_text(encoding="utf-8")
+_liste_ohne_k = "\n".join(z.split("--")[0] for z in _liste_sql.splitlines())
+pruefe("document_type   = 'INVOICE'" not in _liste_ohne_k and ":anzahlung_status" in _liste_ohne_k
+       and "'COPY OF INVOICE'" in _liste_ohne_k,
+       "invoice_list.sql waehlt nicht mehr nach Belegart, nimmt Anzahlungsbelege und laesst Kopien draussen")
+_echt_k9, _echt_e9 = opera.kandidaten, opera.empfaenger
+from datetime import date as _d9, timedelta as _tdd9
+_morgen9 = (_d9.today() + _tdd9(days=1)).isoformat()
+_gestern9 = (_d9.today() - _tdd9(days=1)).isoformat()
+_kand9 = [{"bill_no": 960030, "issuedate": _morgen9, "total_net": 100.0, "total_gross": 119.0,
+           "beleg_status": "OK", "document_type": "ADVANCE INVOICE", "fiscal_bill_no": "900001",
+           "company_name": "Voraus GmbH", "name_id": 1, "empfaenger_typ": "COMPANY",
+           "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"},
+          {"bill_no": 960031, "issuedate": _morgen9, "total_net": 100.0, "total_gross": 119.0,
+           "beleg_status": "DEPOSIT", "document_type": "INVOICE", "fiscal_bill_no": None,
+           "company_name": "Anzahlung GmbH", "name_id": 2, "empfaenger_typ": "COMPANY",
+           "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"},
+          {"bill_no": 960032, "issuedate": _gestern9, "total_net": 100.0, "total_gross": 119.0,
+           "beleg_status": "OK", "document_type": "ADVANCE INVOICE", "fiscal_bill_no": "900003",
+           "company_name": "Alt GmbH", "name_id": 3, "empfaenger_typ": "COMPANY",
+           "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"},
+          {"bill_no": 960033, "issuedate": _gestern9, "total_net": 100.0, "total_gross": 119.0,
+           "beleg_status": "OK", "document_type": "INVOICE", "fiscal_bill_no": "900004",
+           "company_name": "End GmbH", "name_id": 4, "empfaenger_typ": "COMPANY",
+           "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"}]
+opera.kandidaten = lambda cfg, tage=None: [dict(k) for k in _kand9]
+opera.empfaenger = lambda bill_no: [{"email": "rechnung@firma.example"}]
+try:
+    ablauf.einlesen(_bcfg)
+    _v, _a = store.rechnung(960030), store.rechnung(960031)
+    pruefe(_v and _v["status"] != "pruefung",
+           f"eingelesene Vorausrechnung mit TSE-Nummer laeuft normal ({_v and _v['status']}: {_v and _v['fehler']})")
+    pruefe(_a and _a["status"] == "pruefung" and "TSE-Nummer" in (_a["fehler"] or ""),
+           f"ein Beleg ohne TSE-Nummer in einem Haus mit TSE kommt in die Pruefung ({_a and _a['fehler']})")
+    _alt, _end = store.rechnung(960032), store.rechnung(960033)
+    pruefe(_alt["status"] == "pruefung" and "vor der Umstellung" in (_alt["fehler"] or ""),
+           f"eine Vorausrechnung von vor der Umstellung geht nicht automatisch hinaus ({_alt['fehler']})")
+    pruefe("Umstellung" not in (_end["fehler"] or ""),
+           "eine Endrechnung von vor der Umstellung laeuft wie bisher")
+    # Die TSE-Nummer kommt nach: Hinweis weg, zurueck aus der Sichtpruefung.
+    _kand9[1]["fiscal_bill_no"] = "900002"
+    ablauf.einlesen(_bcfg)
+    _a = store.rechnung(960031)
+    pruefe(_a["status"] == "neu" and "TSE" not in (_a["fehler"] or ""),
+           f"kommt die TSE-Nummer nach, faellt der Hinweis weg und der Beleg laeuft ({_a['status']}: {_a['fehler']})")
+finally:
+    opera.kandidaten, opera.empfaenger = _echt_k9, _echt_e9
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no IN (960030, 960031, 960032, 960033)")
+
+# --- Leistungszeitraum eines PM-Kontos ----------------------------------------
+_pm = {"startdate": "2026-01-01", "enddate": "2026-12-31", "pseudozimmer": "Y"}
+opera.rechnungszeitraum_erweitern(_pm, [{"zeitraum_beginn": "2026-10-20", "zeitraum_ende": "2026-10-23"},
+                                        {"zeitraum_beginn": "2026-10-25", "zeitraum_ende": "2026-10-26"}])
+pruefe((_pm["startdate"], _pm["enddate"]) == ("2026-10-20", "2026-10-26"),
+       f"PM-Konto: der Leistungszeitraum kommt aus den Positionen, nicht aus der Jahresreservierung ({_pm})")
+# Positionsart A/B: dort gibt es nur leistung_von/bis, kein zeitraum_beginn.
+_pmb = {"startdate": "2026-01-01", "enddate": "2026-12-31", "pseudozimmer": "Y"}
+opera.rechnungszeitraum_erweitern(_pmb, [{"leistung_von": "2026-10-20", "leistung_bis": "2026-10-21"},
+                                         {"leistung_von": "2026-10-22", "leistung_bis": "2026-10-22"}])
+pruefe((_pmb["startdate"], _pmb["enddate"]) == ("2026-10-20", "2026-10-22"),
+       f"PM-Konto auch ohne Gastzuordnung (Art A/B): Zeitraum aus den Leistungstagen ({_pmb})")
+_nor = {"startdate": "2026-10-21", "enddate": "2026-10-24"}
+opera.rechnungszeitraum_erweitern(_nor, [{"zeitraum_beginn": "2026-10-21", "zeitraum_ende": "2026-10-22"}])
+pruefe((_nor["startdate"], _nor["enddate"]) == ("2026-10-21", "2026-10-24"),
+       "ein normales Zimmer behaelt den Aufenthalt als Leistungszeitraum")
+
+# --- Nachpruefung nach dem Versand ----------------------------------------------
+from datetime import datetime as _dt9, timedelta as _td9
+_jetzt9 = _dt9.now().isoformat(timespec="seconds")
+for _nr9, _name9, _brutto9 in ((960040, 11, 288.02), (960041, 12, 100.0), (960042, 13, 50.0)):
+    store.rechnung_anlegen({"bill_no": _nr9, "resort": "IHRHAUS", "kunde": f"Kunde {_nr9}",
+                            "total_gross": _brutto9, "city_ledger": 0.0, "name_id": _name9,
+                            "firmenbezug": "EMPFAENGER"}, 0)
+    store.setzen(_nr9, status="gesendet", gesendet_am=_jetzt9)
+store.setzen(960042, gesendet_am=(_dt9.now() - _td9(days=10)).isoformat(timespec="seconds"))
+store.rechnung_anlegen({"bill_no": 960043, "resort": "IHRHAUS", "kunde": "Ersatz",
+                        "total_gross": 288.02, "city_ledger": 0.0, "firmenbezug": "EMPFAENGER"}, 0)
+_heute9 = {960040: {"beleg_status": "VOID", "fiscal_bill_no": None, "total_gross": 0, "name_id": 11,
+                    "spaetere_belege": "960043:288.02,960044:12.00"},
+           960041: {"beleg_status": "OK", "fiscal_bill_no": "9", "total_gross": 100.0, "name_id": 99,
+                    "spaetere_belege": None},
+           960042: {"beleg_status": "VOID", "name_id": 13}}
+_gefragt9 = []
+_echt_np9, _echt_pn9 = opera.nachpruefung, opera.profil_name
+opera.nachpruefung = lambda cfg, bill_no: (_gefragt9.append(bill_no), _heute9.get(bill_no))[1]
+opera.profil_name = lambda name_id: f"Profil {name_id}"
+try:
+    _z9 = ablauf.nachpruefen(_bcfg)
+    _s40, _s41 = store.rechnung(960040), store.rechnung(960041)
+    pruefe(960042 not in _gefragt9, "die Nachpruefung laesst laenger zurueckliegende Versendungen aus")
+    pruefe("storniert" in (_s40["nachpruefung"] or "") and "960043" in (_s40["nachpruefung"] or "")
+           and "gleichem Betrag" in (_s40["nachpruefung"] or "") and "960044" not in (_s40["nachpruefung"] or ""),
+           f"storniert: Aufgabe mit dem Ersatzbeleg gleichen Betrags ({_s40['nachpruefung']})")
+    pruefe(_s40["status"] == "gesendet", "die Rechnung bleibt 'gesendet' — sie ist beim Kunden")
+    pruefe("Profil 12" in (_s41["nachpruefung"] or "") and "Profil 99" in (_s41["nachpruefung"] or ""),
+           f"anderer Rechnungsempfaenger: Aufgabe mit vorher und jetzt ({_s41['nachpruefung']})")
+    pruefe(_z9["neu"] == 2 and {r["bill_no"] for r in store.offene_aufgaben()} >= {960040, 960041},
+           f"beide stehen in der Aufgabenliste ({_z9})")
+    _z9b = ablauf.nachpruefen(_bcfg)
+    pruefe(_z9b["neu"] == 0, "ein schon gemeldeter Befund kommt nicht noch einmal")
+    # Der Text aendert sich (Ersatzbeleg jetzt gesendet), der Befund nicht.
+    store.setzen(960040, nachpruefung_erledigt=store.jetzt())
+    store.setzen(960043, status="gesendet")
+    _z9c = ablauf.nachpruefen(_bcfg)
+    pruefe(_z9c["neu"] == 0 and store.rechnung(960040)["nachpruefung_erledigt"],
+           "eine erledigte Aufgabe kommt nicht wieder, nur weil sich der Stand des Ersatzbelegs aendert")
+    store.setzen(960040, nachpruefung_erledigt=None)
+    store.setzen(960043, status="neu")
+    # Vergleichswert ist der Empfaenger beim Versand, nicht der vom Einlesen.
+    _vs = dict(store.rechnung(960041), name_id_versand=99)
+    pruefe(not [k for k, _ in ablauf.nachpruefung_befunde(_bcfg, _vs, _heute9[960041]) if k.startswith("NAME")],
+           "ein vor dem Versand berichtigter Zahler ist kein Befund")
+    _heute9[960041] = {"beleg_status": "OK", "name_id": 12}
+    pruefe(ablauf.nachpruefung_befunde(_bcfg, store.rechnung(960041), _heute9[960041]) == [],
+           "unveraendert: kein Befund")
+    pruefe("nicht mehr zu finden" in ablauf.nachpruefung_befunde(_bcfg, _s41, None)[0][1],
+           "ein verschwundener Beleg ist ein Befund")
+    # Faelligkeit, unabhaengig von der Uhrzeit des Testlaufs: Die Laeufe
+    # werden mit festen Zeiten ins Protokoll geschrieben.
+    _tag9 = _dt9(2031, 3, 4)
+    with store.verbindung() as con:
+        con.execute("INSERT INTO protokoll (zeit, aktion, erfolg, text) VALUES (?, 'nachpruefung', 0, 'Test')",
+                    (_tag9.replace(hour=6).isoformat(timespec="seconds"),))
+    pruefe(not ablauf.nachpruefung_faellig(_tag9.replace(hour=3)),
+           "vor dem Ende des Nachtlaufs wird nicht nachgeprueft")
+    pruefe(ablauf.nachpruefung_faellig(_tag9.replace(hour=9)),
+           "ein fehlgeschlagener Lauf zaehlt nicht als erledigt")
+    with store.verbindung() as con:
+        con.execute("INSERT INTO protokoll (zeit, aktion, erfolg, text) VALUES (?, ?, 1, 'Test')",
+                    (_tag9.replace(hour=3).isoformat(timespec="seconds"), ablauf.NACHPRUEFUNG_LAUF))
+    pruefe(ablauf.nachpruefung_faellig(_tag9.replace(hour=9)),
+           "ein Lauf von Hand um 3 Uhr ersetzt nicht den nach dem Tagesabschluss")
+    with store.verbindung() as con:
+        con.execute("INSERT INTO protokoll (zeit, aktion, erfolg, text) VALUES (?, ?, 1, 'Test')",
+                    (_tag9.replace(hour=6).isoformat(timespec="seconds"), ablauf.NACHPRUEFUNG_LAUF))
+    pruefe(not ablauf.nachpruefung_faellig(_tag9.replace(hour=9)),
+           "einmal am Tag: nach dem Lauf ist sie nicht mehr faellig")
+    pruefe(ablauf.nachpruefung_faellig((_tag9 + _td9(days=1)).replace(hour=9)),
+           "am naechsten Tag wieder")
+    with store.verbindung() as con:
+        con.execute("DELETE FROM protokoll WHERE zeit LIKE '2031-03-0%'")
+    with TestClient(app, client=("127.0.0.1", 50000)) as _k9:
+        _k9.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+        _l9 = _k9.get("/")
+        pruefe("Aufgabe(n) nach dem Versand" in _l9.text and "960040" in _l9.text,
+               "die Liste zeigt die Aufgaben nach dem Versand oben")
+        _d9 = _k9.get("/rechnung/960040")
+        pruefe("Nach dem Versand geändert" in _d9.text and "Als erledigt markieren" in _d9.text,
+               "die Detailseite zeigt den Befund mit Knopf")
+        _k9.post("/rechnung/960040/nachpruefung_erledigt", follow_redirects=False)
+        pruefe(960040 not in {r["bill_no"] for r in store.offene_aufgaben()}
+               and store.rechnung(960040)["nachpruefung"],
+               "erledigt: aus der Aufgabenliste heraus, der Befund bleibt am Beleg")
+        _n9 = _k9.post("/nachpruefen", follow_redirects=False)
+        pruefe(_n9.status_code == 303 and "Nachpr" in _n9.headers.get("location", ""),
+               "der Knopf 'Versendete jetzt nachprüfen' laeuft")
+        from app import automatik as _am9
+        _am9._lauf_sperre.acquire()
+        try:
+            _n9b = _k9.post("/nachpruefen", follow_redirects=False)
+        finally:
+            _am9._lauf_sperre.release()
+        pruefe("Nachpr" not in _n9b.headers.get("location", ""),
+               "laeuft gerade ein Durchlauf, startet keine zweite Nachpruefung daneben")
+finally:
+    opera.nachpruefung, opera.profil_name = _echt_np9, _echt_pn9
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no IN (960040, 960041, 960042, 960043)")
 _echt_e8 = opera.empfaenger
 opera.empfaenger = lambda bill_no: [{"email": "a@firma.example; b@firma.example"}, {"email": "ok@firma.example"}]
 try:

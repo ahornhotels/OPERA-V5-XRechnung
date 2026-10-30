@@ -4,6 +4,7 @@ damit gilt fuer den Knopfdruck und den Automatiklauf dieselbe Logik."""
 from __future__ import annotations
 import logging
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from . import opera, pfade, store, validate, xml_build, mailer
@@ -66,6 +67,75 @@ def _ordner(cfg: dict, schluessel: str) -> Path:
     return pfad
 
 
+HINWEIS_OHNE_TSE = ("Beleg ohne TSE-Nummer — er war nie beim Fiskalsystem. Bitte in OPERA "
+                    "prüfen, ob er ausgegeben wurde")
+HINWEIS_VOR_UMSTELLUNG = ("Voraus-, Zwischen- oder Anzahlungsrechnung von vor der Umstellung — "
+                          "eine spätere Rechnung kann sie schon verrechnet haben. Ansehen, "
+                          "bevor sie nachträglich hinausgeht")
+# Seit wann jeder gueltige Beleg eingelesen wird, nicht nur die Endrechnung.
+# Beim ersten Einlesen danach festgehalten (Protokoll), damit der Altbestand
+# des Zeitfensters nicht auf einen Schlag automatisch hinausgeht.
+UMSTELLUNG_BELEGARTEN = "umstellung_belegarten"
+# Vergibt das Haus TSE-Nummern? Beim Einlesen festgestellt, fuer das
+# Aufnehmen von Hand gemerkt. None: noch nicht eingelesen.
+_tse_im_haus: bool | None = None
+
+
+def _neue_belegart(r: dict) -> bool:
+    """Ein Beleg, der vor der Umstellung NICHT eingelesen wurde: alles ausser
+    der Endrechnung (STATUS OK, DOCUMENT_TYPE INVOICE)."""
+    status = str(r.get("beleg_status") or "").strip().upper()
+    art = str(r.get("document_type") or "").strip().upper()
+    return ("beleg_status" in r and status != "OK") or ("document_type" in r and art != "INVOICE")
+
+
+def _tse_hinweis_aufheben(bill_no: int) -> None:
+    """Die TSE-Nummer ist inzwischen da: Der Hinweis faellt weg, und ohne
+    anderen Grund geht der Beleg aus der Sichtpruefung zurueck. OPERA traegt
+    sie Sekunden bis Minuten nach dem Beleg ein — ein Einlesen genau dazwischen
+    legte den Beleg sonst dauerhaft mit falschem Grund ab."""
+    bekannt = store.rechnung(bill_no) or {}
+    if bekannt.get("status") in ("gesendet", "ignoriert"):
+        return
+    if HINWEIS_OHNE_TSE not in (bekannt.get("fehler") or ""):
+        return
+    rest = hinweis_weg(bekannt.get("fehler"), HINWEIS_OHNE_TSE)
+    felder = {"fehler": rest}
+    if bekannt.get("status") == "pruefung" and not rest:
+        felder["status"] = "neu"
+    store.setzen(bill_no, **felder)
+    store.protokoll("pruefung", "TSE-Nummer inzwischen vorhanden", bill_no=bill_no)
+
+
+def belegart_gruende(cfg: dict, r: dict, tse_im_haus: bool = True) -> list[str]:
+    """Ist der Beleg eine Rechnung, die als XRechnung hinausgehen darf?
+    Gibt die Gruende zurueck, die dagegen sprechen — leer heisst ja.
+
+    Jeder gueltige Beleg ist eine Rechnung, gleich welcher Belegart
+    (docs/16_OPERA_OHNE_DOCUMENT_TYPE.md): Schluss-, Voraus- und
+    Zwischenrechnung (STATUS OK) und der Anzahlungsbeleg, alle als Typ 380.
+    Vorher ging nur DOCUMENT_TYPE 'INVOICE' hinaus — Vorausrechnungen, im
+    gemessenen Haus zu 79 % Firmenbuchungen und oft die einzige Rechnung
+    ueber ihre Naechte, bekamen nie eine XRechnung.
+
+    tse_im_haus: Nur wenn das Haus ueberhaupt TSE-Nummern vergibt, ist eine
+    fehlende ein Befund. Sonst stuende in einem Haus ohne TSE jeder Beleg in
+    der Sichtpruefung."""
+    gruende: list[str] = []
+    status = str(r.get("beleg_status") or "").strip().upper()
+    if "beleg_status" in r and not opera.gueltiger_status(cfg, status):
+        gruende.append(f"Belegstatus {status or 'leer'} — kein gültiger Beleg")
+    art = str(r.get("document_type") or "").strip().upper()
+    if art == "COPY OF INVOICE":
+        gruende.append("Belegart „COPY OF INVOICE“ — was dieser Beleg im Haus bedeutet, ist "
+                       "noch nicht geklärt. Nicht ohne Rückfrage als Rechnung versenden")
+    if str(r.get("folio_type") or "").strip().upper() == "INTERNAL":
+        gruende.append("Interne Umbuchung (FOLIO_TYPE INTERNAL), keine Rechnung an einen Gast")
+    if tse_im_haus and "fiscal_bill_no" in r and not str(r.get("fiscal_bill_no") or "").strip():
+        gruende.append(HINWEIS_OHNE_TSE)
+    return gruende
+
+
 def einlesen(cfg: dict, tage: int | None = None) -> dict:
     """Holt neue Rechnungen aus OPERA in die Arbeitsliste. Gibt eine Aufstellung
     zurueck: wie viele gelesen, aufgenommen, uebersprungen und warum. Ohne die
@@ -78,6 +148,17 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
     neu = 0
     gelesen = opera.kandidaten(cfg, tage)
     zahlen["gelesen"] = len(gelesen)
+    # Vergibt das Haus TSE-Nummern? Dann ist ein Beleg ohne eine ein Befund.
+    global _tse_im_haus
+    tse_im_haus = any(str(r.get("fiscal_bill_no") or "").strip() for r in gelesen)
+    _tse_im_haus = tse_im_haus
+    umstellung = store.erste_aktion(UMSTELLUNG_BELEGARTEN)
+    if not umstellung:
+        store.protokoll(UMSTELLUNG_BELEGARTEN, "Ab jetzt wird jeder gültige Beleg eingelesen, "
+                        "nicht nur die Endrechnung. Ältere Voraus-, Zwischen- und "
+                        "Anzahlungsrechnungen gehen zur Sichtprüfung.")
+        umstellung = store.jetzt()
+    umstellungstag = umstellung[:10]
     for r in gelesen:
         bezug = r.get("firmenbezug") or "-"
 
@@ -155,6 +236,13 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
                 zur_pruefung(satz["bill_no"], "Am Empfängerprofil ist kein Land gepflegt — Inland prüfen")
                 store.protokoll("pruefung", "kein Land am Profil", bill_no=satz["bill_no"])
                 in_pruefung = True
+            gruende = belegart_gruende(cfg, r, tse_im_haus)
+            if _neue_belegart(r) and str(satz.get("issuedate") or "")[:10] <= umstellungstag:
+                gruende.append(HINWEIS_VOR_UMSTELLUNG)
+            for grund in gruende:
+                zur_pruefung(satz["bill_no"], grund)
+                store.protokoll("pruefung", grund, bill_no=satz["bill_no"])
+                in_pruefung = True
             zahlen["pruefung"] += 1 if in_pruefung else 0
             # Nullbelege und negative Betraege gar nicht erst in den Lauf lassen —
             # sichtbar zuruecklegen, nicht stillschweigend ueberspringen.
@@ -220,12 +308,14 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
                 zahlen["pruefung"] += 0 if in_pruefung else 1
         else:
             zahlen["bekannt"] += 1
+            if tse_im_haus and str(r.get("fiscal_bill_no") or "").strip():
+                _tse_hinweis_aufheben(satz["bill_no"])
             _auffrischen(satz, a, s, zahlen)
     zahlen["neu"] = neu
     store.protokoll("einlesen", bericht(zahlen))
     # Die Obergrenze gehoert HIER gemeldet, nicht nur auf der Seite des
     # Knopfes: Die Automatik liest ebenso ein, und dort sah es niemand.
-    grenze = int(s.get("hoechstens", 2000))
+    grenze = int(s.get("hoechstens", 10000))
     if zahlen["gelesen"] >= grenze:
         zahlen["grenze_erreicht"] = grenze
         store.protokoll("einlesen", f"ACHTUNG: Obergrenze von {grenze} erreicht — ältere "
@@ -348,14 +438,11 @@ def aufnehmen(cfg: dict, bill_no: int) -> str:
         gruende.append(f"Gesamtbetrag {satz['total_gross']:.2f}")
     elif satz["total_gross"] < float(s.get("mindestbetrag_brutto") or 0):
         gruende.append(f"Gesamtbetrag unter dem Mindestbetrag ({satz['total_gross']:.2f})")
-    if str(r.get("beleg_status") or "").upper() != "OK":
-        gruende.append(f"Belegstatus {r.get('beleg_status')}")
-    # Beim Einlesen kommen nur Endrechnungen (INVOICE) in die Liste. Aus der
-    # Suche kam bisher alles — eine Anzahlungs- oder Zwischenrechnung stand
-    # ohne Pruefgrund als 'neu' da und ging nach der Wartezeit als Rechnung
-    # hinaus, zusaetzlich zur Schlussrechnung fuer denselben Aufenthalt.
-    if str(r.get("document_type") or "").upper() != "INVOICE":
-        gruende.append(f"Dokumentart {r.get('document_type') or 'leer'}, keine Endrechnung")
+    # Aus der Suche kommt jeder Beleg, auch ein stornierter, eine Kopie oder
+    # eine interne Umbuchung — dieselben Regeln wie beim Einlesen.
+    # Ob eine fehlende TSE-Nummer ein Befund ist, weiss erst das Einlesen.
+    # Vorher nicht: Ein Haus ohne TSE bekaeme sonst bei jedem Beleg den Hinweis.
+    gruende.extend(belegart_gruende(cfg, r, tse_im_haus=bool(_tse_im_haus)))
     # Das Kennzeichen an der Firmenkartei, wie beim Einlesen.
     p_cfg = cfg.get("property") or {}
     udf = (p_cfg.get("udf_erechnung") or "").strip()
@@ -791,8 +878,15 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
         store.protokoll("versand", f"fehlgeschlagen an {an}: {e}", bill_no=bill_no,
                         benutzer=benutzer, erfolg=False)
         raise
+    # Das Empfaengerprofil, an das diese XRechnung ging — der Vergleichswert
+    # der Nachpruefung. Der Wert vom Einlesen taugt nicht: Wird der Zahler vor
+    # dem Versand in OPERA berichtigt (der uebliche Weg aus der Sichtpruefung),
+    # meldete sie sonst am naechsten Morgen einen Wechsel, den es nach dem
+    # Versand nie gab.
+    empfaenger_profil = (daten.get("header") or {}).get("customer_name_id")
     store.setzen(bill_no, status="gesendet", gesendet_am=store.jetzt(), fehler=None,
-                 pruefbefund=None)
+                 pruefbefund=None,
+                 name_id_versand=int(empfaenger_profil) if empfaenger_profil else None)
     bcc = ", ".join(mailer.blindkopien(cfg, ist_cl)) or "-"
     fassung = (store.rechnung(bill_no) or {}).get("xrechnung_version") or "?"
     store.protokoll("versand",
@@ -814,3 +908,128 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
 GRUPPE_UNGEPRUEFT = ("Gruppenrechnung je Gast: Die Zuordnung der Buchungen zu den Gästen ist "
                      "an den Daten noch nicht bestätigt — einmal ansehen, dann freigeben "
                      "oder von Hand versenden")
+
+
+# ------------------------------------------------------------ Nachpruefung
+# Einmal am Tag, nach dem Tagesabschluss: Hat sich an Belegen, die schon beim
+# Kunden sind, in OPERA etwas geaendert? Gemessen am 30.10.2026
+# (docs/06_BEFUNDE_LIVE_DB.md): Betraege und Positionen einer ausgegebenen,
+# gueltigen Rechnung aendert OPERA nie. Es bleiben zwei Faelle:
+#   - storniert (VOID), meist mit sofortigem Ersatzbeleg — spaetestens am Tag
+#     nach dem Buchungstag. Der Kunde hat dann eine Rechnung, die es nicht mehr
+#     gibt, und braucht eine Stornorechnung.
+#   - der Rechnungsempfaenger wechselt (Profil- oder Zahlerbezug), selten und
+#     bis knapp zwei Tage nach der Ausgabe.
+# Rechnungen gehen trotzdem nach der kurzen Wartezeit hinaus; auf den Folgetag
+# zu warten, verzoegerte jede Rechnung, um eine von hundert abzufangen.
+NACHPRUEFUNG_AB_STUNDE = 5     # der Nachtlauf ist dann durch
+NACHPRUEFUNG_TAGE = 3          # versendet heute, gestern, vorgestern
+# Nur ein VOLLSTAENDIGER Lauf ab NACHPRUEFUNG_AB_STUNDE schreibt diese Aktion.
+# Ein Fehlschlag (OPERA nicht erreichbar) oder ein Lauf von Hand um 3 Uhr
+# hiesse sonst "heute erledigt", und der Lauf nach dem Tagesabschluss fiele aus.
+NACHPRUEFUNG_LAUF = "nachpruefung_lauf"
+
+
+def _euro(wert) -> str:
+    return f"{float(wert or 0):.2f}".replace(".", ",")
+
+
+def nachpruefung_faellig(jetzt: datetime | None = None) -> bool:
+    """Heute schon nach dem Tagesabschluss nachgeprueft? Einmal am Tag."""
+    jetzt = jetzt or datetime.now()
+    if jetzt.hour < NACHPRUEFUNG_AB_STUNDE:
+        return False
+    schwelle = jetzt.replace(hour=NACHPRUEFUNG_AB_STUNDE, minute=0, second=0,
+                             microsecond=0).isoformat(timespec="seconds")
+    letzte = store.letzte_aktion(NACHPRUEFUNG_LAUF)
+    return not letzte or letzte < schwelle
+
+
+def nachpruefung_befunde(cfg: dict, satz: dict, heute: dict | None) -> list[tuple[str, str]]:
+    """Was hat sich an diesem versendeten Beleg geaendert? Leer heisst nichts.
+    satz: der Eintrag der Arbeitsliste; heute: opera.nachpruefung().
+    Gibt (Schluessel, Text) zurueck — der Schluessel erkennt einen Befund
+    wieder, der Text darf sich aendern (Stand des Ersatzbelegs, Profilname)."""
+    if heute is None:
+        return [("WEG", "Der Beleg ist in OPERA nicht mehr zu finden — prüfen, was mit ihm "
+                        "geschehen ist. Der Kunde hat die XRechnung.")]
+    befunde: list[tuple[str, str]] = []
+    status = str(heute.get("beleg_status") or "").strip().upper()
+    if not opera.gueltiger_status(cfg, status):
+        teile = [f"In OPERA storniert (Status {status or 'leer'}). Der Kunde hat die XRechnung "
+                 "bereits — er braucht eine Stornorechnung."]
+        spaeter = []
+        for eintrag in str(heute.get("spaetere_belege") or "").split(","):
+            nummer, _, betrag = eintrag.partition(":")
+            if nummer.strip().isdigit() and int(nummer) not in [n for n, _ in spaeter]:
+                spaeter.append((int(nummer), float(betrag or 0)))
+        gleich = [n for n, b in spaeter if abs(b - float(satz.get("total_gross") or 0)) <= 0.02]
+
+        def mit_stand(nummer: int) -> str:
+            bekannt = store.rechnung(nummer)
+            return (f"{nummer} (in der Arbeitsliste: {store.status_name(bekannt.get('status'))})"
+                    if bekannt else f"{nummer} (noch nicht in der Arbeitsliste)")
+        if gleich:
+            teile.append("Ersatzbeleg mit gleichem Betrag: "
+                         + ", ".join(mit_stand(n) for n in gleich) + ".")
+            schluessel = "STORNO>" + ",".join(str(n) for n in gleich)
+        elif spaeter:
+            teile.append("Spätere Belege am selben Folio, anderer Betrag: "
+                         + ", ".join(f"{mit_stand(n)} über {_euro(b)}" for n, b in spaeter) + ".")
+            schluessel = "STORNO~" + ",".join(str(n) for n, _ in spaeter)
+        else:
+            teile.append("Kein Ersatzbeleg am selben Folio.")
+            schluessel = "STORNO"
+        befunde.append((schluessel, " ".join(teile)))
+    alt = satz.get("name_id_versand") or satz.get("name_id")
+    neu = heute.get("name_id")
+    if alt and neu and int(alt) != int(neu):
+        def name(nid) -> str:
+            try:
+                return opera.profil_name(int(nid)) or str(nid)
+            except Exception:
+                return str(nid)
+        befunde.append((f"NAME:{int(alt)}>{int(neu)}",
+                        f"Rechnungsempfänger in OPERA geändert: vorher {name(alt)}, jetzt "
+                        f"{name(neu)}. Prüfen, ob die XRechnung an den Richtigen ging."))
+    return befunde
+
+
+def nachpruefen(cfg: dict, tage: int = NACHPRUEFUNG_TAGE) -> dict:
+    """Prueft die in den letzten Tagen versendeten Belege gegen OPERA und legt
+    Befunde in die Aufgabenliste. Gibt eine Aufstellung zurueck.
+
+    Ein Befund, der schon gemeldet ist, wird nicht noch einmal gemeldet —
+    auch nicht, wenn die Aufgabe erledigt ist. Wiedererkannt wird er am
+    Schluessel, nicht am Text. Kommt etwas Neues hinzu (der Ersatzbeleg ist
+    inzwischen da, der Empfaenger wechselt), kommt er neu."""
+    jetzt = datetime.now()
+    grenze = (jetzt - timedelta(days=tage)).isoformat(timespec="seconds")
+    zahlen = {"geprueft": 0, "neu": 0, "fehler": 0}
+    for satz in store.gesendet_seit(grenze):
+        zahlen["geprueft"] += 1
+        bill_no = int(satz["bill_no"])
+        try:
+            befunde = nachpruefung_befunde(cfg, satz, opera.nachpruefung(cfg, bill_no))
+        except Exception as e:
+            log.exception("Nachpruefung %s fehlgeschlagen", bill_no)
+            zahlen["fehler"] += 1
+            store.protokoll("nachpruefung", f"nicht möglich: {e}", bill_no=bill_no, erfolg=False)
+            continue
+        schluessel = "|".join(k for k, _ in befunde)
+        if not schluessel or schluessel == (satz.get("nachpruefung_schluessel") or ""):
+            continue
+        text = TRENNER.join(t for _, t in befunde)
+        store.setzen(bill_no, nachpruefung=text, nachpruefung_am=store.jetzt(),
+                     nachpruefung_schluessel=schluessel, nachpruefung_erledigt=None)
+        store.protokoll("nachpruefung", text, bill_no=bill_no, erfolg=False)
+        zahlen["neu"] += 1
+    bericht_text = (f"{zahlen['geprueft']} versendete Rechnung(en) der letzten {tage} Tage geprüft, "
+                    f"{zahlen['neu']} neue Aufgabe(n)"
+                    + (f", {zahlen['fehler']} nicht prüfbar" if zahlen["fehler"] else ""))
+    # Als "heute gelaufen" zaehlt nur ein Lauf ohne Fehler nach dem
+    # Tagesabschluss; sonst versucht es der naechste Takt noch einmal.
+    aktion = (NACHPRUEFUNG_LAUF if not zahlen["fehler"] and jetzt.hour >= NACHPRUEFUNG_AB_STUNDE
+              else "nachpruefung")
+    store.protokoll(aktion, bericht_text, erfolg=not zahlen["fehler"])
+    return zahlen

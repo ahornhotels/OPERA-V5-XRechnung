@@ -12,14 +12,22 @@
 --   @08_datenwoerterbuch.sql
 -- Ergebnis: datenwoerterbuch_<schema>.csv im aktuellen Verzeichnis,
 -- Trennzeichen Semikolon, eine Zeile je Spalte jeder Tabelle und View.
--- Dauer: Sekunden bis eine Minute; Groesse: einige MB.
+-- Dauer: einige Minuten (im bisherigen Haus 2,5 min fuer 217.000 Spalten);
+-- Groesse: rund 13 MB.
 --
 -- Bewusst ohne SET MARKUP CSV (das kennt erst SQL*Plus 12.2): Die Zeile wird
 -- selbst zusammengesetzt, Semikolons und Zeilenumbrueche in Kommentaren
 -- werden ersetzt, damit jede Spalte genau eine Zeile bleibt. Kommentare sind
 -- auf 1500 Zeichen gekuerzt: Eine Zeile ueber 4000 Zeichen bricht mit ORA-01489 ab.
+-- Kommentare haengen an den Tabellen (..._E), nicht an den Views darueber.
 
-SET PAGESIZE 0 LINESIZE 4000 TRIMSPOOL ON FEEDBACK OFF HEADING OFF
+-- LINESIZE 3300 und ARRAYSIZE 1000: gemessen 146 s statt 387 s, Datei
+-- byte-gleich. Mit 4000 baut SQL*Plus je Zeile einen 4000-Zeichen-Puffer und
+-- schneidet ihn wieder ab, mit der Standard-ARRAYSIZE 15 sind es rund 14.500
+-- Rundreisen. 3300 reicht: zwei Kommentare zu je hoechstens 1500 Zeichen plus
+-- unter 230 fuer den Rest; die laengste Zeile im bisherigen Haus hatte 602.
+SET PAGESIZE 0 LINESIZE 3300 TRIMSPOOL ON FEEDBACK OFF HEADING OFF
+SET ARRAYSIZE 1000
 SET TERMOUT OFF VERIFY OFF ECHO OFF
 SPOOL datenwoerterbuch_&&OPERA_OWNER..csv
 

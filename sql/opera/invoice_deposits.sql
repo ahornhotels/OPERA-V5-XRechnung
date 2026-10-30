@@ -1,5 +1,5 @@
 -- invoice_deposits.sql — Anzahlungsbelege desselben Folios
--- Bindvariablen: :bill_no, :resort
+-- Bindvariablen: :bill_no, :resort, :folio_no, :anzahlung_status
 --
 -- Anzahlungen laufen in OPERA als EIGENE Belege mit STATUS = 'DEPOSIT' auf
 -- demselben FOLIO_NO wie die Schlussrechnung. FINANCIAL_TRANSACTIONS traegt
@@ -28,8 +28,12 @@
 --
 -- Verwendung in der XRechnung:
 --   BG-3  cac:BillingReference  je Anzahlungsbeleg (Nummer + Datum)
---   BT-113 PrepaidAmount        = Summe der Anzahlungen (brutto)
+--   Abschlag je Steuersatz        Netto und Steuer aus den Buckets des
+--                                 Anzahlungsbelegs (opera.anzahlung_abzuege)
 --   BT-115 PayableAmount        = TOTAL_GROSS der Schlussrechnung
+-- Anzahlungsbelege mit DOCUMENT_TYPE 'COPY OF INVOICE' bleiben drin: OPERA
+-- rechnet sie mit an (gemessen 99 in 90 Tagen, bei 10 Schlussrechnungen zwei
+-- gleich hohe Anzahlungen, beide im Kopf abgezogen).
 
 SELECT d.bill_no                                     AS billingreferenceid,
        TO_CHAR(d.bill_generation_date, 'YYYY-MM-DD') AS billingreferenceissuedate,
@@ -46,6 +50,10 @@ SELECT d.bill_no                                     AS billingreferenceid,
                       -- stand eine Unterabfrage ueber BILL_NO, die bei einer
                       -- doppelt vergebenen Nummer zwei Zeilen lieferte.
                       WHERE fo.folio_no = :folio_no)
+   -- BILL_NO ist nicht eindeutig; die Liste aus FOLIOS allein bindet D nicht
+   -- an dieses Folio. Gemessen lagen alle 2.862 Anzahlungsbelege am selben
+   -- Folio, die Bedingung schliesst nur die Luecke (gemessen 30.10.2026).
+   AND d.folio_no = :folio_no
    AND d.bill_no <> :bill_no
    AND d.status   = :anzahlung_status
  ORDER BY d.bill_generation_date, d.bill_no

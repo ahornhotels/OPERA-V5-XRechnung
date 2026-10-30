@@ -118,6 +118,15 @@ def _mit_firmenprofilen(sql: str, cfg: dict) -> str:
 ANZAHLUNG_STATUS_VORGABE = "DEPOSIT"
 
 
+def gueltiger_status(cfg: dict | None, status) -> bool:
+    """Ist ein Beleg mit diesem FOLIO$_TAX.STATUS ein gueltiger, ausgegebener
+    Beleg? OK oder ein Anzahlungsbeleg — gleich welcher Belegart
+    (docs/16_OPERA_OHNE_DOCUMENT_TYPE.md). VOID und ZERO nicht. Eine Stelle
+    fuer Einlesen, Erzeugen und Nachpruefung."""
+    s = str(status or "").strip().upper()
+    return s in ("OK", anzahlung_status(cfg).upper())
+
+
 def anzahlung_status(cfg: dict | None = None) -> str:
     roh = str(((cfg or config.laden()).get("auswahl") or {})
               .get("anzahlung_status") or "").strip().upper()
@@ -255,7 +264,7 @@ def kandidaten(cfg: dict, tage: int | None = None) -> list[dict]:
         "resort": cfg["property"]["resort"],
         "leitweg_typ": cfg["property"]["mitgliedschaftstyp_leitweg"],
         "erechnung_typ": cfg["property"].get("mitgliedschaftstyp_erechnung") or "-",
-        "hoechstens": int(s.get("hoechstens", 2000)),
+        "hoechstens": int(s.get("hoechstens", 10000)),
         # Der Firmenfilter gehoert in die Abfrage, damit die Obergrenze auf die
         # SINNVOLLEN Zeilen wirkt und nicht auf alle Rechnungen des Hauses.
         "nur_firmen": "J" if (cfg.get("automatik") or {}).get("nur_mit_firmenbezug", True) else "N",
@@ -282,6 +291,19 @@ def pruefung(cfg: dict, bill_no: int) -> dict:
                          "folio_no": folio(cfg, bill_no),
                          "anzahlung_status": anzahlung_status(cfg)})
     return zeilen[0] if zeilen else {}
+
+
+def nachpruefung(cfg: dict, bill_no: int) -> dict | None:
+    """Der heutige Stand eines bereits versendeten Belegs — oder None, wenn
+    OPERA ihn nicht mehr kennt. Siehe invoice_nachpruefung.sql."""
+    folio_no = folio(cfg, bill_no)
+    if folio_no is None:
+        return None
+    zeilen = db.abfrage(_sql("invoice_nachpruefung.sql", cfg),
+                        {"bill_no": bill_no, "folio_no": folio_no,
+                         "resort": cfg["property"]["resort"],
+                         "anzahlung_status": anzahlung_status(cfg)})
+    return zeilen[0] if zeilen else None
 
 
 def empfaenger(bill_no: int) -> list[dict]:
@@ -759,6 +781,19 @@ def rechnungszeitraum_erweitern(kopf: dict, zeilen: list[dict]) -> None:
 
     Die Gastzeile in BT-22 bleibt davon unberuehrt; sie ist vorher gebaut und
     nennt den Aufenthalt des Gastes am Kopf."""
+    # Ein Pseudozimmer (PM-Konto) laeuft oft ueber Monate, bis zu einem Jahr;
+    # seine Reservierung sagt nichts ueber den Leistungszeitraum. Im
+    # gemessenen Haus lag er bei 37 % der PM-Belege sogar ausserhalb davon.
+    # Dort zaehlen nur die berechneten Tage. Die stehen in leistung_von/bis
+    # bei JEDER Positionsart; zeitraum_beginn/ende gibt es nur bei Art C.
+    if str(kopf.get("pseudozimmer") or "").strip().upper() == "Y":
+        von = [str(z.get("zeitraum_beginn") or z.get("leistung_von"))
+               for z in zeilen if z.get("zeitraum_beginn") or z.get("leistung_von")]
+        bis = [str(z.get("zeitraum_ende") or z.get("leistung_bis"))
+               for z in zeilen if z.get("zeitraum_ende") or z.get("leistung_bis")]
+        if von and bis and min(von) <= max(bis):
+            kopf["startdate"], kopf["enddate"] = min(von), max(bis)
+        return
     beginne = [str(z["zeitraum_beginn"]) for z in zeilen if z.get("zeitraum_beginn")]
     enden = [str(z["zeitraum_ende"]) for z in zeilen if z.get("zeitraum_ende")]
     if not beginne or not enden:
@@ -1020,6 +1055,52 @@ _GUTSCHRIFT_SUMMEN = ("invoicenet", "invoicegross", "invoicetaxtotal", "prepaida
                       "payableamount", "spay_cl")
 
 
+def anzahlung_abzuege(cfg: dict, anzahlungen: list[dict]) -> tuple[list[dict], str]:
+    """Die verrechneten Anzahlungen als Abzug je Steuersatz — Netto und Steuer
+    aus den Buckets des Anzahlungsbelegs. Gibt (Abzuege, Befund) zurueck.
+
+    § 14 Abs. 5 Satz 2 UStG: In der Endrechnung sind die vereinnahmten
+    Anzahlungen UND die darauf entfallende Steuer abzusetzen, wenn ueber sie
+    Rechnungen mit Steuerausweis ergangen sind. Seit die Anzahlungsrechnung
+    selbst als XRechnung hinausgeht, ist das der Fall. Vorher stand die
+    Anzahlung nur brutto als "bereits gezahlt" (BT-113), und die Endrechnung
+    wies die volle Steuer aus — die Steuer auf die Anzahlung stuende damit auf
+    zwei E-Rechnungen. OPERA selbst setzt sie auf dem Papier ab: TOTAL_NET der
+    Endrechnung ist der Rest.
+
+    Lassen sich die Buckets nicht lesen oder geben sie den Anzahlungsbeleg
+    nicht wieder, wird nichts geraten: Der Befund sperrt den Versand."""
+    abzuege: list[dict] = []
+    for a in anzahlungen:
+        nummer, datum = a.get("billingreferenceid"), a.get("billingreferenceissuedate")
+        buckets = db.abfrage(_sql("invoice_tax_kopf.sql", cfg), {
+            "bill_no": nummer, "resort": cfg["property"]["resort"], "folio_no": a.get("folio_no")})
+        netto = round(sum(_zahl(b.get("taxableamount")) for b in buckets), 2)
+        brutto = round(sum(_zahl(b.get("taxableamount")) + _zahl(b.get("taxamount"))
+                           for b in buckets), 2)
+        # Ohne Satz liesse sich der Abzug keiner Steuergruppe zuordnen. Auf
+        # Anzahlungsbelegen gemessen nie (2.862 von 2.862 mit Satz); auf der
+        # Schlussrechnung dagegen ist "ohne Satz" OPERAs eigener Abzug.
+        ohne_satz = any(str(b.get("satz_fehlt") or "").upper() == "J" for b in buckets)
+        if not buckets or ohne_satz or abs(netto - _zahl(a.get("total_net"))) > 0.02 \
+                or abs(brutto - _zahl(a.get("total_gross"))) > 0.02:
+            return [], (f"Die Steueraufteilung der Anzahlungsrechnung {nummer} ist nicht lesbar "
+                        f"(Buckets netto {netto:.2f}, brutto {brutto:.2f}; Beleg netto "
+                        f"{_zahl(a.get('total_net')):.2f}, brutto {_zahl(a.get('total_gross')):.2f}"
+                        + ("; ein Betrag ohne Steuersatz" if ohne_satz else "") + "). "
+                        "Ohne sie lässt sich die Steuer der Anzahlung nicht absetzen — bitte prüfen.")
+        for b in buckets:
+            prozent = _zahl(b.get("taxcategorypercent"))
+            abzuege.append({
+                "netto": _zahl(b.get("taxableamount")),
+                "steuer": _zahl(b.get("taxamount")),
+                "taxcategoryid": "S" if prozent > 0 else "Z",
+                "taxcategorypercent": prozent,
+                "grund": f"Abzüglich Anzahlungsrechnung {nummer}" + (f" vom {datum}" if datum else ""),
+            })
+    return abzuege, ""
+
+
 def _umdrehen(eintrag: dict, felder: tuple) -> dict:
     eintrag = dict(eintrag)
     for f in felder:
@@ -1046,6 +1127,10 @@ def gutschrift_bezug(cfg: dict, bill_no: int, folio_no) -> tuple[list[dict], str
     nummern = ", ".join(str(t.get("billingreferenceid")) for t in treffer)
     return [], (f"Gutschrift: mehrere Rechnungen kommen als Ursprung in Frage ({nummern}). "
                 "Ein Bezug wird nicht geraten — die Gutschrift geht ohne BG-3 hinaus.")
+
+
+# Steht in BT-22 einer Anzahlungsrechnung (Typ 380, siehe rechnung()).
+ANZAHLUNG_VERMERK = "Anzahlungsrechnung – wird mit der späteren Rechnung verrechnet"
 
 
 def rechnung(cfg: dict, bill_no: int) -> dict:
@@ -1143,9 +1228,14 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     zeilen_brutto = sum(_zahl(z.get("lineextensionamount")) for z in zeilen)
     anzahlungen, anzahlung_befund = anzahlung_zuordnen(
         anzahlungen, zeilen_brutto, _zahl(kopf.get("invoicegross")))
+    # Die verrechneten Anzahlungen werden mit ihrer Steuer abgesetzt (Abzug je
+    # Steuersatz, siehe anzahlung_abzuege), nicht mehr als BT-113 gefuehrt.
+    abzuege: list[dict] = []
+    if anzahlungen and not anzahlung_befund:
+        abzuege, anzahlung_befund = anzahlung_abzuege(cfg, anzahlungen)
     if anzahlung_befund:
         kopf["anzahlung_befund"] = anzahlung_befund
-    anz_brutto = sum(_zahl(a.get("total_gross")) for a in anzahlungen)
+    anz_brutto = 0.0 if abzuege else sum(_zahl(a.get("total_gross")) for a in anzahlungen)
 
     # --- Gutschrift (381) ---------------------------------------------------
     # Eine Gutschrift ist ein Beleg, dessen POSITIONEN zusammen negativ sind,
@@ -1167,6 +1257,24 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         if bezug:
             kopf["gutschrift_zu"] = (f" zur Rechnung {bezug[0].get('billingreferenceid')} "
                                      f"vom {bezug[0].get('billingreferenceissuedate')}")
+
+    # --- Anzahlungsrechnung ----------------------------------------------------
+    # Ein Anzahlungsbeleg mit eigenen Erloes- und Steuerzeilen ist eine
+    # Anzahlungsrechnung. Die Rechnung, die sie spaeter verrechnet, zieht sie ab
+    # und verweist auf sie (BG-3).
+    #
+    # Typ 380 mit Vermerk, NICHT 386 ("Prepayment invoice" aus UNTDID 1001):
+    # XRechnung 3.0.2 laesst 386 nicht zu (BR-DE-17). KoSIT empfiehlt zwar
+    # "annehmen", setzt das Gesamturteil aber auf ungueltig — und danach
+    # richtet sich die Anwendung; jede Anzahlungsrechnung waere gesperrt worden
+    # (an einem Beispiel mit dem lokalen Validator am 30.10.2026 gesehen).
+    # Erst nach dem Gutschriftzweig: Die Rueckzahlung einer Anzahlung ist eine
+    # Gutschrift (381) — ein gueltiger Beleg, aber ohne den Vermerk.
+    if str(kopf.get("beleg_status") or "").strip().upper() == anzahlung_status(cfg).upper():
+        kopf["ist_anzahlungsbeleg"] = True
+        if kopf.get("invoicetypecode") != "381":
+            vorher = (kopf.get("note") or "").strip()
+            kopf["note"] = ANZAHLUNG_VERMERK + (f" · {vorher}" if vorher else "")
 
     # Summen fuer die Templates: bei Anzahlungen ist die Zeilensumme massgeblich,
     # der Kopfbetrag ist nur der Rest (siehe docs/06_BEFUNDE_LIVE_DB.md).
@@ -1190,6 +1298,9 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "tax_kopf": steuer_kopf,
         "totals": totals,
         "deposits": anzahlungen,
+        # Abzug der verrechneten Anzahlungen je Steuersatz (xml_build macht
+        # daraus Abschlaege auf Dokumentebene).
+        "anzahlung_abzuege": abzuege,
         # BG-3 einer Gutschrift: die berichtigte Rechnung, nur wenn eindeutig.
         "bezug": bezug,
         # Unabhaengige Vergleichswerte fuer die Vorpruefung: der Rechnungskopf
@@ -1198,7 +1309,9 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "kontrolle": {
             "kopf_netto": _zahl(summen.get("invoicenet")),
             "kopf_brutto": _zahl(summen.get("invoicegross")),
-            "anzahlung_netto": sum(_zahl(a.get("total_net")) for a in anzahlungen),
+            # Mit Abzug steht die Anzahlung schon unter den Abschlaegen; der Kopf
+            # aus OPERA ist dann direkt der Vergleichswert.
+            "anzahlung_netto": 0.0 if abzuege else sum(_zahl(a.get("total_net")) for a in anzahlungen),
             "anzahlung_brutto": anz_brutto,
         },
     }

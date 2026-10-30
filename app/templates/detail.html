@@ -81,6 +81,23 @@
      Adressen. Der Versand wird abgelehnt, bis die Liste in der Konfiguration
      angepasst ist.</p>
   {% endif %}
+  {# Befund der Nachpruefung nach dem Versand — eine offene Aufgabe. #}
+  {% if satz.nachpruefung %}
+  <div class="hinweis aufgabe">
+    <p><strong>{{ 'Erledigt: ' if satz.nachpruefung_erledigt }}Nach dem Versand geändert</strong>
+       (festgestellt {{ (satz.nachpruefung_am or '')[:16]|replace('T', ' ') }}):
+       {{ satz.nachpruefung }}</p>
+    {% if verwalten and not satz.nachpruefung_erledigt %}
+    <form method="post" action="/rechnung/{{ satz.bill_no }}/nachpruefung_erledigt">
+      <button>Als erledigt markieren</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if daten and (daten.header or {}).ist_anzahlungsbeleg and (daten.header or {}).invoicetypecode != '381' %}
+  <p class="hinweis"><strong>Anzahlungsrechnung.</strong> Der Anzahlungsbeleg geht als eigene
+     Rechnung hinaus (Typ 380, Vermerk „Anzahlungsrechnung“); die Rechnung, die ihn später
+     verrechnet, verweist auf ihn.</p>
+  {% endif %}
   {# Gutschrift: Typ 381, und ob die berichtigte Rechnung erkannt wurde. OPERA
      fuehrt keinen Verweis darauf — der Bezug ist erschlossen und gehoert
      angesehen, bevor die Gutschrift hinausgeht. #}

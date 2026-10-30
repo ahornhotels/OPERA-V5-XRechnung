@@ -288,6 +288,34 @@ die Prüfung, statt stillschweigend zu verschwinden.
 Eine Betragsgrenze gibt es bewusst nicht: Kleinbetragsrechnungen bis 250 € wären
 zwar ausgenommen, aber eine zusätzliche XRechnung schadet nicht.
 
+### Welche Belege sind Rechnungen?
+
+**Jeder gültige Beleg aus OPERA ist eine Rechnung**, gleich wie OPERA ihn
+nennt: Schlussrechnung, **Vorausrechnung** und **Zwischenrechnung** gehen als
+Rechnung (Typ 380) hinaus, ein **Anzahlungsbeleg** ebenfalls, mit dem Vermerk
+„Anzahlungsrechnung“. Rechtlich zählt nicht der Name, sondern dass abgerechnet wird.
+Doppelt wird dabei nichts: In OPERA steht jede Buchung auf genau einem Beleg —
+die Schlussrechnung enthält die Nächte der Vorausrechnung nicht noch einmal.
+
+Keine Rechnung und deshalb nicht verschickt:
+
+- **stornierte Belege** (Status VOID)
+- **interne Umbuchungen** zwischen Folios (Rundung, Zahlungsausgleich)
+- Belege der Art **„COPY OF INVOICE“** — bis geklärt ist, was sie im Haus
+  bedeuten; über die Suche geholt, landen sie in der Sichtprüfung
+- Belege **ohne TSE-Nummer**, wenn das Haus sonst TSE-Nummern vergibt — sie
+  waren nie beim Fiskalsystem und gehen zur Sichtprüfung
+
+**Bei der Umstellung** liegen im Zeitfenster schon ältere Voraus-, Zwischen-
+und Anzahlungsrechnungen, die nie als XRechnung hinausgingen — manche davon hat
+eine spätere Rechnung längst verrechnet. Sie gehen nicht automatisch hinaus,
+sondern einmalig zur Sichtprüfung („von vor der Umstellung“). Ab dem Tag der
+Umstellung laufen sie wie jede andere Rechnung.
+
+Für Anzahlungsrechnungen kennt die europäische Codeliste einen eigenen Typ
+(386). XRechnung lässt ihn nicht zu (Regel BR-DE-17); die Anzahlungsrechnung
+geht deshalb als Typ 380 mit dem Vermerk hinaus.
+
 ## Die Leitweg-ID
 
 Die **Leitweg-ID** ist die Zustelladresse einer Behörde im elektronischen
@@ -529,8 +557,14 @@ In der Konfiguration legt `property.positionen` die Vorbelegung fest:
 ## Anzahlungen
 
 Eine Anzahlung ist in OPERA ein eigener Beleg auf dem Folio des Aufenthalts.
-Die Schlussrechnung führt sie als **bereits gezahlt** (BT-113) und verweist auf
-den Anzahlungsbeleg (BG-3). Abgezogen wird genau der Teil, den OPERA dieser
+Er geht selbst als **Anzahlungsrechnung** hinaus (Typ 380 mit Vermerk). Die Rechnung, die
+die Anzahlung verrechnet — die Schlussrechnung oder auch eine Vorausrechnung —,
+**setzt sie mit ihrer Steuer ab**: als Abzug je Steuersatz („Abzüglich
+Anzahlungsrechnung … vom …“) und mit Verweis auf den Anzahlungsbeleg (BG-3). Die
+Rechnung weist damit nur noch die Steuer auf den Rest aus, wie OPERA auf dem
+Papier — so verlangt es § 14 Abs. 5 UStG, wenn über die Anzahlung eine Rechnung
+mit Steuer ergangen ist. Lässt sich die Steueraufteilung des Anzahlungsbelegs
+nicht lesen, hält die Vorprüfung die Rechnung an. Abgezogen wird genau der Teil, den OPERA dieser
 Rechnung angerechnet hat — der Unterschied zwischen ihren Positionen und ihrem
 Betrag in OPERA.
 
@@ -628,6 +662,28 @@ Wer eine versendete Rechnung wirklich neu erzeugen will, findet dafür den
 Knopf **„Trotzdem neu erzeugen"** mit einer Rückfrage. Er ersetzt die Datei in
 der Ablage; die versendete Fassung bleibt im Archiv.
 
+## Aufgaben nach dem Versand
+
+Einmal am Tag, nach dem Tagesabschluss (ab 5 Uhr, beim ersten Durchlauf der
+Automatik), prüft die Anwendung die Rechnungen der letzten drei Tage, die schon
+beim Kunden sind, gegen OPERA. Zwei Dinge können sich dort danach noch ändern:
+
+| Befund | Was zu tun ist |
+|---|---|
+| **In OPERA storniert** | Der Kunde hat eine Rechnung, die es nicht mehr gibt. Er braucht eine **Stornorechnung**. Meist hat OPERA sofort einen Ersatzbeleg ausgegeben; der Hinweis nennt ihn, wenn er am selben Folio mit demselben Betrag steht. Der Ersatzbeleg geht als neue Rechnung ganz normal hinaus |
+| **Rechnungsempfänger geändert** | Profil oder Zahler wurden in OPERA umgestellt. Prüfen, ob die XRechnung an den Richtigen ging |
+
+Befunde stehen oben auf der Rechnungsliste als **Aufgaben nach dem Versand**
+und auf der Detailseite der Rechnung. Ist die Sache erledigt, dort **„Als
+erledigt markieren“** — die Aufgabe verschwindet aus der Liste, der Befund
+bleibt an der Rechnung stehen. Mit **„Versendete jetzt nachprüfen“** läuft die
+Prüfung sofort.
+
+Beträge und Positionen einer versendeten Rechnung muss niemand vergleichen:
+An einer ausgegebenen, gültigen Rechnung ändert OPERA sie nicht.
+
+Die Stornorechnung erzeugt die Anwendung in diesem Stand noch nicht selbst.
+
 ## Wenn eine Rechnung nicht durchgeht
 
 In der Zeile steht rot, woran es liegt.
@@ -639,7 +695,8 @@ In der Zeile steht rot, woran es liegt.
 | **BR-DE-15** | Leitweg-ID fehlt |
 | **BT-31 / BG-17** | USt-IdNr. oder IBAN fehlen in den Einstellungen |
 | **BR-DE-6 / BR-DE-7** | Telefon oder E-Mail des Hauses fehlen in den Einstellungen — beides ist Pflicht |
-| **Der Beleg hat in OPERA den Status …** | Die Rechnung wurde in OPERA storniert oder ist keine Endrechnung. Nicht versenden, zurücklegen |
+| **Der Beleg hat in OPERA den Status …** | Die Rechnung wurde in OPERA storniert. Nicht versenden, zurücklegen |
+| **„COPY OF INVOICE“** / **interne Umbuchung** | Kein Beleg, der als Rechnung hinausgeht. Zurücklegen |
 | **Versand begonnen, Ergebnis nicht bestätigt** | Der Versand brach unklar ab. Sehen Sie im Postfach der Blindkopie nach, ob die Mail hinausging, und halten Sie es auf der Detailseite fest: **„Ja — als versendet vermerken"** oder **„Nein — nichts ging hinaus"**. Erst danach ist die Rechnung wieder entscheidbar |
 | **Am Empfängerprofil steht keine einzelne gültige Adresse** | In OPERA stehen mehrere Adressen in einem Feld. Auf eine zurückschneiden, dann neu einlesen |
 | **Nullbeleg** | Gesamtbetrag 0,00 — gehört nicht in den Versand |
