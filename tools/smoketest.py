@@ -919,10 +919,11 @@ kandidaten = [
      "company_name": "Kleine GmbH", "payee_name": "Kleine GmbH", "account_code": 4713,
      "empfaenger_typ": "COMPANY", "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER",
      "leitweg_id": None, "kennzeichen": 0, "invoice_no": "5"},
-    # Negativer Kopfbetrag OHNE Anzahlung -> sichtbar zuruecklegen.
-    # Mit der Vorgabe mindestbetrag_brutto=0 fiel er vorher schon an der
-    # Betragsgrenze heraus: unsichtbar, in keinem Status, gezaehlt unter einer
-    # Regel, die niemand gesetzt hat.
+    # Negativer Kopfbetrag OHNE Anzahlung -> eine Gutschrift (381), in die
+    # Sichtpruefung. Bis zum 30.10.2026 wurde sie zurueckgelegt. Mit der Vorgabe
+    # mindestbetrag_brutto=0 fiel sie noch frueher an der Betragsgrenze heraus:
+    # unsichtbar, in keinem Status, gezaehlt unter einer Regel, die niemand
+    # gesetzt hat.
     {"bill_no": 900007, "issuedate": "2026-09-01", "total_gross": -703.05, "total_net": -586.75,
      "company_name": "Gutschrift GmbH", "payee_name": "Gutschrift GmbH", "account_code": 4715,
      "empfaenger_typ": "COMPANY", "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER",
@@ -967,8 +968,10 @@ pruefe(aufgenommen == 6, f"6 von 8 Rechnungen aufgenommen (waren {aufgenommen})"
 pruefe(zahlen["gelesen"] == 8, "die Aufstellung nennt die gelesene Menge")
 pruefe(zahlen["zu_klein"] == 0,
        f"ein negativer Beleg zaehlt NICHT als 'unter dem Mindestbetrag' ({zahlen})")
-pruefe(900007 in liste and liste[900007]["status"] == "ignoriert",
-       "ein negativer Beleg ohne Anzahlung wird sichtbar zurueckgelegt")
+pruefe(900007 in liste and liste[900007]["status"] == "pruefung"
+       and "Gutschrift" in (liste[900007].get("fehler") or ""),
+       f"ein negativer Beleg ohne Anzahlung ist eine Gutschrift und kommt in die Sichtpruefung "
+       f"({liste.get(900007, {}).get('status')}: {liste.get(900007, {}).get('fehler')})")
 pruefe(900008 in liste and liste[900008]["status"] == "pruefung"
        and "Anzahlungen" in (liste[900008].get("fehler") or ""),
        f"mit Anzahlung kommt er in die Pruefung, nicht in den Papierkorb "
@@ -3589,6 +3592,7 @@ class _FalscherServer:
 
     def send_message(self, nachricht, from_addr=None, to_addrs=None):
         _smtp_protokoll.append(("senden", list(to_addrs)))
+        _smtp_protokoll.append(("nachricht", nachricht))
         return {a: (554, b"5.7.1 Relay access denied") for a in to_addrs if a in self.ablehnen}
 
 
@@ -3658,6 +3662,17 @@ try:
     except Exception as e:
         pruefe(False, f"B26: ein fehlerhafter Betreff laesst den Versand nicht scheitern ({e})")
     _mcfg["mail"]["betreff"] = "Rechnung {bill_no}"
+    # Eine Gutschrift geht nicht mit "anbei erhalten Sie die Rechnung" hinaus.
+    _smtp_protokoll.clear()
+    _mailer.senden(_mcfg, an="kunde@firma.example", bill_no=1400095, issuedate="2026-10-29",
+                   xml=b"<x/>", xml_name="x.xml", gutschrift=True,
+                   bezug=" zur Rechnung 1400094 vom 2026-10-29")
+    _gs = [e[1] for e in _smtp_protokoll if e[0] == "nachricht"]
+    _gs_text = _gs[0].get_body(("plain",)).get_content() if _gs else ""
+    pruefe(bool(_gs) and _gs[0]["Subject"].startswith("Gutschrift 1400095")
+           and "Gutschrift 1400095 vom 2026-10-29 zur Rechnung 1400094" in _gs_text
+           and "Rechnung 1400095" not in _gs_text,
+           f"eine Gutschrift geht mit eigener Vorlage hinaus, mit Bezug ({_gs[0]['Subject'] if _gs else '-'})")
 finally:
     _smtplib.SMTP, _smtplib.SMTP_SSL = _echt_smtp, _echt_smtp_ssl
 # Befund 41: PDF-Ordner relativ zur Installation.
@@ -3741,6 +3756,131 @@ pruefe("d.bill_no <> :bill_no" in _dep_teil,
 for _liste in ("invoice_list.sql", "invoice_suche.sql"):
     pruefe("<> 'INTERNAL'" in (BASE / "sql" / "opera" / _liste).read_text(encoding="utf-8"),
            f"{_liste}: interne Umbuchungen sind keine Rechnungen an Gaeste")
+
+# --- Gutschrift (381) ---------------------------------------------------------
+# Wie eine Gutschrift im Haus (Nummern erfunden): -10,00 Zimmer 7 %, Menge -1, keine
+# Anzahlung, und an derselben Reservierung eine Rechnung ueber +10,00. Vorher
+# wurde die einzige Position zum Abschlag, die Rechnung stand ohne Position da
+# und wurde zurueckgelegt.
+print("8d) Gutschrift (381)")
+_gs_bezug = []
+
+
+def _db_gutschrift(sql, parameter=None):
+    kopfzeile = sql.splitlines()[0]
+    if "invoice_header.sql" in kopfzeile:
+        return [{"issuedate": "2026-10-29", "reservierungsnummer": "4711",
+                 "invoicegross": -10.0, "invoicenet": -9.35, "prepaidamount": 0.0,
+                 "city_ledger_betrag": -10.0}]
+    if "invoice_lines.sql" in kopfzeile:
+        return [{"lineextensionamount": -10.0, "lineextensionamountnet": -9.35,
+                 "invoicedquantity": -1, "itemname": "Accommodation manual 7%",
+                 "classifiedtaxcategoryid": "S", "classifiedtaxcategorypercent": 7}]
+    if "invoice_tax.sql" in kopfzeile:
+        return [{"taxcategoryid": "S", "taxcategorypercent": 7, "taxableamount": -9.35, "taxamount": -0.65}]
+    if "invoice_totals.sql" in kopfzeile:
+        return [{"invoicenet": -9.35, "invoicegross": -10.0, "spay_cl": -10.0}]
+    if "invoice_gutschrift_bezug.sql" in kopfzeile:
+        return list(_gs_bezug)
+    return []
+
+
+_echt_abf_gs = opera.db.abfrage
+opera.db.abfrage = _db_gutschrift
+try:
+    _gcfg = json.loads(json.dumps(cfg))
+    _gcfg["property"].update(udf_leitweg="")
+    _gs_bezug[:] = [{"billingreferenceid": 1400094, "billingreferenceissuedate": "2026-10-29",
+                     "total_gross": 10.0}]
+    _g = opera.rechnung(_gcfg, 1400095)
+    pruefe(_g["header"]["invoicetypecode"] == "381", "negative Positionen ohne Anzahlung: Typ 381")
+    pruefe(_g["lines"][0]["lineextensionamount"] == 10.0 and _g["lines"][0]["invoicedquantity"] == 1
+           and _g["totals"]["invoicegross"] == 10.0 and _g["header"]["payableamount"] == 10.0,
+           f"die Betraege stehen positiv, wie es eine Gutschrift verlangt ({_g['totals']}, "
+           f"{_g['header']['payableamount']})")
+    pruefe(_g["bezug"] and _g["bezug"][0]["billingreferenceid"] == 1400094
+           and "1400094" in (_g["header"].get("gutschrift_zu") or ""),
+           "die berichtigte Rechnung wird als Bezug gefuehrt, wenn genau eine passt")
+    _gs_bezug[:] = [{"billingreferenceid": 1400094, "billingreferenceissuedate": "2026-10-29"},
+                    {"billingreferenceid": 1400093, "billingreferenceissuedate": "2026-10-28"}]
+    _g2 = opera.rechnung(_gcfg, 1400095)
+    pruefe(not _g2["bezug"] and "mehrere" in (_g2["header"].get("gutschrift_hinweis") or ""),
+           "kommen mehrere in Frage, wird kein Bezug geraten")
+    _gs_bezug[:] = []
+    _g3 = opera.rechnung(_gcfg, 1400095)
+    pruefe(not _g3["bezug"] and "ohne erkennbare" in (_g3["header"].get("gutschrift_hinweis") or ""),
+           "ohne passende Rechnung: kein Bezug, aber ein Hinweis fuer die Sichtpruefung")
+finally:
+    opera.db.abfrage = _echt_abf_gs
+
+# Am 30.10.2026 an allen 134 negativen Belegen eines Quartals nachgerechnet:
+# 57 echte Gutschriften, 76 ueberzahlte Rechnungen. 27 der Gutschriften haben
+# eine Position mit 0,00 (Paketbestandteil), 4 eine Anzahlung am Folio, die
+# einer ANDEREN Rechnung gehoert. Entscheidend ist die Summe der Positionen
+# und der Anzahlungsanteil DIESES Belegs — nicht jede Position, nicht das Folio.
+def _db_gs_fall(zeilen, anzahlung, kopf):
+    def _abfrage(sql, parameter=None):
+        k = sql.splitlines()[0]
+        if "invoice_header.sql" in k:
+            return [{"issuedate": "2026-10-29", "invoicegross": kopf, "invoicenet": kopf, "prepaidamount": 0.0}]
+        if "invoice_lines.sql" in k:
+            return [{"lineextensionamount": b, "lineextensionamountnet": b, "invoicedquantity": 1,
+                     "itemname": "Paket", "classifiedtaxcategoryid": "Z", "classifiedtaxcategorypercent": 0}
+                    for b in zeilen]
+        if "invoice_deposits.sql" in k and anzahlung:
+            return [{"billingreferenceid": 1400080, "billingreferenceissuedate": "2026-10-01",
+                     "total_net": anzahlung, "total_gross": anzahlung, "status": "DEPOSIT"}]
+        if "invoice_totals.sql" in k:
+            return [{"invoicenet": kopf, "invoicegross": kopf}]
+        return []
+    return _abfrage
+
+
+try:
+    opera.db.abfrage = _db_gs_fall([-30.0, 0.0, 5.0], 440.0, -25.0)
+    _gf = opera.rechnung(_gcfg, 1400096)
+    pruefe(_gf["header"].get("invoicetypecode") == "381" and not _gf["deposits"],
+           "Gutschrift trotz Position mit 0,00, einer positiven Position und einer Anzahlung, "
+           "die einer anderen Rechnung des Folios gehoert")
+    opera.db.abfrage = _db_gs_fall([150.0], 440.0, -290.0)
+    _gu = opera.rechnung(_gcfg, 1400097)
+    pruefe(_gu["header"].get("invoicetypecode") != "381" and _gu["deposits"],
+           "eine ueberzahlte Rechnung (Positionen positiv, Kopf negativ) bleibt eine Rechnung")
+    # Einmal im Haus gesehen: Positionen negativ UND eine angerechnete Anzahlung.
+    # Beides zugleich laesst sich nicht sauber abbilden — anhalten, nicht raten.
+    opera.db.abfrage = _db_gs_fall([-100.0], 440.0, -540.0)
+    _gb = opera.rechnung(_gcfg, 1400098)
+    pruefe(_gb["header"].get("invoicetypecode") != "381" and xml_build.pruefsummen(_gb),
+           f"negative Positionen MIT angerechneter Anzahlung werden angehalten ({xml_build.pruefsummen(_gb)[-1:]})")
+finally:
+    opera.db.abfrage = _echt_abf_gs
+pruefe(not [h for h in xml_build.pruefsummen(_g) if "BG-25" in h or "Gutschrift (381)" in h
+            or "Folio-Klammer" in h or "Steuergruppe" in h],
+       f"die Vorpruefung sieht eine gewoehnliche Rechnung ({xml_build.pruefsummen(_g)})")
+# Das XML selbst, aus der vollstaendigen Musterrechnung als Gutschrift
+_gx_daten = json.loads(json.dumps(rechnung))
+_gx_daten["header"].update(invoicetypecode="381")
+_gx_daten["bezug"] = [{"billingreferenceid": 1400094, "billingreferenceissuedate": "2026-07-01"}]
+_gx = xml_build.bauen(_gx_daten).decode()
+_gx_baum = _et2.fromstring(_gx.encode())
+pruefe(_gx_baum.tag == "{urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2}CreditNote",
+       "eine Gutschrift ist ein UBL-CreditNote, kein Invoice")
+pruefe("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>" in _gx and "InvoiceTypeCode" not in _gx
+       and "<cac:CreditNoteLine>" in _gx and "<cbc:CreditedQuantity" in _gx and "InvoiceLine" not in _gx,
+       "mit CreditNoteTypeCode, CreditNoteLine und CreditedQuantity")
+pruefe("<cbc:DueDate>" not in _gx and "<cbc:PaymentDueDate>" in _gx,
+       "die Faelligkeit steht bei der Gutschrift in den Zahlungsangaben, nicht im Kopf")
+pruefe("<cbc:PaymentMeansCode>97</cbc:PaymentMeansCode>" in _gx and "PayeeFinancialAccount" not in _gx,
+       "Verrechnung statt Ueberweisung an das Haus — ohne die eigene IBAN")
+pruefe("<cbc:ID>1400094</cbc:ID>" in _gx[_gx.index("<cac:BillingReference>"):],
+       "die berichtigte Rechnung steht als Rechnungsbezug (BG-3)")
+pruefe(not xml_build.pruefsummen(_gx_daten),
+       f"die Musterrechnung als Gutschrift besteht die Vorpruefung ({xml_build.pruefsummen(_gx_daten)})")
+(BASE / "data" / "beispiel_gutschrift.xml").write_text(_gx, encoding="utf-8")
+_ix = xml_build.bauen(json.loads(json.dumps(rechnung))).decode()
+pruefe("<ubl:Invoice " in _ix and "<cbc:InvoiceTypeCode>380" in _ix and "<cbc:PaymentMeansCode>30" in _ix
+       and "PayeeFinancialAccount" in _ix and "CreditNote" not in _ix,
+       "eine gewoehnliche Rechnung bleibt unveraendert ein Invoice mit 380")
 
 # --- opera: Leitweg, Bemerkung, Vorlagen, Suche, Firmenprofile, Resort -------
 _gerufen = []

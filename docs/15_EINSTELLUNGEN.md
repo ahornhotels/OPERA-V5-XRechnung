@@ -69,6 +69,7 @@ zweiten Haus anders sein wird als hier.
 | `bcc_city_ledger` | Zweite Blindkopie nur für Rechnungen über das Debitorenkonto — die gehen die Debitorenbuchhaltung an |
 | `erlaubte_empfaenger` | **Sicherheitsnetz: Solange hier etwas steht, geht keine Mail an eine andere Adresse.** Zu Beginn die eigenen Domains, erst leeren, wenn wirklich an Kunden versendet wird |
 | `betreff`, `text` | Vorlagen mit `{bill_no}`, `{issuedate}`, `{absender_name}`. Der Absatz zu § 14c UStG sollte stehen bleiben |
+| `betreff_gutschrift`, `text_gutschrift` | Dasselbe für Gutschriften (Typ 381). Zusätzlich `{bezug}`: „ zur Rechnung 1234 vom 2026-10-29“, wenn die berichtigte Rechnung eindeutig erkannt ist, sonst leer |
 | `pdf_ordner`, `pdf_muster` | Wo die Folio-PDFs liegen, falls OPERA sie ablegt. Leer heißt: nur das XML geht mit |
 
 ## `auswahl` — welche Rechnungen überhaupt in Frage kommen

@@ -1,8 +1,13 @@
 {#- Kein |e mehr an den Feldern: Die Umgebung maskiert selbst (autoescape),
     und |e machte aus einem fehlenden Wert die Zeichenkette "None", weil es
     VOR der None-Behandlung greift. Doppelt maskiert wird dabei nichts. -#}
+{#- Gutschrift (381): UBL hat dafuer ein eigenes Dokument, CreditNote, mit
+    CreditNoteTypeCode, CreditNoteLine und CreditedQuantity. Die Betraege sind
+    dort POSITIV; opera.rechnung() hat sie bereits gedreht. Alles andere —
+    Parteien, Steuer, Summen — ist in beiden Dokumenten gleich aufgebaut. -#}
+{%- set _dok = 'CreditNote' if header.invoicetypecode == '381' else 'Invoice' -%}
 <?xml version="1.0" encoding="UTF-8"?>
-<ubl:Invoice xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+<ubl:{{ _dok }} xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:{{ _dok }}-2"
              xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
              xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   {# BT-24 kommt aus xml_build.VERSIONEN — an einer Stelle mit Vorlage und Regelwerk. #}
@@ -10,8 +15,8 @@
   <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
   <cbc:ID>{{ header.id }}</cbc:ID>
   <cbc:IssueDate>{{ header.issuedate }}</cbc:IssueDate>
-{% if header.duedate %}  <cbc:DueDate>{{ header.duedate }}</cbc:DueDate>
-{% endif %}  <cbc:InvoiceTypeCode>{{ header.invoicetypecode }}</cbc:InvoiceTypeCode>
+{% if header.duedate and _dok == 'Invoice' %}  <cbc:DueDate>{{ header.duedate }}</cbc:DueDate>
+{% endif %}  <cbc:{{ _dok }}TypeCode>{{ header.invoicetypecode }}</cbc:{{ _dok }}TypeCode>
 {% if header.note %}  <cbc:Note>{{ header.note }}</cbc:Note>
 {% endif %}  <cbc:DocumentCurrencyCode>{{ header.documentcurrencycode }}</cbc:DocumentCurrencyCode>
   <cbc:BuyerReference>{{ header.buyerreference }}</cbc:BuyerReference>
@@ -30,7 +35,9 @@
 
   {# BG-3: Anzahlungsbelege desselben Folios (OPERA: eigene Belege mit
      STATUS='DEPOSIT'). Ihre Summe steht als PrepaidAmount in BT-113. #}
-  {% for a in (deposits or []) %}
+  {# Bei einer Gutschrift steht hier die berichtigte Rechnung (bezug) — nur,
+     wenn sie eindeutig erkannt ist, siehe invoice_gutschrift_bezug.sql. #}
+  {% for a in (deposits or []) + (bezug or []) %}
   <cac:BillingReference>
     <cac:InvoiceDocumentReference>
       <cbc:ID>{{ a.billingreferenceid }}</cbc:ID>
@@ -111,13 +118,22 @@
   {% endif %}
 
   <cac:PaymentMeans>
-    <cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+    {# Bei einer Gutschrift schuldet das Haus dem Kunden. 30 mit der eigenen
+       IBAN hiesse "ueberweisen Sie an uns" — die falsche Richtung. 97 ist die
+       Verrechnung zwischen den Partnern: So wird eine Gutschrift auf dem
+       Debitorenkonto tatsaechlich behandelt. Ohne eigene Kontoverbindung. #}
+    <cbc:PaymentMeansCode>{{ '97' if _dok == 'CreditNote' else '30' }}</cbc:PaymentMeansCode>
+    {# BT-9 steht in einer CreditNote hier statt als cbc:DueDate im Kopf. #}
+    {% if header.duedate and _dok == 'CreditNote' %}
+    <cbc:PaymentDueDate>{{ header.duedate }}</cbc:PaymentDueDate>
+    {% endif %}
     {# BT-83: der Verwendungszweck, den der Kunde bei der Ueberweisung angibt.
        Rechnungsnummer und Debitorennummer zusammen — damit laesst sich die
        Zahlung zuordnen, ohne im Betreff zu suchen. #}
     {% if header.verwendungszweck %}
     <cbc:PaymentID>{{ header.verwendungszweck }}</cbc:PaymentID>
     {% endif %}
+    {% if _dok == 'Invoice' %}
     <cac:PayeeFinancialAccount>
       <cbc:ID>{{ header.payeefinancialaccountid }}</cbc:ID>
       <cbc:Name>{{ (header.payeefinancialaccountname or header.suppliername) }}</cbc:Name>
@@ -127,6 +143,7 @@
       </cac:FinancialInstitutionBranch>
       {% endif %}
     </cac:PayeeFinancialAccount>
+    {% endif %}
   </cac:PaymentMeans>
 
   {# Document-Level-Allowances (Pfand-Rueckgabe / Gutschrift / Storno-Verrechnung).
@@ -199,14 +216,15 @@
   </cac:LegalMonetaryTotal>
 
   {% for line in lines %}
-  <cac:InvoiceLine>
+  <cac:{{ _dok }}Line>
     <cbc:ID>{{ loop.index }}</cbc:ID>
     {# BT-127: Bemerkung zur einzelnen Buchung. UBL-Reihenfolge: ID, Note,
        InvoicedQuantity, LineExtensionAmount. #}
     {% if line.bemerkung %}
     <cbc:Note>{{ line.bemerkung }}</cbc:Note>
     {% endif %}
-    <cbc:InvoicedQuantity unitCode="C62">{{ line.invoicedquantity }}</cbc:InvoicedQuantity>
+    {% set _menge = 'CreditedQuantity' if _dok == 'CreditNote' else 'InvoicedQuantity' %}
+    <cbc:{{ _menge }} unitCode="C62">{{ line.invoicedquantity }}</cbc:{{ _menge }}>
     <cbc:LineExtensionAmount currencyID="{{ header.documentcurrencycode }}">{{ (line.lineextensionamountnet or line.lineextensionamount)|fmt }}</cbc:LineExtensionAmount>
     {# BG-26 / BT-134, BT-135: der Aufenthalt des Gastes an der Position —
        nur bei der Darstellung je Gast (C). UBL-Reihenfolge:
@@ -234,6 +252,6 @@
       <cbc:BaseQuantity unitCode="C62">{{ line.pricebasequantity }}</cbc:BaseQuantity>
       {% endif %}
     </cac:Price>
-  </cac:InvoiceLine>
+  </cac:{{ _dok }}Line>
   {% endfor %}
-</ubl:Invoice>
+</ubl:{{ _dok }}>

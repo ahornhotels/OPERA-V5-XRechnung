@@ -943,6 +943,49 @@ def anzahlung_zuordnen(anzahlungen: list[dict], zeilen_brutto: float,
         "auf diese Rechnung gehoert, ist so nicht zu erkennen — bitte in OPERA prüfen.")
 
 
+# Was bei einer Gutschrift das Vorzeichen wechselt. Eine Gutschrift (381)
+# fuehrt in der XRechnung POSITIVE Betraege — der Belegtyp sagt, in welche
+# Richtung sie gelten. OPERA fuehrt dieselbe Gutschrift als Rechnung mit
+# negativen Betraegen. Gedreht wird an genau einer Stelle, hier, und zwar
+# auch die Vergleichswerte: Dann prueft xml_build.pruefsummen() eine
+# Gutschrift mit denselben Regeln wie eine Rechnung, ohne eine einzige
+# Sonderregel.
+_GUTSCHRIFT_ZEILE = ("lineextensionamountnet", "lineextensionamount", "invoicedquantity")
+_GUTSCHRIFT_STEUER = ("taxableamount", "taxamount")
+_GUTSCHRIFT_KOPF = ("invoicenet", "invoicegross", "invoicetaxtotal", "prepaidamount",
+                    "payableamount", "city_ledger_betrag")
+_GUTSCHRIFT_SUMMEN = ("invoicenet", "invoicegross", "invoicetaxtotal", "prepaidamount",
+                      "payableamount", "spay_cl")
+
+
+def _umdrehen(eintrag: dict, felder: tuple) -> dict:
+    eintrag = dict(eintrag)
+    for f in felder:
+        if eintrag.get(f) is not None:
+            eintrag[f] = -_zahl(eintrag[f])
+    return eintrag
+
+
+def gutschrift_bezug(cfg: dict, bill_no: int, folio_no) -> tuple[list[dict], str]:
+    """Die Rechnung, die diese Gutschrift berichtigt — als Liste fuer BG-3
+    und ein Hinweis fuer die Sichtpruefung. Nur ein EINDEUTIGER Treffer wird
+    verwendet; siehe invoice_gutschrift_bezug.sql."""
+    treffer = db.abfrage(_sql("invoice_gutschrift_bezug.sql", cfg), {
+        "bill_no": bill_no, "folio_no": folio_no, "resort": cfg["property"]["resort"]})
+    if len(treffer) == 1:
+        t = treffer[0]
+        return [t], (f"Gutschrift zur Rechnung {t.get('billingreferenceid')} vom "
+                     f"{t.get('billingreferenceissuedate')} — an derselben Reservierung "
+                     "mit dem entgegengesetzten Betrag gefunden.")
+    if not treffer:
+        return [], ("Gutschrift ohne erkennbare Ursprungsrechnung: An derselben Reservierung "
+                    "gibt es keine Rechnung mit dem entgegengesetzten Betrag. Die Gutschrift "
+                    "geht ohne Rechnungsbezug (BG-3) hinaus — bitte prüfen, ob das genügt.")
+    nummern = ", ".join(str(t.get("billingreferenceid")) for t in treffer)
+    return [], (f"Gutschrift: mehrere Rechnungen kommen als Ursprung in Frage ({nummern}). "
+                "Ein Bezug wird nicht geraten — die Gutschrift geht ohne BG-3 hinaus.")
+
+
 def rechnung(cfg: dict, bill_no: int) -> dict:
     """Laedt Kopf, Positionen, Steueraufteilung, Summen und Anzahlungsbelege
     und setzt daraus die Struktur zusammen, die der XML-Bau erwartet."""
@@ -1042,6 +1085,27 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         kopf["anzahlung_befund"] = anzahlung_befund
     anz_brutto = sum(_zahl(a.get("total_gross")) for a in anzahlungen)
 
+    # --- Gutschrift (381) ---------------------------------------------------
+    # Eine Gutschrift ist ein Beleg, dessen POSITIONEN zusammen negativ sind,
+    # ohne Anzahlung. Nicht der Kopfbetrag entscheidet: Mit Anzahlung ist er
+    # oft negativ, und die Rechnung ist trotzdem eine Rechnung (im Haus gesehen:
+    # Positionen +1.983,40, Kopf -2.143,56). Vorher wurde aus der einzigen
+    # negativen Position einer Gutschrift ein Abschlag, die Rechnung stand ohne
+    # Position da und wurde zurueckgelegt — 141 Belege in 90 Tagen.
+    bezug: list[dict] = []
+    if zeilen_brutto < 0 and not anzahlungen:
+        zeilen = [_umdrehen(z, _GUTSCHRIFT_ZEILE) for z in zeilen]
+        steuer = [_umdrehen(b, _GUTSCHRIFT_STEUER) for b in steuer]
+        steuer_kopf = [_umdrehen(b, _GUTSCHRIFT_STEUER) for b in steuer_kopf]
+        summen = _umdrehen(summen, _GUTSCHRIFT_SUMMEN)
+        kopf = _umdrehen(kopf, _GUTSCHRIFT_KOPF)
+        zeilen_brutto = -zeilen_brutto
+        kopf["invoicetypecode"] = "381"
+        bezug, kopf["gutschrift_hinweis"] = gutschrift_bezug(cfg, bill_no, folio_no)
+        if bezug:
+            kopf["gutschrift_zu"] = (f" zur Rechnung {bezug[0].get('billingreferenceid')} "
+                                     f"vom {bezug[0].get('billingreferenceissuedate')}")
+
     # Summen fuer die Templates: bei Anzahlungen ist die Zeilensumme massgeblich,
     # der Kopfbetrag ist nur der Rest (siehe docs/06_BEFUNDE_LIVE_DB.md).
     zeilen_netto = sum(_zahl(z.get("lineextensionamountnet")) for z in zeilen)
@@ -1064,6 +1128,8 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "tax_kopf": steuer_kopf,
         "totals": totals,
         "deposits": anzahlungen,
+        # BG-3 einer Gutschrift: die berichtigte Rechnung, nur wenn eindeutig.
+        "bezug": bezug,
         # Unabhaengige Vergleichswerte fuer die Vorpruefung: der Rechnungskopf
         # plus die Anzahlungsbelege desselben Folios muss die Zeilensumme ergeben
         # (Folio-Klammer, siehe docs/06_BEFUNDE_LIVE_DB.md).

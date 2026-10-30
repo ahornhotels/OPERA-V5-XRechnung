@@ -178,6 +178,19 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
                                 bill_no=satz["bill_no"])
                 zahlen["pruefung"] += 0 if in_pruefung else 1
                 continue
+            # Negativ OHNE Anzahlung: eine Gutschrift. Sie geht seit dem
+            # 30.10.2026 als Typ 381 hinaus — vorher wurde sie zurueckgelegt,
+            # 141 Belege in 90 Tagen. Vorerst immer ueber die Sichtpruefung:
+            # OPERA kennt keinen Verweis auf die berichtigte Rechnung, die
+            # Anwendung erkennt ihn nur an Reservierung und Betrag
+            # (invoice_gutschrift_bezug.sql) — das soll ein Mensch ansehen.
+            if satz["total_gross"] < 0:
+                zur_pruefung(satz["bill_no"],
+                             f"Gutschrift über {-satz['total_gross']:.2f} (Typ 381) — den Bezug "
+                             "auf die berichtigte Rechnung auf der Detailseite prüfen")
+                store.protokoll("pruefung", "Gutschrift (381)", bill_no=satz["bill_no"])
+                zahlen["pruefung"] += 0 if in_pruefung else 1
+                continue
             if satz["total_gross"] <= 0:
                 grund = ("Gesamtbetrag 0,00" if satz["total_gross"] == 0
                          else f"negativer Gesamtbetrag {satz['total_gross']:.2f}")
@@ -727,14 +740,16 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
         # demselben Faelligkeitszeitpunkt, und die Automatik nahm bei jedem
         # Takt dieselben aeltesten zwanzig wieder.
         store.setzen(bill_no, testlauf_am=store.jetzt())
-        ist_cl = float(satz.get("city_ledger") or 0) > 0
+        ist_cl = float(satz.get("city_ledger") or 0) != 0
         bcc = ", ".join(mailer.blindkopien(cfg, ist_cl)) or "-"
         store.protokoll("testlauf",
                         f"Kein Versand (Testlauf aktiv). Ziel wäre {an}, BCC {bcc}",
                         bill_no=bill_no, benutzer=benutzer)
         return "testlauf"
 
-    ist_cl = float(satz.get("city_ledger") or 0) > 0
+    # != statt >: Eine Gutschrift auf das Debitorenkonto bucht dort NEGATIV
+    # (CLPAY -10,00) und geht die Debitorenbuchhaltung genauso an.
+    ist_cl = float(satz.get("city_ledger") or 0) != 0
 
     # Die Archivkopie gehoert VOR den Versand. Sie stand danach, ausserhalb
     # jeder Fehlerbehandlung: Ist der Archivordner voll, schreibgeschuetzt oder
@@ -767,7 +782,9 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
                                 issuedate=satz.get("issuedate") or "",
                                 xml=xml, xml_name=pfad.name,
                                 pdf=mailer.anhang_pdf(cfg, bill_no),
-                                city_ledger=ist_cl)
+                                city_ledger=ist_cl,
+                                gutschrift=(daten.get("header") or {}).get("invoicetypecode") == "381",
+                                bezug=(daten.get("header") or {}).get("gutschrift_zu") or "")
     except mailer.MailFehler as e:
         store.setzen(bill_no, status="fehler",
                      fehler=hinweis_dazu(satz.get("fehler"), f"Versand fehlgeschlagen: {e}"))

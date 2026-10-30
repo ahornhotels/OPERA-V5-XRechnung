@@ -160,9 +160,20 @@ def blindkopien(cfg: dict, city_ledger: bool) -> list[str]:
     return aus
 
 
+# Vorgaben, falls die Konfiguration einer aelteren Anlage die beiden Felder
+# noch nicht kennt. Gleichlautend mit config/app.example.json.
+GUTSCHRIFT_BETREFF = "Gutschrift {bill_no} vom {issuedate} - elektronische Rechnung (XRechnung)"
+GUTSCHRIFT_TEXT = ("Guten Tag,\n\nanbei erhalten Sie die Gutschrift {bill_no} vom {issuedate}{bezug} "
+                   "als elektronische Rechnung im Format XRechnung (XML-Datei).\n\n"
+                   "Es handelt sich um dieselbe Gutschrift unter derselben Nummer, lediglich in dem "
+                   "gesetzlich vorgeschriebenen strukturierten Format - keine zusaetzliche Gutschrift."
+                   "\n\nMit freundlichen Gruessen\n{absender_name}")
+
+
 def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
            xml: bytes, xml_name: str, pdf: Path | None = None,
-           city_ledger: bool = False) -> Versandergebnis:
+           city_ledger: bool = False, gutschrift: bool = False,
+           bezug: str = "") -> Versandergebnis:
     """Verschickt eine Rechnung. Gibt die Message-ID zurueck, samt der
     Blindkopien, die der Server abgelehnt hat (Versandergebnis).
     Wirft MailFehler, wenn der Versand nicht moeglich ist."""
@@ -182,7 +193,19 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
 
     werte = {"bill_no": bill_no, "issuedate": issuedate,
              "absender_name": m.get("absender_name") or "",
-             "empfaenger": an}
+             "empfaenger": an,
+             # Nur bei Gutschriften gefuellt: " zur Rechnung 1234 vom 2026-10-29"
+             # oder leer, wenn die berichtigte Rechnung nicht eindeutig ist.
+             "bezug": bezug}
+    # Eine Gutschrift bekommt eigene Vorlagen. Die Rechnungsvorlage sagte
+    # "anbei erhalten Sie die Rechnung" — bei einer Gutschrift falsch, und der
+    # Satz zu § 14c UStG ("keine zusaetzliche Forderung") passt dort nicht.
+    if gutschrift:
+        betreff = m.get("betreff_gutschrift") or GUTSCHRIFT_BETREFF
+        text = m.get("text_gutschrift") or GUTSCHRIFT_TEXT
+    else:
+        betreff = m.get("betreff") or "Rechnung {bill_no}"
+        text = m.get("text") or ""
 
     nachricht = EmailMessage()
     nachricht["From"] = formataddr((m.get("absender_name") or "", m["absender"]))
@@ -200,10 +223,10 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
                 "Empfaenger. Entweder die Adresse berichtigen oder die Liste ergaenzen.")
     if bcc_liste:
         nachricht["Bcc"] = ", ".join(bcc_liste)
-    nachricht["Subject"] = _text(m.get("betreff") or "Rechnung {bill_no}", werte)
+    nachricht["Subject"] = _text(betreff, werte)
     nachricht["Date"] = formatdate(localtime=True)
     nachricht["Message-ID"] = make_msgid()
-    nachricht.set_content(_text(m.get("text") or "", werte))
+    nachricht.set_content(_text(text, werte))
 
     nachricht.add_attachment(xml, maintype="application", subtype="xml", filename=xml_name)
     if pdf and pdf.exists():

@@ -81,6 +81,13 @@
      Adressen. Der Versand wird abgelehnt, bis die Liste in der Konfiguration
      angepasst ist.</p>
   {% endif %}
+  {# Gutschrift: Typ 381, und ob die berichtigte Rechnung erkannt wurde. OPERA
+     fuehrt keinen Verweis darauf — der Bezug ist erschlossen und gehoert
+     angesehen, bevor die Gutschrift hinausgeht. #}
+  {% if daten and (daten.header or {}).invoicetypecode == '381' %}
+  <p class="hinweis"><strong>Gutschrift (Typ 381).</strong>
+     {{ daten.header.gutschrift_hinweis or '' }}</p>
+  {% endif %}
   {# Nummer, Datum UND Betrag. Die Anzahl allein beantwortete die Frage nicht,
      die hier gestellt wird: Ist meine Anzahlung drin, und mit welchem Betrag? #}
   {% if daten and daten.deposits %}

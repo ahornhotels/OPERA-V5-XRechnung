@@ -111,6 +111,10 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
       echte Kunden freigegeben ist.</span></label>
     <label>Betreff<input name="mail.betreff" value="{{ cfg.mail.betreff }}"></label>
     <label>Text<textarea name="mail.text" rows="5">{{ cfg.mail.text }}</textarea></label>
+    <label>Betreff einer Gutschrift<input name="mail.betreff_gutschrift" value="{{ cfg.mail.betreff_gutschrift }}"></label>
+    <label>Text einer Gutschrift<textarea name="mail.text_gutschrift" rows="5">{{ cfg.mail.text_gutschrift }}</textarea>
+      <span class="klein">{bezug} wird zu „zur Rechnung … vom …“, wenn die berichtigte
+      Rechnung eindeutig erkannt ist, sonst leer.</span></label>
     <label>PDF-Ordner (optional)<input name="mail.pdf_ordner" value="{{ cfg.mail.pdf_ordner }}"></label>
     <label>PDF-Dateimuster<input name="mail.pdf_muster" value="{{ cfg.mail.pdf_muster }}"></label>
   </section>

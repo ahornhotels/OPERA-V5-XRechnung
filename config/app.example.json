@@ -77,6 +77,9 @@
     "betreff": "Rechnung {bill_no} vom {issuedate} - elektronische Rechnung (XRechnung)",
     "_text_hinweis": "Der zweite Absatz stellt klar, dass es sich um dieselbe Rechnung in anderem Format handelt und nicht um eine zweite Forderung (§ 14c UStG). Bitte beim Anpassen stehen lassen.",
     "text": "Guten Tag,\n\nanbei erhalten Sie die Rechnung {bill_no} vom {issuedate} als elektronische Rechnung im Format XRechnung (XML-Datei).\n\nEs handelt sich um dieselbe Rechnung unter derselben Rechnungsnummer, lediglich in dem gesetzlich vorgeschriebenen strukturierten Format - keine zusaetzliche Rechnung und keine zusaetzliche Forderung.\n\nMit freundlichen Gruessen\n{absender_name}",
+    "_gutschrift_hinweis": "Eigene Vorlagen fuer Gutschriften (Typ 381). {bezug} wird zu ' zur Rechnung 1234 vom 2026-10-29', wenn die berichtigte Rechnung eindeutig erkannt ist, sonst leer.",
+    "betreff_gutschrift": "Gutschrift {bill_no} vom {issuedate} - elektronische Rechnung (XRechnung)",
+    "text_gutschrift": "Guten Tag,\n\nanbei erhalten Sie die Gutschrift {bill_no} vom {issuedate}{bezug} als elektronische Rechnung im Format XRechnung (XML-Datei).\n\nEs handelt sich um dieselbe Gutschrift unter derselben Nummer, lediglich in dem gesetzlich vorgeschriebenen strukturierten Format - keine zusaetzliche Gutschrift.\n\nMit freundlichen Gruessen\n{absender_name}",
     "_pdf_hinweis": "Ordner, in dem die Folio-PDFs aus OPERA liegen. Leer lassen, dann geht nur das XML mit. Voraussetzung ist, dass OPERA die Folios ueberhaupt als Datei ablegt — ist Permanent Folio Storage abgeschaltet, gibt es keine. Siehe docs/10_OPERA_MAILVERSAND.md.",
     "pdf_ordner": "",
     "pdf_muster": "{bill_no}.pdf"
