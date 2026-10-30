@@ -218,9 +218,11 @@ def _json_lesen(datei: Path) -> dict:
         name = f" (Einstellung „{treffer.group(1)}“)" if treffer else ""
         rat = ""
         if "escape" in e.msg:
-            rat = (" Windows-Pfade in dieser Datei mit doppeltem Backslash schreiben "
-                   "(C:\\\\oracle\\\\client) oder mit Schrägstrich (C:/oracle/client) — "
-                   "oder den Wert über die Konfigurationsseite eintragen, die das richtig speichert.")
+            # Die Konfigurationsseite hilft hier NICHT: Mit dieser Datei startet
+            # die Anwendung gar nicht. Also sagen, wie man die Datei selbst repariert.
+            rat = (" Windows-Pfade in dieser Datei mit Schrägstrich (C:/oracle/client) oder "
+                   "doppeltem Backslash (C:\\\\oracle\\\\client) schreiben. Die Datei mit einem "
+                   "Editor bearbeiten (unter Windows als Administrator), dann den Dienst neu starten.")
         raise KonfigFehler(f"{datei} ist kein gültiges JSON: Zeile {e.lineno}, Spalte {e.colno}"
                            f"{name} — {e.msg}.{rat}") from None
 
