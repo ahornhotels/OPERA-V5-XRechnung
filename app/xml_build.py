@@ -652,9 +652,6 @@ def pruefsummen(rechnung: dict) -> list[str]:
     if "beleg_status" in kopf and status != "OK" and not kopf.get("ist_anzahlungsbeleg"):
         fehler.append(f"Der Beleg hat in OPERA den Status „{status or 'leer'}“, nicht OK — "
                       "vermutlich storniert. Nicht versenden.")
-    if art == "COPY OF INVOICE":
-        fehler.append("Der Beleg ist in OPERA eine „COPY OF INVOICE“. Was dieser Beleg im Haus "
-                      "bedeutet, ist nicht geklärt — nicht als Rechnung versenden.")
     if str(kopf.get("folio_type") or "").strip().upper() == "INTERNAL":
         fehler.append("Der Beleg ist eine interne Umbuchung (FOLIO_TYPE INTERNAL), keine "
                       "Rechnung. Nicht versenden.")

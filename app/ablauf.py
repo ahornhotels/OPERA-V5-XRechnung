@@ -81,6 +81,16 @@ UMSTELLUNG_BELEGARTEN = "umstellung_belegarten"
 _tse_im_haus: bool | None = None
 
 
+# Gemessen (30.10.2026, 104 Belege in 90 Tagen): trotz des Namens keine Kopie,
+# sondern ein Anzahlungsbeleg mit eigener Zahlung, eigenen Buchungszeilen und
+# eigener TSE-Nummer, ohne Verweis auf ein Original. Wie OPERA den Typ
+# vergibt, steht nirgends in der Datenbank. Entscheidung des Hauses: geht als
+# Anzahlungsrechnung hinaus, aber nie automatisch — immer erst nach Sichtpruefung.
+HINWEIS_COPY_OF_INVOICE = ("Belegart „COPY OF INVOICE“ — in OPERA trotz des Namens eine eigene "
+                           "Anzahlungsrechnung mit eigener Zahlung und TSE-Nummer. Geht nie "
+                           "automatisch hinaus: Betrag und Zahlung prüfen, dann freigeben")
+
+
 def _neue_belegart(r: dict) -> bool:
     """Ein Beleg, der vor der Umstellung NICHT eingelesen wurde: alles ausser
     der Endrechnung (STATUS OK, DOCUMENT_TYPE INVOICE)."""
@@ -127,8 +137,7 @@ def belegart_gruende(cfg: dict, r: dict, tse_im_haus: bool = True) -> list[str]:
         gruende.append(f"Belegstatus {status or 'leer'} — kein gültiger Beleg")
     art = str(r.get("document_type") or "").strip().upper()
     if art == "COPY OF INVOICE":
-        gruende.append("Belegart „COPY OF INVOICE“ — was dieser Beleg im Haus bedeutet, ist "
-                       "noch nicht geklärt. Nicht ohne Rückfrage als Rechnung versenden")
+        gruende.append(HINWEIS_COPY_OF_INVOICE)
     if str(r.get("folio_type") or "").strip().upper() == "INTERNAL":
         gruende.append("Interne Umbuchung (FOLIO_TYPE INTERNAL), keine Rechnung an einen Gast")
     if tse_im_haus and "fiscal_bill_no" in r and not str(r.get("fiscal_bill_no") or "").strip():

@@ -14,7 +14,9 @@
 -- entscheidet nicht mehr — im gemessenen Haus enthaelt jede Buchung genau
 -- einen Beleg, Voraus- und Schlussrechnung rechnen verschiedene Buchungen ab.
 -- Draussen bleiben VOID und ZERO (Status), interne Umbuchungen (FOLIO_TYPE)
--- und 'COPY OF INVOICE', bis das Haus geklaert hat, was dieser Belegtyp ist.
+-- 'COPY OF INVOICE' kommt mit: Gemessen ist das trotz des Namens keine Kopie,
+-- sondern ein Anzahlungsbeleg mit eigener Zahlung und eigener TSE-Nummer.
+-- app/ablauf.py legt ihn trotzdem immer in die Sichtpruefung.
 -- Ob ein Beleg TSE-signiert ist (FISCAL_BILL_NO), prueft app/ablauf.py: Ein
 -- Haus ohne TSE haette sonst eine leere Liste.
 --
@@ -105,7 +107,6 @@ SELECT f.bill_no,
     ON n.name_id = NVL(f.payee_name_id, f.name_id)
  WHERE f.resort          = :resort
    AND (f.status = 'OK' OR f.status = :anzahlung_status)
-   AND NVL(f.document_type, '-') <> 'COPY OF INVOICE'
    -- Interne Umbuchungen zwischen Folios sind keine Rechnungen an Gaeste. Sie
    -- verwenden obendrein Belegnummern echter Rechnungen wieder (invoice_folio.sql).
    AND NVL(f.folio_type, '-') <> 'INTERNAL'

@@ -297,12 +297,16 @@ Rechnung (Typ 380) hinaus, ein **Anzahlungsbeleg** ebenfalls, mit dem Vermerk
 Doppelt wird dabei nichts: In OPERA steht jede Buchung auf genau einem Beleg —
 die Schlussrechnung enthält die Nächte der Vorausrechnung nicht noch einmal.
 
+Belege der Art **„COPY OF INVOICE“** sind trotz des Namens keine Kopien,
+sondern eigene Anzahlungsrechnungen mit eigener Zahlung und eigener
+TSE-Nummer. Sie gehen ebenfalls als Anzahlungsrechnung hinaus, aber **nie
+automatisch**: Jeder dieser Belege steht zuerst in der Sichtprüfung und geht
+erst nach der Freigabe hinaus.
+
 Keine Rechnung und deshalb nicht verschickt:
 
 - **stornierte Belege** (Status VOID)
 - **interne Umbuchungen** zwischen Folios (Rundung, Zahlungsausgleich)
-- Belege der Art **„COPY OF INVOICE“** — bis geklärt ist, was sie im Haus
-  bedeuten; über die Suche geholt, landen sie in der Sichtprüfung
 - Belege **ohne TSE-Nummer**, wenn das Haus sonst TSE-Nummern vergibt — sie
   waren nie beim Fiskalsystem und gehen zur Sichtprüfung
 
@@ -696,7 +700,8 @@ In der Zeile steht rot, woran es liegt.
 | **BT-31 / BG-17** | USt-IdNr. oder IBAN fehlen in den Einstellungen |
 | **BR-DE-6 / BR-DE-7** | Telefon oder E-Mail des Hauses fehlen in den Einstellungen — beides ist Pflicht |
 | **Der Beleg hat in OPERA den Status …** | Die Rechnung wurde in OPERA storniert. Nicht versenden, zurücklegen |
-| **„COPY OF INVOICE“** / **interne Umbuchung** | Kein Beleg, der als Rechnung hinausgeht. Zurücklegen |
+| **interne Umbuchung** | Kein Beleg, der als Rechnung hinausgeht. Zurücklegen |
+| **Belegart „COPY OF INVOICE“** | Trotz des Namens keine Kopie, sondern eine eigene Anzahlungsrechnung mit eigener Zahlung. Betrag und Zahlung in OPERA ansehen, dann freigeben |
 | **Versand begonnen, Ergebnis nicht bestätigt** | Der Versand brach unklar ab. Sehen Sie im Postfach der Blindkopie nach, ob die Mail hinausging, und halten Sie es auf der Detailseite fest: **„Ja — als versendet vermerken"** oder **„Nein — nichts ging hinaus"**. Erst danach ist die Rechnung wieder entscheidbar |
 | **Am Empfängerprofil steht keine einzelne gültige Adresse** | In OPERA stehen mehrere Adressen in einem Feld. Auf eine zurückschneiden, dann neu einlesen |
 | **Nullbeleg** | Gesamtbetrag 0,00 — gehört nicht in den Versand |

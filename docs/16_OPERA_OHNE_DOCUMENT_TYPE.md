@@ -37,8 +37,9 @@ Daraus, festgelegt:
    Steuerzeilen (eigene Anzahlungs-Transaktionscodes), die XRechnung lässt
    sich also aus den Positionen bilden. Belege mit `DOCUMENT_TYPE = 'COPY OF
    INVOICE'` (ebenfalls `DEPOSIT`, mit eigener TSE-Signatur und eigenen
-   Zeilen) sind keine Nachdrucke; was sie im Arbeitsablauf sind, klärt das
-   Haus, bis dahin gehen sie nicht hinaus.
+   Zeilen) sind keine Nachdrucke, sondern eigene Anzahlungsrechnungen mit
+   eigener Zahlung (gemessen, docs/06). Sie gehen als Anzahlungsrechnung
+   hinaus, aber nie automatisch, sondern immer erst nach Sichtprüfung.
 3. **Eine zurückgenommene Vorausrechnung wird in OPERA ungültig gemacht.**
    OPERA setzt sie auf `VOID` mit Betrag 0, nimmt ihr die TSE-Nummer und gibt
    sofort einen neuen Beleg mit neuer Nummer und Signatur aus. Einen Verweis

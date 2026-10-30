@@ -4473,8 +4473,11 @@ pruefe(not any("storniert" in h or "Endrechnung" in h or "COPY" in h
        f"eine Vorausrechnung (Status OK) geht als Rechnung hinaus ({xml_build.pruefsummen(_adv)})")
 _kop = json.loads(json.dumps(rechnung))
 _kop["header"].update(beleg_status="DEPOSIT", document_type="COPY OF INVOICE", ist_anzahlungsbeleg=True)
-pruefe(any("COPY OF INVOICE" in h for h in xml_build.pruefsummen(_kop)),
-       "eine 'COPY OF INVOICE' wird nicht versendet, solange das Haus sie nicht geklaert hat")
+pruefe(not any("COPY OF INVOICE" in h for h in xml_build.pruefsummen(_kop)),
+       "eine 'COPY OF INVOICE' ist eine Anzahlungsrechnung, die Vorpruefung sperrt sie nicht")
+pruefe(ablauf.HINWEIS_COPY_OF_INVOICE in ablauf.belegart_gruende(
+           cfg, {"beleg_status": "DEPOSIT", "document_type": "COPY OF INVOICE", "fiscal_bill_no": "9003"}),
+       "aber sie geht nie automatisch hinaus, sondern immer in die Sichtpruefung")
 _int = json.loads(json.dumps(rechnung))
 _int["header"].update(beleg_status="OK", folio_type="INTERNAL")
 pruefe(any("interne Umbuchung" in h for h in xml_build.pruefsummen(_int)),
@@ -4624,8 +4627,8 @@ pruefe(any("TSE" in g for g in ablauf.belegart_gruende(_bcfg, {"beleg_status": "
 _liste_sql = (BASE / "sql" / "opera" / "invoice_list.sql").read_text(encoding="utf-8")
 _liste_ohne_k = "\n".join(z.split("--")[0] for z in _liste_sql.splitlines())
 pruefe("document_type   = 'INVOICE'" not in _liste_ohne_k and ":anzahlung_status" in _liste_ohne_k
-       and "'COPY OF INVOICE'" in _liste_ohne_k,
-       "invoice_list.sql waehlt nicht mehr nach Belegart, nimmt Anzahlungsbelege und laesst Kopien draussen")
+       and "'COPY OF INVOICE'" not in _liste_ohne_k,
+       "invoice_list.sql waehlt nicht nach Belegart, nimmt Anzahlungsbelege und auch 'COPY OF INVOICE'")
 _echt_k9, _echt_e9 = opera.kandidaten, opera.empfaenger
 from datetime import date as _d9, timedelta as _tdd9
 _morgen9 = (_d9.today() + _tdd9(days=1)).isoformat()
