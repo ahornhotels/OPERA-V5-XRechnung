@@ -3899,6 +3899,8 @@ try:
                                             "taxcategorypercent": None, "satz_fehlt": "J"}])
     _rv = opera.rechnung(_acfg, 1400102)
     _xv = xml_build.bauen(_rv).decode()
+    pruefe(not [h for h in xml_build.pruefsummen(_rv) if h.startswith(("BT-113", "BR-CO-16"))],
+           "voll angezahlt: kein BT-113-Befund")
     pruefe(_rechnerisch(_rv) == [] and _betrag(_xv, "PayableAmount") == 0.0
            and _betrag(_xv, "AllowanceTotalAmount") == 1000.0 and "<ubl:Invoice" in _xv,
            f"voll angezahlt: Schlussrechnung ueber 0,00 geht hinaus ({_rechnerisch(_rv)})")
@@ -3943,6 +3945,19 @@ try:
            and "<cbc:ID>1400090</cbc:ID>" in _xvb and "AllowanceCharge" not in _xvb,
            "im XML: CreditNote ueber 440,00 mit Steuer 70,25 und Verweis auf die Anzahlungsrechnung")
     pruefe(_rechnerisch(_vb) == [], f"Verrechnungsbeleg: Vorpruefung sauber ({_rechnerisch(_vb)})")
+    # Ungefiltert: Nur die Befunde zu Haus und Empfaenger (Testdaten ohne
+    # Leitweg-ID, Adresse) duerfen bleiben — der Filter oben verbarg einmal
+    # einen BT-113-Befund, der am echten Beleg den Versand sperrte.
+    _vb_alle = xml_build.pruefsummen(_vb)
+    pruefe(not [h for h in _vb_alle if h.startswith(("BT-113", "BR-CO-16"))],
+           f"Verrechnungsbeleg: keine Anzahlung als 'bereits gezahlt' verlangt ({_vb_alle})")
+    # Ungefiltert gegen den sauberen Fall: Was dort wegen fehlender Testdaten
+    # (Haus, Empfaenger) steht, darf auch hier stehen — sonst nichts.
+    _art = lambda hs: {h.split(":")[0].split(" ")[0] for h in hs}
+    _basis_art = _art(xml_build.pruefsummen(_haupt))
+    for _name, _fall in (("voll angezahlt", _rv), ("ueberzahlt", _rue), ("Verrechnungsbeleg", _vb)):
+        _mehr = _art(xml_build.pruefsummen(_fall)) - _basis_art
+        pruefe(not _mehr, f"{_name}: ungefiltert keine Befunde ausser fehlenden Testdaten ({_mehr})")
     _anz_fall.update(kopf_buckets=[dict(_pos19, taxableamount=0.0, taxamount=0.0),
                                    {"bucket": 6, "taxableamount": -300.0, "taxamount": -57.0,
                                     "taxcategorypercent": None, "satz_fehlt": "J"}])

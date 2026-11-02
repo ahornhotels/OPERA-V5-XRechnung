@@ -534,7 +534,10 @@ def pruefsummen(rechnung: dict) -> list[str]:
     if kopf.get("anzahlung_befund"):
         fehler.append(kopf["anzahlung_befund"])
     anz_brutto = sum(_dez(a.get("total_gross")) for a in rechnung.get("deposits") or [])
-    if anz_brutto and prepaid < anz_brutto and not roh.get("anzahlung_abzuege"):
+    # Abgesetzt (Abzug) oder verrechnet (Positionen des Verrechnungsbelegs)
+    # ist die Anzahlung nicht "bereits gezahlt" — BT-113 bleibt dann leer.
+    if (anz_brutto and prepaid < anz_brutto and not roh.get("anzahlung_abzuege")
+            and not roh.get("verrechnung")):
         fehler.append(
             f"BT-113: Anzahlungsbelege brutto {anz_brutto}, gemeldet {prepaid} — "
             "vermutlich das Netto statt des Bruttos verwendet")
