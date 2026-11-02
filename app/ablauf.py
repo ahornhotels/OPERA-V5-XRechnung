@@ -7,7 +7,7 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import opera, pfade, store, validate, xml_build, mailer
+from . import opera, pfade, store, storno, validate, xml_build, mailer
 
 log = logging.getLogger(__name__)
 # An einer Stelle formuliert, damit Setzen und Wiedererkennen nicht
@@ -678,6 +678,48 @@ def versendete_fassung(cfg: dict, bill_no: int) -> Path | None:
     return archiv if archiv.exists() else None
 
 
+def kosit_pruefen(cfg: dict, xml: bytes, bill_no: int) -> tuple[list[str], bool]:
+    """KoSIT-Urteil ueber ein XML als Liste von Befunden (leer: in Ordnung)
+    und ob der Validator gelaufen ist. Warnungen gehen ins Protokoll."""
+    v = cfg.get("validierung") or {}
+    kosit_gelaufen = False
+    hinweise: list[str] = []
+    if v.get("aktiv"):
+        try:
+            fehler, warnungen = validate.pruefen_ausfuehrlich(cfg, xml)
+            kosit_gelaufen = True
+            hinweise += [f"KoSIT: {m}" for m in fehler]
+            # Warnungen halten den Versand nicht auf, sollen aber nicht
+            # verschwinden: Sie landen im Protokoll und sind dort nachlesbar.
+            for w in warnungen:
+                store.protokoll("validierung", f"KoSIT-{w}", bill_no=bill_no)
+        except validate.NichtEingerichtet as e:
+            text = f"KoSIT-Validator nicht eingerichtet ({e})"
+            if v.get("pflicht"):
+                hinweise.append(text + " — Versand gesperrt, solange Pflicht gesetzt ist")
+            else:
+                log.warning(text)
+                store.protokoll("validierung", text, bill_no=bill_no, erfolg=False)
+        except validate.ValidierungsFehler as e:
+            kosit_gelaufen = True
+            hinweise += [f"KoSIT: {m}" for m in e.meldungen]
+        except Exception as e:
+            # Der Validator ist ein fremdes Programm in einem eigenen Prozess.
+            # Was von dort unerwartet kommt, darf die Erzeugung nicht
+            # abbrechen — aber es darf auch nicht durchgehen: Ohne Urteil kein
+            # Versand. Der Fehler steht vollstaendig im Log.
+            log.exception("Validierung mit unerwartetem Fehler (%s)", bill_no)
+            hinweise.append(f"KoSIT: unerwarteter Fehler in der Validierung ({e}) — "
+                            "kein Versand, bitte das Protokoll ansehen")
+    elif v.get("pflicht"):
+        # Pflicht heisst Pflicht — auch wenn jemand die Validierung abschaltet.
+        # Vorher wirkte 'pflicht' nur bei eingeschalteter Validierung, und das
+        # Protokoll meldete "KoSIT ohne Befund", obwohl KoSIT nie lief.
+        hinweise.append("KoSIT-Validierung ist abgeschaltet, aber als Pflicht gesetzt — "
+                        "kein Versand")
+    return hinweise, kosit_gelaufen
+
+
 def xml_erzeugen(cfg: dict, bill_no: int, ersetzen: bool = False,
                  ablegen: bool = True, daten: dict | None = None) -> tuple[bytes, Path, list[str]]:
     """Baut das XML, validiert es und legt es ab. Liefert (xml, pfad, hinweise).
@@ -713,41 +755,8 @@ def xml_erzeugen(cfg: dict, bill_no: int, ersetzen: bool = False,
         return xml, pfad, hinweise
     pfad.write_bytes(xml)
 
-    v = cfg.get("validierung") or {}
-    kosit_gelaufen = False
-    if v.get("aktiv"):
-        try:
-            fehler, warnungen = validate.pruefen_ausfuehrlich(cfg, xml)
-            kosit_gelaufen = True
-            hinweise += [f"KoSIT: {m}" for m in fehler]
-            # Warnungen halten den Versand nicht auf, sollen aber nicht
-            # verschwinden: Sie landen im Protokoll und sind dort nachlesbar.
-            for w in warnungen:
-                store.protokoll("validierung", f"KoSIT-{w}", bill_no=bill_no)
-        except validate.NichtEingerichtet as e:
-            text = f"KoSIT-Validator nicht eingerichtet ({e})"
-            if v.get("pflicht"):
-                hinweise.append(text + " — Versand gesperrt, solange Pflicht gesetzt ist")
-            else:
-                log.warning(text)
-                store.protokoll("validierung", text, bill_no=bill_no, erfolg=False)
-        except validate.ValidierungsFehler as e:
-            kosit_gelaufen = True
-            hinweise += [f"KoSIT: {m}" for m in e.meldungen]
-        except Exception as e:
-            # Der Validator ist ein fremdes Programm in einem eigenen Prozess.
-            # Was von dort unerwartet kommt, darf die Erzeugung nicht
-            # abbrechen — aber es darf auch nicht durchgehen: Ohne Urteil kein
-            # Versand. Der Fehler steht vollstaendig im Log.
-            log.exception("Validierung mit unerwartetem Fehler (%s)", bill_no)
-            hinweise.append(f"KoSIT: unerwarteter Fehler in der Validierung ({e}) — "
-                            "kein Versand, bitte das Protokoll ansehen")
-    elif v.get("pflicht"):
-        # Pflicht heisst Pflicht — auch wenn jemand die Validierung abschaltet.
-        # Vorher wirkte 'pflicht' nur bei eingeschalteter Validierung, und das
-        # Protokoll meldete "KoSIT ohne Befund", obwohl KoSIT nie lief.
-        hinweise.append("KoSIT-Validierung ist abgeschaltet, aber als Pflicht gesetzt — "
-                        "kein Versand")
+    kosit, kosit_gelaufen = kosit_pruefen(cfg, xml, bill_no)
+    hinweise += kosit
 
     # Festgehalten wird, in welcher Version die abgelegte Datei steht. Im
     # Uebergang auf 4.0 liegen beide nebeneinander im Archiv, und bei einer
@@ -966,7 +975,7 @@ def nachpruefung_befunde(cfg: dict, satz: dict, heute: dict | None) -> list[tupl
     status = str(heute.get("beleg_status") or "").strip().upper()
     if not opera.gueltiger_status(cfg, status):
         teile = [f"In OPERA storniert (Status {status or 'leer'}). Der Kunde hat die XRechnung "
-                 "bereits — er braucht eine Stornorechnung."]
+                 "bereits — er braucht eine Stornorechnung (auf der Detailseite: „Stornorechnung senden“)."]
         spaeter = []
         for eintrag in str(heute.get("spaetere_belege") or "").split(","):
             nummer, _, betrag = eintrag.partition(":")
@@ -1042,3 +1051,96 @@ def nachpruefen(cfg: dict, tage: int = NACHPRUEFUNG_TAGE) -> dict:
               else "nachpruefung")
     store.protokoll(aktion, bericht_text, erfolg=not zahlen["fehler"])
     return zahlen
+
+
+# ------------------------------------------------------------ Stornorechnung
+# Wird eine versendete Rechnung in OPERA storniert, hat der Kunde eine
+# Rechnung, die es nicht mehr gibt. Die Nachpruefung meldet das als Aufgabe;
+# von dort erzeugt ein Mensch die Stornorechnung und schickt sie ab — nie
+# automatisch (Entscheidung des Hauses, 02.11.2026). Gebaut wird sie aus der
+# archivierten XRechnung, siehe app/storno.py.
+
+def storno_hindernis(cfg: dict, bill_no: int) -> str | None:
+    """Warum es zu dieser Rechnung keine Stornorechnung geben kann — oder
+    None, wenn sie erzeugt werden kann."""
+    satz = store.rechnung(bill_no) or {}
+    if satz.get("status") != "gesendet":
+        return "Die Rechnung ist nicht versendet — ohne Versand braucht es keine Stornorechnung."
+    if not str(satz.get("nachpruefung_schluessel") or "").startswith("STORNO"):
+        return ("Die Nachprüfung hat keinen Storno in OPERA festgestellt. Eine Stornorechnung "
+                "gibt es nur zu einer Rechnung, die in OPERA storniert ist.")
+    if satz.get("storno_versand") == "gesendet":
+        return (f"Die Stornorechnung {storno.nummer(bill_no)} ist am "
+                f"{(satz.get('storno_am') or '')[:10]} bereits versendet worden.")
+    if satz.get("storno_versand") == "begonnen":
+        return ("Der Versand der Stornorechnung hat begonnen, das Ergebnis ist nicht bestätigt — "
+                "bitte prüfen, ob die Mail hinausging. Kein zweiter Versand.")
+    if versendete_fassung(cfg, bill_no) is None:
+        return "Die versendete Fassung fehlt im Archiv — die Stornorechnung lässt sich nicht bauen."
+    return None
+
+
+def storno_erzeugen(cfg: dict, bill_no: int, pruefen: bool = True) -> tuple[bytes, list[str]]:
+    """Baut die Stornorechnung aus der archivierten Fassung. Liefert (xml,
+    Befunde). Schreibt nichts — Ansehen veraendert nichts."""
+    grund = storno_hindernis(cfg, bill_no)
+    if grund:
+        raise ValueError(grund)
+    xml = storno.aus_rechnung(versendete_fassung(cfg, bill_no).read_bytes(),
+                              datetime.now().date().isoformat())
+    befunde: list[str] = []
+    if pruefen:
+        befunde, _ = kosit_pruefen(cfg, xml, bill_no)
+    return xml, befunde
+
+
+def storno_versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
+    """Erzeugt, prueft, archiviert und verschickt die Stornorechnung an den
+    Empfaenger der Rechnung. Wirft bei Problemen."""
+    if not _versand_sperre.acquire(timeout=2):
+        raise Beschaeftigt("Gerade wird eine andere Rechnung versendet (Automatiklauf). "
+                           "Bitte einen Moment warten und es erneut versuchen.")
+    try:
+        satz = store.rechnung(bill_no) or {}
+        an = (satz.get("empfaenger") or "").strip()
+        if not an:
+            raise ValueError("Bei der Rechnung ist kein Empfänger vermerkt.")
+        xml, befunde = storno_erzeugen(cfg, bill_no)
+        nummer = storno.nummer(bill_no)
+        if befunde:
+            store.protokoll("storno", "Prüfung fehlgeschlagen: " + "; ".join(befunde),
+                            bill_no=bill_no, benutzer=benutzer, erfolg=False)
+            raise ValueError("Stornorechnung nicht versendet, Prüfung fehlgeschlagen: "
+                             + "; ".join(befunde))
+        if (cfg.get("automatik") or {}).get("testlauf"):
+            store.protokoll("testlauf", f"Stornorechnung {nummer}: kein Versand (Testlauf "
+                            f"aktiv). Ziel wäre {an}", bill_no=bill_no, benutzer=benutzer)
+            return "testlauf"
+        # Wie bei der Rechnung: erst archivieren, dann senden.
+        archiv = _ordner(cfg, "archiv_ordner") / f"{nummer}.xml"
+        try:
+            archiv.write_bytes(xml)
+        except OSError as e:
+            raise ValueError(f"Kein Versand: Die Archivkopie der Stornorechnung liess sich "
+                             f"nicht schreiben ({e}).") from e
+        store.setzen(bill_no, storno_versand="begonnen", storno_am=store.jetzt())
+        ist_cl = float(satz.get("city_ledger") or 0) != 0
+        try:
+            kennung = mailer.senden(cfg, an=an, bill_no=bill_no,
+                                    issuedate=satz.get("issuedate") or "",
+                                    xml=xml, xml_name=archiv.name, city_ledger=ist_cl,
+                                    storno=True)
+        except mailer.MailFehler as e:
+            # Nichts ging hinaus — ein neuer Versuch ist erlaubt.
+            store.setzen(bill_no, storno_versand=None, storno_am=None)
+            store.protokoll("storno", f"Versand fehlgeschlagen an {an}: {e}",
+                            bill_no=bill_no, benutzer=benutzer, erfolg=False)
+            raise
+        store.setzen(bill_no, storno_versand="gesendet", storno_am=store.jetzt(),
+                     nachpruefung_erledigt=store.jetzt())
+        bcc = ", ".join(mailer.blindkopien(cfg, ist_cl)) or "-"
+        store.protokoll("storno", f"Stornorechnung {nummer} an {an}, BCC {bcc}, {kennung}",
+                        bill_no=bill_no, benutzer=benutzer)
+        return kennung
+    finally:
+        _versand_sperre.release()

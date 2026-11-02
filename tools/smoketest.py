@@ -5197,13 +5197,116 @@ finally:
     with store.verbindung() as con:
         con.execute("DELETE FROM rechnungen WHERE bill_no IN (960022, 960023)")
 
+# --- Stornorechnung aus der versendeten Fassung (app/storno.py) -------------
+from app import storno as _storno
+from lxml import etree as _et_st
+_NS_ST = {"cbc": _storno.CBC, "cac": _storno.CAC}
+_orig_st = xml_build.bauen(json.loads(json.dumps(rechnung)), xml_build.STANDARD_VERSION)
+_alt_st = _et_st.fromstring(_orig_st)
+_neu_st = _et_st.fromstring(_storno.aus_rechnung(_orig_st, "2031-01-02"))
+_alt_id = _alt_st.findtext("cbc:ID", namespaces=_NS_ST)
+pruefe(_neu_st.tag == f"{{{_storno.NS_CREDIT}}}CreditNote"
+       and _neu_st.findtext("cbc:CreditNoteTypeCode", namespaces=_NS_ST) == "381",
+       "Stornorechnung: eine Gutschrift (CreditNote, Typ 381)")
+pruefe(_neu_st.findtext("cbc:ID", namespaces=_NS_ST) == f"{_alt_id}-S"
+       and _neu_st.findtext("cbc:IssueDate", namespaces=_NS_ST) == "2031-01-02",
+       "Stornorechnung: Nummer mit -S, Datum der Stornierung")
+_verweise_st = _neu_st.findall("cac:BillingReference", _NS_ST)
+pruefe(_verweise_st and _verweise_st[0].findtext("cac:InvoiceDocumentReference/cbc:ID", namespaces=_NS_ST) == _alt_id
+       and _verweise_st[0].findtext("cac:InvoiceDocumentReference/cbc:IssueDate", namespaces=_NS_ST)
+       == _alt_st.findtext("cbc:IssueDate", namespaces=_NS_ST),
+       "Stornorechnung: verweist zuerst auf die stornierte Rechnung (BG-3)")
+_kinder_st = [_et_st.QName(k).localname for k in _neu_st if isinstance(k.tag, str)]
+pruefe(_kinder_st.index("BillingReference") < _kinder_st.index("AccountingSupplierParty")
+       and _kinder_st.index("CreditNoteTypeCode") < _kinder_st.index("Note")
+       < _kinder_st.index("DocumentCurrencyCode") and "DueDate" not in _kinder_st,
+       f"Stornorechnung: UBL-Reihenfolge stimmt, kein DueDate ({_kinder_st[:12]})")
+pruefe(len(_neu_st.findall("cac:CreditNoteLine", _NS_ST)) == len(_alt_st.findall("cac:InvoiceLine", _NS_ST)) > 0
+       and not _neu_st.findall(".//cbc:InvoicedQuantity", _NS_ST)
+       and len(_neu_st.findall(".//cbc:CreditedQuantity", _NS_ST)) == len(_alt_st.findall(".//cbc:InvoicedQuantity", _NS_ST)),
+       "Stornorechnung: dieselben Positionen, als CreditNoteLine mit CreditedQuantity")
+def _werte_st(el):
+    return [(_et_st.QName(e).localname, (e.text or "").strip(), dict(e.attrib))
+            for e in el.iter() if isinstance(e.tag, str)]
+pruefe(all(_werte_st(_neu_st.find(t, _NS_ST)) == _werte_st(_alt_st.find(t, _NS_ST))
+           for t in ("cac:LegalMonetaryTotal", "cac:TaxTotal")),
+       "Stornorechnung: Summen und Steuer unveraendert (positiv, wie in jeder Gutschrift)")
+pruefe(_neu_st.findtext("cac:PaymentMeans/cbc:PaymentMeansCode", namespaces=_NS_ST) == "97"
+       and _neu_st.find("cac:PaymentMeans/cac:PayeeFinancialAccount", _NS_ST) is None,
+       "Stornorechnung: Verrechnung (97), ohne die eigene Kontoverbindung")
+pruefe(_alt_id in (_neu_st.findtext("cbc:Note", namespaces=_NS_ST) or ""),
+       "Stornorechnung: Vermerk nennt die aufgehobene Rechnung")
+try:
+    _storno.aus_rechnung(_storno.aus_rechnung(_orig_st, "2031-01-02"), "2031-01-03")
+    pruefe(False, "eine Gutschrift wird nicht storniert")
+except _storno.KeinStorno:
+    pruefe(True, "eine Gutschrift wird nicht storniert (von Hand klaeren)")
+
+# Ablauf: nur zu einer versendeten, in OPERA stornierten Rechnung; einmal.
+_scfg = json.loads(json.dumps(_vcfg))
+_archiv_st = ablauf._ordner(_scfg, "archiv_ordner")
+store.rechnung_anlegen({"bill_no": 960090, "resort": "IHRHAUS", "kunde": "S",
+                        "total_gross": 119.0, "city_ledger": 0.0, "issuedate": "2031-01-01"}, 0)
+store.setzen(960090, status="gesendet", gesendet_am="2031-01-01T10:00:00",
+             empfaenger="rechnung@firma.example")
+(_archiv_st / "960090.xml").write_bytes(_orig_st)
+pruefe("keinen Storno" in (ablauf.storno_hindernis(_scfg, 960090) or ""),
+       "ohne Storno-Befund der Nachpruefung keine Stornorechnung")
+store.setzen(960090, nachpruefung="storniert", nachpruefung_schluessel="STORNO>960091")
+pruefe(ablauf.storno_hindernis(_scfg, 960090) is None, "mit Storno-Befund: Stornorechnung moeglich")
+_st_mails = []
+_echt_send_st = _mailer.senden
+try:
+    _mailer.senden = lambda cfg, **k: (_ for _ in ()).throw(_mailer.MailFehler("abgelehnt"))
+    try:
+        ablauf.storno_versenden(_scfg, 960090, "k")
+        pruefe(False, "Mailfehler: Stornorechnung nicht als versendet vermerkt")
+    except _mailer.MailFehler:
+        pruefe(not store.rechnung(960090).get("storno_versand"),
+               "Mailfehler: nichts vermerkt, ein neuer Versuch bleibt moeglich")
+    _scfg["automatik"]["testlauf"] = True
+    _mailer.senden = lambda cfg, **k: _st_mails.append(k) or "<id@st>"
+    pruefe(ablauf.storno_versenden(_scfg, 960090, "k") == "testlauf" and not _st_mails
+           and not store.rechnung(960090).get("storno_versand"),
+           "Testlauf: geprueft, nicht versendet")
+    _scfg["automatik"]["testlauf"] = False
+    ablauf.storno_versenden(_scfg, 960090, "k")
+    _s90 = store.rechnung(960090)
+    pruefe(len(_st_mails) == 1 and _st_mails[0].get("storno") is True
+           and _st_mails[0]["an"] == "rechnung@firma.example"
+           and _st_mails[0]["xml_name"] == "960090-S.xml"
+           and b"CreditNote" in _st_mails[0]["xml"],
+           "Stornorechnung geht an den Empfaenger der Rechnung, als eigene Datei")
+    pruefe(_s90["storno_versand"] == "gesendet" and _s90["nachpruefung_erledigt"]
+           and (_archiv_st / "960090-S.xml").exists() and _s90["status"] == "gesendet",
+           "danach: vermerkt, archiviert, Aufgabe erledigt, die Rechnung bleibt 'gesendet'")
+    try:
+        ablauf.storno_versenden(_scfg, 960090, "k")
+        pruefe(False, "kein zweiter Versand der Stornorechnung")
+    except ValueError as e:
+        pruefe("bereits" in str(e) and len(_st_mails) == 1, "kein zweiter Versand der Stornorechnung")
+    store.setzen(960090, storno_versand="begonnen")
+    pruefe("nicht bestätigt" in (ablauf.storno_hindernis(_scfg, 960090) or ""),
+           "Versand begonnen ohne Ergebnis: kein neuer Versuch, ein Mensch sieht nach")
+finally:
+    _mailer.senden = _echt_send_st
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no = 960090")
+    for _f in ("960090.xml", "960090-S.xml"):
+        (_archiv_st / _f).unlink(missing_ok=True)
+_werte_st = {"bill_no": 960090, "issuedate": "2031-01-01", "absender_name": "Haus"}
+pruefe("960090-S" in _mailer._text(_mailer.STORNO_BETREFF, _werte_st)
+       and "960090 vom 2031-01-01" in _mailer._text(_mailer.STORNO_TEXT, _werte_st),
+       "Mail zur Stornorechnung nennt beide Nummern")
+
 # B51: Seiten, die auf OPERA, den Validator oder den Mailserver warten, duerfen
 # nicht auf der Ereignisschleife laufen — sonst steht die ganze Oberflaeche.
 # Geprueft werden ALLE diese Wege, nicht nur einer.
 _main_quelle = (BASE / "app" / "main.py").read_text(encoding="utf-8")
 _blockierend = ("uebersicht", "detail", "pflegeliste", "einlesen", "aufnehmen", "senden",
                 "xml_bauen", "xml_anzeigen", "dbtest", "mailtest", "konfiguration",
-                "update_pruefen", "update_anwenden", "einrichtung_leitweg")
+                "update_pruefen", "update_anwenden", "einrichtung_leitweg",
+                "storno_anzeigen", "storno_senden")
 _noch_async = [n for n in _blockierend if f"async def {n}(" in _main_quelle]
 pruefe(not _noch_async and all(f"def {n}(" in _main_quelle for n in _blockierend),
        f"B51: Seiten mit Datenbank-, Validator- oder Mailzugriff laufen im Faden ({_noch_async})")

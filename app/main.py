@@ -677,6 +677,35 @@ def xml_bauen(request: Request, bill_no: int, ersetzen: str = Form("")):
     return RedirectResponse(f"/rechnung/{bill_no}?meldung={meldung}", status_code=303)
 
 
+@app.get("/rechnung/{bill_no}/storno.xml")
+def storno_anzeigen(request: Request, bill_no: int):
+    """Die Stornorechnung, wie sie hinausginge. Schreibt nichts; ohne KoSIT,
+    damit das Ansehen schnell bleibt — geprueft wird beim Senden."""
+    try:
+        xml, _ = ablauf.storno_erzeugen(config.laden(), bill_no, pruefen=False)
+    except Exception as e:
+        from xml.sax.saxutils import escape
+        return Response(f"<fehler>{escape(str(e))}</fehler>", media_type="application/xml",
+                        status_code=409)
+    return Response(xml, media_type="application/xml")
+
+
+@app.post("/rechnung/{bill_no}/storno")
+def storno_senden(request: Request, bill_no: int):
+    """Die Stornorechnung erzeugen, pruefen und an den Empfaenger der Rechnung
+    senden. Nur von Hand, nie durch die Automatik."""
+    if not _darf_verwalten(request):
+        return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung",
+                                status_code=303)
+    try:
+        ergebnis = ablauf.storno_versenden(config.laden(), bill_no, request.state.benutzer)
+        meldung = ("Testlauf aktiv — die Stornorechnung wurde geprüft, aber nicht versendet"
+                   if ergebnis == "testlauf" else "Stornorechnung versendet")
+    except Exception as e:
+        meldung = f"Fehler: {e}"
+    return RedirectResponse(f"/rechnung/{bill_no}?meldung={meldung}", status_code=303)
+
+
 @app.get("/rechnung/{bill_no}/xml.xml")
 def xml_anzeigen(request: Request, bill_no: int):
     cfg = config.laden()

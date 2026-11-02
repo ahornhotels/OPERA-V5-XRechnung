@@ -169,11 +169,21 @@ GUTSCHRIFT_TEXT = ("Guten Tag,\n\nanbei erhalten Sie die Gutschrift {bill_no} vo
                    "gesetzlich vorgeschriebenen strukturierten Format - keine zusaetzliche Gutschrift."
                    "\n\nMit freundlichen Gruessen\n{absender_name}")
 
+# Stornorechnung (app/storno.py): eigene Nummer {bill_no}-S, hebt die
+# Rechnung {bill_no} auf. Feste Texte — sie sagen, was der Kunde tun soll.
+STORNO_BETREFF = ("Stornorechnung {bill_no}-S zu Rechnung {bill_no} vom {issuedate} - "
+                  "elektronische Rechnung (XRechnung)")
+STORNO_TEXT = ("Guten Tag,\n\nanbei erhalten Sie die Stornorechnung {bill_no}-S als elektronische "
+               "Rechnung im Format XRechnung (XML-Datei). Sie hebt unsere Rechnung {bill_no} vom "
+               "{issuedate} vollständig auf; die Rechnung {bill_no} ist damit gegenstandslos.\n\n"
+               "Falls eine berichtigte Rechnung nötig ist, erhalten Sie sie gesondert unter einer "
+               "eigenen Nummer.\n\nMit freundlichen Gruessen\n{absender_name}")
+
 
 def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
            xml: bytes, xml_name: str, pdf: Path | None = None,
            city_ledger: bool = False, gutschrift: bool = False,
-           bezug: str = "") -> Versandergebnis:
+           bezug: str = "", storno: bool = False) -> Versandergebnis:
     """Verschickt eine Rechnung. Gibt die Message-ID zurueck, samt der
     Blindkopien, die der Server abgelehnt hat (Versandergebnis).
     Wirft MailFehler, wenn der Versand nicht moeglich ist."""
@@ -200,7 +210,9 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
     # Eine Gutschrift bekommt eigene Vorlagen. Die Rechnungsvorlage sagte
     # "anbei erhalten Sie die Rechnung" — bei einer Gutschrift falsch, und der
     # Satz zu § 14c UStG ("keine zusaetzliche Forderung") passt dort nicht.
-    if gutschrift:
+    if storno:
+        betreff, text = STORNO_BETREFF, STORNO_TEXT
+    elif gutschrift:
         betreff = m.get("betreff_gutschrift") or GUTSCHRIFT_BETREFF
         text = m.get("text_gutschrift") or GUTSCHRIFT_TEXT
     else:

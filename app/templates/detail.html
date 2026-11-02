@@ -87,6 +87,25 @@
     <p><strong>{{ 'Erledigt: ' if satz.nachpruefung_erledigt }}Nach dem Versand geändert</strong>
        (festgestellt {{ (satz.nachpruefung_am or '')[:16]|replace('T', ' ') }}):
        {{ satz.nachpruefung }}</p>
+    {% if (satz.nachpruefung_schluessel or '').startswith('STORNO') %}
+      {% if satz.storno_versand == 'gesendet' %}
+      <p>Stornorechnung {{ satz.bill_no }}-S versendet am
+         {{ (satz.storno_am or '')[:16]|replace('T', ' ') }} an {{ satz.empfaenger }}.</p>
+      {% elif satz.storno_versand == 'begonnen' %}
+      <p class="fehler">Versand der Stornorechnung {{ satz.bill_no }}-S begonnen
+         ({{ (satz.storno_am or '')[:16]|replace('T', ' ') }}), Ergebnis nicht bestätigt —
+         bitte prüfen, ob die Mail hinausging.</p>
+      {% else %}
+      <p>Die Stornorechnung {{ satz.bill_no }}-S wird aus der versendeten Fassung gebaut:
+         dieselben Positionen und Beträge, als Gutschrift mit Verweis auf diese Rechnung.
+         <a href="/rechnung/{{ satz.bill_no }}/storno.xml" target="_blank">Ansehen</a></p>
+        {% if verwalten %}
+        <form method="post" action="/rechnung/{{ satz.bill_no }}/storno"
+              onsubmit="return confirm('Stornorechnung {{ satz.bill_no }}-S jetzt senden? Sie hebt die Rechnung {{ satz.bill_no }} beim Kunden auf.')">
+          <button>Stornorechnung senden an {{ satz.empfaenger }}</button></form>
+        {% endif %}
+      {% endif %}
+    {% endif %}
     {% if verwalten and not satz.nachpruefung_erledigt %}
     <form method="post" action="/rechnung/{{ satz.bill_no }}/nachpruefung_erledigt">
       <button>Als erledigt markieren</button></form>

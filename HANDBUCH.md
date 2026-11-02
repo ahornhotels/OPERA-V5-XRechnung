@@ -674,7 +674,7 @@ beim Kunden sind, gegen OPERA. Zwei Dinge können sich dort danach noch ändern:
 
 | Befund | Was zu tun ist |
 |---|---|
-| **In OPERA storniert** | Der Kunde hat eine Rechnung, die es nicht mehr gibt. Er braucht eine **Stornorechnung**. Meist hat OPERA sofort einen Ersatzbeleg ausgegeben; der Hinweis nennt ihn, wenn er am selben Folio mit demselben Betrag steht. Der Ersatzbeleg geht als neue Rechnung ganz normal hinaus |
+| **In OPERA storniert** | Der Kunde hat eine Rechnung, die es nicht mehr gibt. Er braucht eine **Stornorechnung** (siehe unten). Meist hat OPERA sofort einen Ersatzbeleg ausgegeben; der Hinweis nennt ihn, wenn er am selben Folio mit demselben Betrag steht. Der Ersatzbeleg geht als neue Rechnung ganz normal hinaus |
 | **Rechnungsempfänger geändert** | Profil oder Zahler wurden in OPERA umgestellt. Prüfen, ob die XRechnung an den Richtigen ging |
 
 Befunde stehen oben auf der Rechnungsliste als **Aufgaben nach dem Versand**
@@ -686,7 +686,26 @@ Prüfung sofort.
 Beträge und Positionen einer versendeten Rechnung muss niemand vergleichen:
 An einer ausgegebenen, gültigen Rechnung ändert OPERA sie nicht.
 
-Die Stornorechnung erzeugt die Anwendung in diesem Stand noch nicht selbst.
+### Stornorechnung senden
+
+Bei einem Storno-Befund steht auf der Detailseite der Rechnung der Knopf
+**„Stornorechnung senden an …“**. Die Stornorechnung entsteht aus der
+versendeten Fassung im Archiv, also genau aus dem, was der Kunde bekommen hat:
+
+- **Nummer:** Rechnungsnummer mit „-S“, z. B. 1400004-S.
+- **Inhalt:** dieselben Positionen, Beträge und Steuern, als Gutschrift
+  (Typ 381) mit Verweis auf die stornierte Rechnung und dem Vermerk, dass sie
+  vollständig aufgehoben ist.
+- **Empfänger:** dieselbe Adresse wie die Rechnung, mit denselben
+  Blindkopien. Abgelegt wird sie im Archiv als `<Nummer>-S.xml`.
+
+Mit **„Ansehen“** lässt sie sich vorher anzeigen. Beim Senden prüft KoSIT sie
+wie jede Rechnung; mit Befund geht sie nicht hinaus. Die Automatik schickt nie
+eine Stornorechnung — es ist immer ein Klick. Danach ist die Aufgabe erledigt.
+Im Testlauf wird nur geprüft, nicht gesendet.
+
+Eine Rechnung, die selbst eine Gutschrift ist, bekommt keine Stornorechnung —
+das ist von Hand zu klären.
 
 ## Wenn eine Rechnung nicht durchgeht
 

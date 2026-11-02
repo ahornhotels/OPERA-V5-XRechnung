@@ -139,6 +139,12 @@ SOLL_SPALTEN = {
         "nachpruefung_schluessel": "TEXT",
         # Empfaengerprofil (NVL(PAYEE_NAME_ID, NAME_ID)) beim Versand.
         "name_id_versand": "INTEGER",
+        # Stornorechnung (app/storno.py) zu einer versendeten Rechnung, die in
+        # OPERA storniert wurde: 'begonnen' vor dem Versand, 'gesendet' danach.
+        # Bleibt es bei 'begonnen', ist unklar, ob die Mail hinausging — dann
+        # kein zweiter Versand, ein Mensch sieht nach.
+        "storno_versand": "TEXT",
+        "storno_am": "TEXT",
         "empfaenger": "TEXT", "status": "TEXT", "xml_pfad": "TEXT",
         "fehler": "TEXT", "zuerst_gesehen": "TEXT", "faellig_ab": "TEXT",
         "gesendet_am": "TEXT",
