@@ -577,10 +577,28 @@ etwa eine Hauptrechnung und eine kleine Nebenrechnung für Minibar oder Parken.
 OPERA rechnet die Anzahlung nur einer davon an; nur diese trägt sie in der
 XRechnung. Die andere geht ohne Anzahlung hinaus, mit ihrem eigenen Betrag.
 
-Ist eine Anzahlung höher als das, was am Ende angefallen ist, wird der
-Zahlbetrag negativ — der Kunde hat ein Guthaben. Die Rechnung bleibt eine
-Rechnung; sie geht zur Sichtprüfung, weil ein Guthaben meist eine Rückfrage
-der Buchhaltung auslöst.
+Deckt die Anzahlung alles, steht am Ende **0,00**; ist sie höher als das, was
+angefallen ist, wird der Betrag **negativ** — der Kunde hat ein Guthaben. Beides
+sind gewöhnliche Schlussrechnungen (Typ 380): volle Leistung, Abzug der
+Anzahlung mit Steuer, Zahlbetrag 0,00 bzw. negativ. Sie gehen hinaus wie jede
+andere Rechnung, sofern der Abzug zum Rechnungskopf in OPERA passt. Ein Beleg
+über 0,00 oder darunter **ohne** Anzahlung bleibt angehalten.
+
+**Verrechnungsbeleg.** Bei Gruppen legt OPERA die Leistungen oft auf ein
+Sammelfolio und rechnet sie dort voll ab, ohne Abzug. Auf dem Folio der
+Anzahlungen entsteht dann ein eigener Beleg ohne Leistung, der nur die
+Anzahlungen verrechnet und als Guthaben aufs Debitorenkonto bucht. Er geht als
+**Gutschrift** (Typ 381) hinaus: je Anzahlung und Steuersatz eine Position
+„Verrechnung Anzahlungsrechnung … vom …“, mit Verweis auf die
+Anzahlungsrechnungen. Erkannt wird er daran, dass seine Positionen zusammen
+0,00 ergeben und sein Betrag genau minus den Anzahlungen ist; geprüft wird er
+Steuertopf für Steuertopf gegen den Rechnungskopf in OPERA.
+
+**Reihenfolge.** Eine Rechnung, die eine Anzahlung abzieht oder verrechnet,
+geht nicht vor deren Anzahlungsrechnung hinaus: Die Automatik wartet und
+versucht es stündlich wieder („Wartet auf die zugehörige
+Anzahlungsrechnung“). Ist die Anzahlungsrechnung zurückgelegt, kommt die
+Rechnung in die Sichtprüfung. Von Hand lässt sie sich jederzeit senden.
 
 ## Gutschriften
 
@@ -723,8 +741,10 @@ In der Zeile steht rot, woran es liegt.
 | **Belegart „COPY OF INVOICE“** | Trotz des Namens keine Kopie, sondern eine eigene Anzahlungsrechnung mit eigener Zahlung. Betrag und Zahlung in OPERA ansehen, dann freigeben |
 | **Versand begonnen, Ergebnis nicht bestätigt** | Der Versand brach unklar ab. Sehen Sie im Postfach der Blindkopie nach, ob die Mail hinausging, und halten Sie es auf der Detailseite fest: **„Ja — als versendet vermerken"** oder **„Nein — nichts ging hinaus"**. Erst danach ist die Rechnung wieder entscheidbar |
 | **Am Empfängerprofil steht keine einzelne gültige Adresse** | In OPERA stehen mehrere Adressen in einem Feld. Auf eine zurückschneiden, dann neu einlesen |
-| **Nullbeleg** | Gesamtbetrag 0,00 — gehört nicht in den Versand |
-| **Negativer Gesamtbetrag … gehört als Gutschrift (381)** | Positionen negativ, aber zugleich eine Anzahlung angerechnet. Nicht automatisch abbildbar — an die Buchhaltung |
+| **Nullbeleg** | Gesamtbetrag 0,00 ohne Anzahlung — gehört nicht in den Versand |
+| **Negativer Gesamtbetrag … gehört als Gutschrift (381)** | Negativer Betrag ohne Anzahlung, der nicht als Gutschrift erkannt ist. Nicht automatisch abbildbar — an die Buchhaltung |
+| **Wartet auf die zugehörige Anzahlungsrechnung** | Kein Fehler: Die Rechnung geht automatisch hinterher, sobald die Anzahlungsrechnung versendet ist |
+| **Verrechnungsbeleg ohne Steueraufteilung im Rechnungskopf** | Ein Beleg, der nur Anzahlungen verrechnet, ohne Steuertöpfe im Kopf. Nicht gegenzuprüfen — in OPERA ansehen |
 | **Anzahlung nur teilweise angerechnet** | Der Teil der Anzahlung, den OPERA dieser Rechnung angerechnet hat, passt zu keinem Anzahlungsbeleg. Kam in den geprüften Daten nicht vor — melden |
 | **KoSIT: …** | Das offizielle Prüfprogramm beanstandet etwas. Der Text nennt die Regel |
 | **steht nicht auf der Liste erlaubter Empfänger** | Sicherheitsnetz — Adresse oder Liste anpassen |

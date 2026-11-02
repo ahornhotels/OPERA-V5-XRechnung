@@ -404,8 +404,12 @@ def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
 
     Der Satz des Abzugs kommt nie vom Kopf der Schlussrechnung, sondern vom
     Anzahlungsbeleg (opera.anzahlung_abzuege)."""
-    abzuege = roh.get("anzahlung_abzuege") or []
+    verrechnung = roh.get("verrechnung") or []
+    abzuege = roh.get("anzahlung_abzuege") or verrechnung
     kopf = roh.get("tax_kopf") or []
+    if verrechnung and not kopf:
+        return ["Verrechnungsbeleg ohne Steueraufteilung im Rechnungskopf — der Abzug ist "
+                "nicht gegenzuprüfen. Bitte in OPERA prüfen."]
     if not abzuege or not kopf:
         return []
     fehler: list[str] = []
@@ -426,8 +430,10 @@ def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
             f"Anzahlung: abgesetzt werden netto {_rund(abzug_netto)} / Steuer {_rund(abzug_steuer)}, "
             f"der Rechnungskopf in OPERA zieht netto {_rund(-ohne_netto)} / Steuer "
             f"{_rund(-ohne_steuer)} ab. Bitte in OPERA prüfen.")
+    # Beim Verrechnungsbeleg SIND die Positionen der Abzug; Leistungen hat er
+    # keine, die Toepfe mit Satz muessen leer sein.
     positionen: dict[Decimal, list[Decimal]] = {}
-    for b in roh.get("tax_breakdown") or []:
+    for b in ([] if verrechnung else roh.get("tax_breakdown") or []):
         satz = _rund(0 if str(b.get("taxcategoryid") or "").upper() == "Z"
                      else b.get("taxcategorypercent") or 0)
         s = positionen.setdefault(satz, [Decimal(0), Decimal(0)])
@@ -704,9 +710,16 @@ def pruefsummen(rechnung: dict) -> list[str]:
     # entscheidet der Beleg, nicht unsere nachgerechnete Summe.
     roh_summen = roh.get("totals") or {}
     gemeldet = _dez(roh_summen.get("invoicegross")) if "invoicegross" in roh_summen else brutto
-    if gemeldet == 0:
+    # Mit abgesetzter Anzahlung ist 0,00 (voll angezahlt) oder ein negativer
+    # Betrag (Guthaben des Kunden) eine gewoehnliche Schlussrechnung: volle
+    # Leistung, Abzug der Anzahlung mit Steuer (§ 14 Abs. 5 UStG). KoSIT nimmt
+    # beides an (02.11.2026). Rund 2.700 Schlussrechnungen im Jahr wurden
+    # vorher hier angehalten. Ob der Abzug zum Kopf passt, pruefen die
+    # Gegenproben oben; ohne Anzahlung bleibt es bei der Sperre.
+    mit_abzug = bool(roh.get("anzahlung_abzuege"))
+    if gemeldet == 0 and not mit_abzug:
         fehler.append("Nullbeleg: Gesamtbetrag 0,00 — kein Versand, bitte im Haus klären")
-    elif gemeldet < 0:
+    elif gemeldet < 0 and not mit_abzug:
         fehler.append(f"Negativer Gesamtbetrag {gemeldet} — gehoert als Gutschrift (381) "
                       "ausgegeben, nicht als Rechnung (380)")
     return fehler

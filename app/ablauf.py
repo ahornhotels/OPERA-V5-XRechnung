@@ -783,6 +783,28 @@ _versand_sperre = threading.Lock()
 VERSAND_OFFEN = "Versand begonnen, Ergebnis nicht bestätigt — bitte prüfen, ob die Mail hinausging"
 
 
+WARTET_AUF_ANZAHLUNG = ("Wartet auf die zugehörige Anzahlungsrechnung — geht automatisch "
+                        "hinterher, sobald sie versendet ist")
+WARTEN_MINUTEN = 60
+
+
+def anzahlungen_offen(daten: dict) -> tuple[list[int], list[int]]:
+    """Welche Anzahlungsrechnungen, die diese Rechnung abzieht, sind noch nicht
+    beim Kunden? (noch offen, zurueckgelegt). Nur was in der Arbeitsliste steht."""
+    offen: list[int] = []
+    zurueck: list[int] = []
+    for a in daten.get("deposits") or []:
+        try:
+            nummer = int(a.get("billingreferenceid"))
+        except (TypeError, ValueError):
+            continue
+        bekannt = store.rechnung(nummer)
+        if not bekannt or bekannt.get("status") == "gesendet":
+            continue
+        (zurueck if bekannt.get("status") == "ignoriert" else offen).append(nummer)
+    return offen, zurueck
+
+
 class Beschaeftigt(Exception):
     """Gerade laeuft ein anderer Versand. Kein Fehler, nur ein schlechter
     Zeitpunkt — der Aufrufer soll es sagen statt stumm zu warten."""
@@ -827,6 +849,30 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
         store.protokoll("pruefung", "; ".join(hinweise), bill_no=bill_no,
                         benutzer=benutzer, erfolg=False)
         raise ValueError("Vorprüfung fehlgeschlagen: " + "; ".join(hinweise))
+
+    # Eine Rechnung, die Anzahlungen abzieht oder verrechnet, geht nicht vor
+    # deren Anzahlungsrechnung hinaus — der Kunde saehe sonst einen Abzug fuer
+    # eine Rechnung, die er nicht hat. Bei kurzen Aufenthalten entstehen beide
+    # am selben Tag, und eine Anzahlungsrechnung kann in der Sichtpruefung
+    # haengen (COPY OF INVOICE immer). Nur die Automatik wartet; wer von Hand
+    # sendet, hat es gesehen. Anzahlungsrechnungen, die nicht in der
+    # Arbeitsliste stehen (aelter, kein Firmenbezug), halten nichts auf.
+    if automatisch:
+        offen, zurueck = anzahlungen_offen(daten)
+        if zurueck:
+            grund = (f"Die Anzahlungsrechnung {', '.join(map(str, zurueck))} ist zurückgelegt — "
+                     "diese Rechnung zieht sie ab. Prüfen, ob der Kunde sie hat")
+            zur_pruefung(bill_no, grund)
+            store.protokoll("pruefung", grund, bill_no=bill_no, benutzer=benutzer)
+            return "pruefung"
+        if offen:
+            if WARTET_AUF_ANZAHLUNG not in (satz.get("fehler") or ""):
+                store.protokoll("wartet", f"{WARTET_AUF_ANZAHLUNG}: {', '.join(map(str, offen))}",
+                                bill_no=bill_no, benutzer=benutzer)
+            spaeter = (datetime.now() + timedelta(minutes=WARTEN_MINUTEN)).isoformat(timespec="seconds")
+            store.setzen(bill_no, faellig_ab=spaeter,
+                         fehler=hinweis_dazu(satz.get("fehler"), WARTET_AUF_ANZAHLUNG))
+            return "wartet"
 
     # Gruppenrechnungen nicht automatisch, solange die Gastzuordnung nicht an
     # Daten bestaetigt ist — es sei denn, ein Mensch hat DIESE Rechnung

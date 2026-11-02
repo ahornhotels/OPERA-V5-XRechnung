@@ -1076,6 +1076,32 @@ def hauskontakt(kopf: dict, p: dict) -> dict:
     return kopf
 
 
+def verrechnungszeile(abzug: dict) -> dict:
+    """Eine Position des Verrechnungsbelegs aus einem Abzug je Satz."""
+    netto = round(_zahl(abzug.get("netto")), 2)
+    grund = str(abzug.get("grund") or "Anzahlungsrechnung")
+    return {"itemname": grund.replace("Abzüglich", "Verrechnung", 1), "itemcode": "",
+            "invoicedquantity": 1, "lineextensionamountnet": netto,
+            "lineextensionamount": round(netto + _zahl(abzug.get("steuer")), 2),
+            "priceamount": netto,
+            "classifiedtaxcategoryid": abzug.get("taxcategoryid") or "S",
+            "classifiedtaxcategorypercent": abzug.get("taxcategorypercent") or 0}
+
+
+def steuer_aus_zeilen(zeilen: list[dict]) -> list[dict]:
+    """Steueraufteilung je Kategorie und Satz aus Positionen mit Brutto."""
+    je: dict[tuple, dict] = {}
+    for z in zeilen:
+        schluessel = (z.get("classifiedtaxcategoryid"), z.get("classifiedtaxcategorypercent"))
+        e = je.setdefault(schluessel, {"taxcategoryid": schluessel[0],
+                                       "taxcategorypercent": schluessel[1],
+                                       "taxableamount": 0.0, "taxamount": 0.0})
+        e["taxableamount"] = round(e["taxableamount"] + _zahl(z.get("lineextensionamountnet")), 2)
+        e["taxamount"] = round(e["taxamount"] + _zahl(z.get("lineextensionamount"))
+                               - _zahl(z.get("lineextensionamountnet")), 2)
+    return list(je.values())
+
+
 def anzahlung_zuordnen(anzahlungen: list[dict], zeilen_brutto: float,
                        kopf_brutto: float) -> tuple[list[dict], str]:
     """Welche Anzahlungen gehoeren auf DIESEN Beleg? Gibt (Belege, Befund)
@@ -1311,6 +1337,29 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         kopf["anzahlung_befund"] = anzahlung_befund
     anz_brutto = 0.0 if abzuege else sum(_zahl(a.get("total_gross")) for a in anzahlungen)
 
+    # --- Verrechnungsbeleg (381) ---------------------------------------------
+    # Ein Beleg ohne Leistung, der nur Anzahlungen verrechnet: Die Leistungen
+    # sind auf ein anderes Folio geroutet und dort voll abgerechnet (meist
+    # Gruppen), hier bleibt allein der Abzug, als Guthaben aufs Debitorenkonto.
+    # Gemessen 02.11.2026, 365 Tage: 110 Belege, Zeilensumme 0,00, Kopf genau
+    # minus Summe der Anzahlungsbelege, der Abzug Topf fuer Topf gleich den
+    # Toepfen der Anzahlungsbelege (981 von 981). Er geht als Gutschrift
+    # hinaus: je Anzahlung und Steuersatz eine Position, Verweis auf die
+    # Anzahlungsrechnungen (docs/06_BEFUNDE_LIVE_DB.md, Verrechnungsbeleg).
+    verrechnung: list[dict] = []
+    if (abzuege and not anzahlung_befund and abs(zeilen_brutto) <= 0.02
+            and _zahl(kopf.get("invoicegross")) < -0.02):
+        verrechnung, abzuege = abzuege, []
+        zeilen = [verrechnungszeile(a) for a in verrechnung]
+        steuer = steuer_aus_zeilen(zeilen)
+        zeilen_brutto = sum(_zahl(z.get("lineextensionamount")) for z in zeilen)
+        nummern = ", ".join(str(a.get("billingreferenceid")) for a in anzahlungen)
+        kopf["invoicetypecode"] = "381"
+        kopf["verrechnungsbeleg"] = True
+        kopf["note"] = (f"Verrechnung der Anzahlungsrechnung(en) {nummern}. Die Leistungen "
+                        "sind gesondert abgerechnet.")
+        kopf["gutschrift_zu"] = f" zur Verrechnung der Anzahlungsrechnung(en) {nummern}"
+
     # --- Gutschrift (381) ---------------------------------------------------
     # Eine Gutschrift ist ein Beleg, dessen POSITIONEN zusammen negativ sind,
     # ohne Anzahlung. Nicht der Kopfbetrag entscheidet: Mit Anzahlung ist er
@@ -1357,6 +1406,9 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "invoicenet": zeilen_netto if anz_brutto else _zahl(summen.get("invoicenet")),
         "invoicegross": zeilen_brutto if anz_brutto else _zahl(summen.get("invoicegross")),
     }
+    if verrechnung:
+        totals["invoicenet"] = round(zeilen_netto, 2)
+        totals["invoicegross"] = round(zeilen_brutto, 2)
     totals["invoicetaxtotal"] = round(totals["invoicegross"] - totals["invoicenet"], 2)
     totals["spay_cl"] = _zahl(summen.get("spay_cl"))
 
@@ -1377,15 +1429,21 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "anzahlung_abzuege": abzuege,
         # BG-3 einer Gutschrift: die berichtigte Rechnung, nur wenn eindeutig.
         "bezug": bezug,
+        # Verrechnungsbeleg: der Abzug, aus dem die Positionen gebildet sind —
+        # fuer die Gegenprobe gegen den Kopf (xml_build).
+        "verrechnung": verrechnung,
         # Unabhaengige Vergleichswerte fuer die Vorpruefung: der Rechnungskopf
         # plus die Anzahlungsbelege desselben Folios muss die Zeilensumme ergeben
         # (Folio-Klammer, siehe docs/06_BEFUNDE_LIVE_DB.md).
         "kontrolle": {
-            "kopf_netto": _zahl(summen.get("invoicenet")),
-            "kopf_brutto": _zahl(summen.get("invoicegross")),
+            # Beim Verrechnungsbeleg ist der Kopf das Guthaben (negativ), die
+            # Positionen der Gutschrift sind positiv.
+            "kopf_netto": (-1 if verrechnung else 1) * _zahl(summen.get("invoicenet")),
+            "kopf_brutto": (-1 if verrechnung else 1) * _zahl(summen.get("invoicegross")),
             # Mit Abzug steht die Anzahlung schon unter den Abschlaegen; der Kopf
             # aus OPERA ist dann direkt der Vergleichswert.
-            "anzahlung_netto": 0.0 if abzuege else sum(_zahl(a.get("total_net")) for a in anzahlungen),
+            "anzahlung_netto": 0.0 if (abzuege or verrechnung)
+                               else sum(_zahl(a.get("total_net")) for a in anzahlungen),
             "anzahlung_brutto": anz_brutto,
         },
     }

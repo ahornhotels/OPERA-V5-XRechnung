@@ -3877,8 +3877,93 @@ try:
            and _betrag(_xk, "TaxExclusiveAmount") == 999.95,
            f"eine Anzahlung von 0,05 bleibt ein Abzug und wird nicht weggerundet "
            f"({_betrag(_xk, 'LineExtensionAmount')} / {_betrag(_xk, 'TaxExclusiveAmount')})")
+
+    # Voll angezahlt (0,00) und ueberzahlt (Guthaben) sind gewoehnliche
+    # Schlussrechnungen — vorher als Nullbeleg bzw. negativ angehalten.
+    def _db_kopf(netto, brutto):
+        def _f(sql, parameter=None):
+            kz = sql.splitlines()[0]
+            if "invoice_totals.sql" in kz:
+                return [{"invoicenet": netto, "invoicegross": brutto}]
+            if "invoice_header.sql" in kz:
+                return [{"issuedate": "2026-10-01", "reservierungsnummer": "4711", "invoicegross": brutto,
+                         "invoicenet": netto, "prepaidamount": 0}]
+            return _db_anz19(sql, parameter)
+        return _f
+    _pos19 = {"bucket": 1, "taxableamount": 1000.0, "taxamount": 190.0, "taxcategorypercent": 19,
+              "satz_fehlt": "N"}
+    opera.db.abfrage = _db_kopf(0.0, 0.0)
+    _anz_fall.update(anz_netto=1000.0, anz_brutto=1190.0,
+                     anz_buckets=[{"taxableamount": 1000.0, "taxamount": 190.0, "taxcategorypercent": 19}],
+                     kopf_buckets=[_pos19, {"bucket": 7, "taxableamount": -1000.0, "taxamount": -190.0,
+                                            "taxcategorypercent": None, "satz_fehlt": "J"}])
+    _rv = opera.rechnung(_acfg, 1400102)
+    _xv = xml_build.bauen(_rv).decode()
+    pruefe(_rechnerisch(_rv) == [] and _betrag(_xv, "PayableAmount") == 0.0
+           and _betrag(_xv, "AllowanceTotalAmount") == 1000.0 and "<ubl:Invoice" in _xv,
+           f"voll angezahlt: Schlussrechnung ueber 0,00 geht hinaus ({_rechnerisch(_rv)})")
+    opera.db.abfrage = _db_kopf(-200.0, -238.0)
+    _anz_fall.update(anz_netto=1200.0, anz_brutto=1428.0,
+                     anz_buckets=[{"taxableamount": 1200.0, "taxamount": 228.0, "taxcategorypercent": 19}],
+                     kopf_buckets=[_pos19, {"bucket": 7, "taxableamount": -1200.0, "taxamount": -228.0,
+                                            "taxcategorypercent": None, "satz_fehlt": "J"}])
+    _rue = opera.rechnung(_acfg, 1400103)
+    _xue = xml_build.bauen(_rue).decode()
+    pruefe(_rechnerisch(_rue) == [] and _betrag(_xue, "PayableAmount") == -238.0
+           and "<ubl:Invoice" in _xue,
+           f"ueberzahlt: Schlussrechnung mit Guthaben -238,00 geht hinaus ({_rechnerisch(_rue)})")
+    _anz_fall.update(kopf_buckets=[_pos19, {"bucket": 7, "taxableamount": -1100.0, "taxamount": -209.0,
+                                            "taxcategorypercent": None, "satz_fehlt": "J"}])
+    pruefe(any(h.startswith("Anzahlung: abgesetzt") for h in xml_build.pruefsummen(opera.rechnung(_acfg, 1400103))),
+           "ueberzahlt, aber der Kopf zieht anderes ab: angehalten")
+
+    # Verrechnungsbeleg: keine Leistung, nur der Abzug der Anzahlung.
+    def _db_verr(sql, parameter=None):
+        kz = sql.splitlines()[0]
+        if "invoice_lines.sql" in kz:
+            return [{"lineextensionamount": 0.0, "lineextensionamountnet": 0.0, "invoicedquantity": 1,
+                     "itemname": "Logis", "classifiedtaxcategoryid": "S", "classifiedtaxcategorypercent": 7}]
+        if "invoice_tax.sql" in kz:
+            return []
+        return _db_kopf(-369.75, -440.0)(sql, parameter)
+    opera.db.abfrage = _db_verr
+    _anz_fall.update(anz_netto=369.75, anz_brutto=440.0,
+                     anz_buckets=[{"taxableamount": 369.75, "taxamount": 70.25, "taxcategorypercent": 19}],
+                     kopf_buckets=[dict(_pos19, taxableamount=0.0, taxamount=0.0),
+                                   {"bucket": 6, "taxableamount": -369.75, "taxamount": -70.25,
+                                    "taxcategorypercent": None, "satz_fehlt": "J"}])
+    _vb = opera.rechnung(_acfg, 1400104)
+    _xvb = xml_build.bauen(_vb).decode()
+    pruefe(_vb["header"]["invoicetypecode"] == "381" and _vb["header"].get("verrechnungsbeleg")
+           and not _vb["anzahlung_abzuege"] and len(_vb["lines"]) == 1
+           and _vb["lines"][0]["itemname"] == "Verrechnung Anzahlungsrechnung 1400090 vom 2026-09-20",
+           f"Verrechnungsbeleg: Gutschrift, eine Position je Anzahlung und Satz ({_vb['lines']})")
+    pruefe("<ubl:CreditNote" in _xvb and _betrag(_xvb, "PayableAmount") == 440.0
+           and _betrag(_xvb, "TaxExclusiveAmount") == 369.75 and ">70.25</cbc:TaxAmount>" in _xvb
+           and "<cbc:ID>1400090</cbc:ID>" in _xvb and "AllowanceCharge" not in _xvb,
+           "im XML: CreditNote ueber 440,00 mit Steuer 70,25 und Verweis auf die Anzahlungsrechnung")
+    pruefe(_rechnerisch(_vb) == [], f"Verrechnungsbeleg: Vorpruefung sauber ({_rechnerisch(_vb)})")
+    _anz_fall.update(kopf_buckets=[dict(_pos19, taxableamount=0.0, taxamount=0.0),
+                                   {"bucket": 6, "taxableamount": -300.0, "taxamount": -57.0,
+                                    "taxcategorypercent": None, "satz_fehlt": "J"}])
+    pruefe(any(h.startswith("Anzahlung: abgesetzt") for h in xml_build.pruefsummen(opera.rechnung(_acfg, 1400104))),
+           "Verrechnungsbeleg, dessen Kopf anderes abzieht: angehalten")
+    _anz_fall.update(kopf_buckets=[])
+    pruefe(any("Verrechnungsbeleg ohne Steueraufteilung" in h
+               for h in xml_build.pruefsummen(opera.rechnung(_acfg, 1400104))),
+           "Verrechnungsbeleg ohne Kopf: nicht gegenzupruefen, angehalten")
+    _anz_fall.update(kopf_buckets=[])
 finally:
     opera.db.abfrage = _echt_abf_anz
+# Ohne Anzahlung bleibt ein Beleg ueber 0,00 angehalten.
+_null = json.loads(json.dumps(rechnung))
+_null["totals"].update(invoicegross=0.0)
+pruefe(any(h.startswith("Nullbeleg") for h in xml_build.pruefsummen(_null)),
+       "ohne Anzahlung bleibt ein Nullbeleg angehalten")
+_neg = json.loads(json.dumps(rechnung))
+_neg["totals"].update(invoicegross=-5.0)
+pruefe(any(h.startswith("Negativer Gesamtbetrag") for h in xml_build.pruefsummen(_neg)),
+       "ohne Anzahlung bleibt ein negativer Beleg angehalten")
 _kopf_sql_anz = "\n".join(z.split("--")[0] for z in
                           (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8").splitlines())
 pruefe(":anzahlung_status" not in _kopf_sql_anz and "AS prepaidamount" in _kopf_sql_anz,
@@ -5298,6 +5383,43 @@ _werte_st = {"bill_no": 960090, "issuedate": "2031-01-01", "absender_name": "Hau
 pruefe("960090-S" in _mailer._text(_mailer.STORNO_BETREFF, _werte_st)
        and "960090 vom 2031-01-01" in _mailer._text(_mailer.STORNO_TEXT, _werte_st),
        "Mail zur Stornorechnung nennt beide Nummern")
+
+# --- Schlussrechnung wartet auf ihre Anzahlungsrechnung ---------------------
+_daten_w = {"deposits": [{"billingreferenceid": 960096}, {"billingreferenceid": 960097},
+                         {"billingreferenceid": 960098}]}
+for _nr, _st in ((960096, "bereit"), (960097, "gesendet")):
+    store.rechnung_anlegen({"bill_no": _nr, "resort": "IHRHAUS", "kunde": "A", "total_gross": 1.0}, 0)
+    store.setzen(_nr, status=_st)
+pruefe(ablauf.anzahlungen_offen(_daten_w) == ([960096], []),
+       "offen ist nur die Anzahlungsrechnung in der Arbeitsliste, die noch nicht gesendet ist")
+_echt_rd_w, _echt_send_w = ablauf.rechnungsdaten, _mailer.senden
+_mails_w = []
+ablauf.rechnungsdaten = lambda cfg, bill_no: json.loads(json.dumps(
+    dict(rechnung, positionsart="B", deposits=_daten_w["deposits"])))
+_mailer.senden = lambda cfg, **k: _mails_w.append(k["bill_no"]) or "<id@w>"
+store.rechnung_anlegen({"bill_no": 960095, "resort": "IHRHAUS", "kunde": "S", "total_gross": 119.0}, 0)
+store.setzen(960095, empfaenger="rechnung@firma.example", status="bereit")
+try:
+    _wcfg = json.loads(json.dumps(_vcfg))
+    _vorher_w = store.rechnung(960095)["faellig_ab"]
+    pruefe(ablauf.versenden(_wcfg, 960095, benutzer="automatik") == "wartet" and not _mails_w
+           and store.rechnung(960095)["faellig_ab"] > (_vorher_w or "")
+           and ablauf.WARTET_AUF_ANZAHLUNG in (store.rechnung(960095)["fehler"] or "")
+           and store.rechnung(960095)["status"] == "bereit",
+           "die Automatik wartet auf die Anzahlungsrechnung und versucht es spaeter wieder")
+    store.setzen(960096, status="ignoriert")
+    pruefe(ablauf.versenden(_wcfg, 960095, benutzer="automatik") == "pruefung" and not _mails_w
+           and "960096 ist zurückgelegt" in (store.rechnung(960095)["fehler"] or ""),
+           "ist die Anzahlungsrechnung zurueckgelegt, geht die Schlussrechnung in die Sichtpruefung")
+    store.setzen(960096, status="bereit")
+    store.setzen(960095, status="bereit", fehler=None)
+    ablauf.versenden(_wcfg, 960095, benutzer="k")
+    pruefe(_mails_w == [960095] and store.rechnung(960095)["status"] == "gesendet",
+           "von Hand geht sie trotzdem hinaus — wer sendet, hat es gesehen")
+finally:
+    ablauf.rechnungsdaten, _mailer.senden = _echt_rd_w, _echt_send_w
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no IN (960095, 960096, 960097)")
 
 # B51: Seiten, die auf OPERA, den Validator oder den Mailserver warten, duerfen
 # nicht auf der Ereignisschleife laufen — sonst steht die ganze Oberflaeche.

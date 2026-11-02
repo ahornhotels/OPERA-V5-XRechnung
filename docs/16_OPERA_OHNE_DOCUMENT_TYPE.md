@@ -1,6 +1,6 @@
 # OPERA-Versionen ohne `DOCUMENT_TYPE` und `COMPANY_NAME` — Konzept
 
-Stand: 30.10.2026 · Status: **Entschieden: Jeder gültige Beleg ist eine Rechnung — die Belegart wird nicht mehr gebraucht. Umgesetzt als Testkandidat (Branch `testkandidat-belegarten`): Auswahl, Anzahlungsrechnung, Leistungszeitraum bei PM-Konten, tägliche Nachprüfung mit Aufgabenliste. Betrieb ohne `DOCUMENT_TYPE`/`COMPANY_NAME` umgesetzt (02.11.2026, siehe unten). Stornorechnung aus dem Archiv umgesetzt (02.11.2026, `app/storno.py`). Noch offen: TSE-Nachricht archivieren.**
+Stand: 30.10.2026 · Status: **Entschieden: Jeder gültige Beleg ist eine Rechnung — die Belegart wird nicht mehr gebraucht. Umgesetzt als Testkandidat (Branch `testkandidat-belegarten`): Auswahl, Anzahlungsrechnung, Leistungszeitraum bei PM-Konten, tägliche Nachprüfung mit Aufgabenliste. Betrieb ohne `DOCUMENT_TYPE`/`COMPANY_NAME` umgesetzt (02.11.2026, siehe unten). Stornorechnung aus dem Archiv umgesetzt (02.11.2026, `app/storno.py`). TSE-Nachricht archivieren: entfällt, sie steht in OPERA und ist dort abrufbar (Entscheidung 02.11.2026).**
 
 ## Umsetzung: Betrieb ohne `DOCUMENT_TYPE` und `COMPANY_NAME` (02.11.2026)
 
