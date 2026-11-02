@@ -193,9 +193,15 @@ SELECT f.bill_no                                              AS id,
        -- abgezogen bekommen (gesehen im Haus: 80,00 offen, XRechnung -360,00).
        -- Welcher Anteil auf diesen Beleg entfaellt, bestimmt jetzt
        -- app/opera.py aus der Differenz Zeilensumme - TOTAL_GROSS.
-       NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0) AS prepaidamount,
-       f.total_gross
-         - (NVL(f.cashpay, 0) + NVL(f.ccpay, 0) + NVL(f.deposit, 0)) AS payableamount,
+       --
+       -- DEPOSIT gehoert NICHT dazu: Auf einem Anzahlungsbeleg ist es der
+       -- Belegbetrag selbst (12.011 von 12.011 im Jahr gleich TOTAL_GROSS), die
+       -- Zahlung steht zusaetzlich in CCPAY/CASHPAY — die Anzahlung zaehlte
+       -- doppelt, Zahlbetrag -508,00 statt 0,00. Auf Schlussrechnungen ist es
+       -- nie gefuellt (0 von 49.230). Gemessen 02.11.2026. Was ein
+       -- Anzahlungsbeleg als gezahlt fuehrt, setzt app/opera.py.
+       NVL(f.cashpay, 0) + NVL(f.ccpay, 0)                    AS prepaidamount,
+       f.total_gross - (NVL(f.cashpay, 0) + NVL(f.ccpay, 0))  AS payableamount,
        f.folio_no,
        f.clpay                                                AS city_ledger_betrag
   FROM @SCHEMA@.folio$_tax f

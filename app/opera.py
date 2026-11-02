@@ -1414,6 +1414,12 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
 
     # Erst jetzt, wenn der Gesamtbetrag feststeht: Zahlbetrag daraus ableiten.
     kopf["prepaidamount"] = round(_zahl(kopf.get("prepaidamount")) + anz_brutto, 2)
+    # Ein Anzahlungsbeleg ist bei Ausstellung bezahlt: am bisherigen Haus
+    # 12.011 von 12.011 im Jahr ausgeglichen (Zahlungszeilen = Belegbetrag).
+    # CCPAY/CASHPAY taugen dafuer nicht — Ueberweisung, Paylink, PayPal stehen
+    # dort nicht, das waeren 55 % des Anzahlungsgeldes (gemessen 02.11.2026).
+    if kopf.get("ist_anzahlungsbeleg"):
+        kopf["prepaidamount"] = round(totals["invoicegross"], 2)
     kopf["payableamount"] = round(totals["invoicegross"] - kopf["prepaidamount"], 2)
 
     return {

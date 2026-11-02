@@ -1876,6 +1876,18 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
         _knopf = [z for z in seite.text.splitlines() if 'class="haupt"' in z and "button" in z]
         pruefe(bool(_knopf) and "disabled" not in _knopf[0],
                f"und der Versandknopf ist freigeschaltet ({(_knopf or ['kein Knopf'])[0].strip()[:70]})")
+        # Gutschrift: Betraege auf der Seite mit Minus, klar benannt — im XML positiv.
+        _gs_daten = json.loads(json.dumps(_ohne_adresse))
+        _gs_daten["header"]["invoicetypecode"] = "381"
+        opera.rechnung = lambda cfg, bill_no: json.loads(json.dumps(_gs_daten))
+        _gs_seite = klient.get("/rechnung/1400003").text
+        _netto1 = "%.2f" % _gs_daten["lines"][0]["lineextensionamountnet"]
+        pruefe("Positionen der Gutschrift" in _gs_seite and "Gutschrift gesamt" in _gs_seite
+               and f">-{_netto1}<" in _gs_seite,
+               "Gutschrift: Positionen und Summen mit Minus und als Gutschrift benannt")
+        opera.rechnung = lambda cfg, bill_no: json.loads(json.dumps(_ohne_adresse))
+        pruefe("Positionen der Gutschrift" not in klient.get("/rechnung/1400003").text,
+               "eine Rechnung bleibt, wie sie war")
     finally:
         opera.rechnung, opera.empfaenger = _echt_r, _echt_e
         opera.profil, opera.pruefung, opera.buchungsfirma = _echt_pr, _echt_pf, _echt_bf
@@ -4112,8 +4124,30 @@ try:
            f"die Rueckzahlung einer Anzahlung ist eine Gutschrift ohne den Vermerk ({_abz['header'].get('note')})")
     pruefe(not any("Status" in h for h in xml_build.pruefsummen(_abz)),
            "und sie wird nicht wegen ihres Status DEPOSIT gesperrt")
+    pruefe(_abz["header"]["payableamount"] == 0.0 and _abz["header"]["prepaidamount"] == 119.0,
+           "die Rueckzahlung ist ausgezahlt: zu zahlen 0,00")
+    # Ein Anzahlungsbeleg ist bei Ausstellung bezahlt — gleich auf welchem Weg.
+    # Vorher zaehlte das Feld DEPOSIT (= Belegbetrag) zur Karte dazu: -119,00.
+    for _gezahlt, _weg in ((119.0, "Karte"), (0.0, "Ueberweisung")):
+        def _db_weg(sql, parameter=None, _g=_gezahlt):
+            zeilen = _db_anzahlungsbeleg(sql, parameter)
+            for z in zeilen:
+                if "prepaidamount" in z:
+                    z["prepaidamount"] = _g
+            return zeilen
+        opera.db.abfrage = _db_weg
+        _aw = opera.rechnung(_gcfg, 1400096)
+        _awx = xml_build.bauen(_aw).decode()
+        pruefe(_aw["header"]["prepaidamount"] == 119.0 and _aw["header"]["payableamount"] == 0.0
+               and _betrag(_awx, "PayableAmount") == 0.0 and _betrag(_awx, "PrepaidAmount") == 119.0,
+               f"Anzahlungsrechnung bezahlt per {_weg}: bereits gezahlt 119,00, zu zahlen 0,00 "
+               f"({_aw['header']['prepaidamount']} / {_aw['header']['payableamount']})")
 finally:
     opera.db.abfrage = _echt_abf_ab
+_kopf_sql_dep = "\n".join(z.split("--")[0] for z in
+                          (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8").splitlines())
+pruefe("f.deposit" not in _kopf_sql_dep.lower(),
+       "das Feld DEPOSIT (auf Anzahlungsbelegen der Belegbetrag) zaehlt nicht als gezahlt")
 
 # Am 30.10.2026 an allen 134 negativen Belegen eines Quartals nachgerechnet:
 # 57 echte Gutschriften, 76 ueberzahlte Rechnungen. 27 der Gutschriften haben

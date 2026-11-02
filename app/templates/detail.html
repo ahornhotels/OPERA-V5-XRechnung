@@ -338,7 +338,18 @@
    nebeneinander vergleicht, statt zwischen ihnen zu scrollen. #}
 <div class="spalten weit">
 <section class="karte">
-  <h2>Positionen</h2>
+  {# Gutschrift (381): In der XRechnung stehen ihre Betraege POSITIV — der Typ
+     sagt, dass es eine Gutschrift ist. Auf der Seite verwechselte man sie so
+     mit einer Rechnung. Angezeigt werden sie deshalb mit Minus, wie in OPERA. #}
+  {% set gs = daten and (daten.header or {}).invoicetypecode == '381' %}
+  {% set vz = -1 if gs else 1 %}
+  <h2>{{ 'Positionen der Gutschrift' if gs else 'Positionen' }}</h2>
+  {% if gs %}
+  <p class="hinweis gutschrift"><strong>Gutschrift (Typ 381)</strong> — alle Beträge sind
+     Gutschriften an den Kunden und hier mit Minus gezeigt, wie in OPERA. In der
+     XRechnung selbst stehen sie positiv; dort sagt der Typ 381, dass es eine
+     Gutschrift ist.</p>
+  {% endif %}
   {% if daten %}
   {% if satz.status == 'gesendet' %}
   {# Die Tabelle wird bei jedem Aufruf neu aus OPERA gerechnet, mit der
@@ -386,13 +397,13 @@
           {% if z.bemerkung %}<br><span class="klein">{{ z.bemerkung }}</span>{% endif %}
           {% if z.zeitraum_beginn %}<br><span class="klein">{{ z.zeitraum_beginn }} bis {{ z.zeitraum_ende }}</span>{% endif %}</td>
         <td class="zahl">{{ z.invoicedquantity }}</td>
-        <td class="zahl">{{ '%.2f'|format(z.get('bruttopreis')) if z.get('bruttopreis') is not none else '—' }}</td>
-        <td class="zahl">{{ '%.2f'|format(z.lineextensionamountnet|float) if z.lineextensionamountnet is not none else '0.00' }}</td>
+        <td class="zahl">{{ '%.2f'|format(vz * z.get('bruttopreis')|float) if z.get('bruttopreis') is not none else '—' }}</td>
+        <td class="zahl">{{ '%.2f'|format(vz * z.lineextensionamountnet|float) if z.lineextensionamountnet is not none else '0.00' }}</td>
         <td class="zahl">{{ z.classifiedtaxcategorypercent }} %</td></tr>
     {% endfor %}
     {% for a in (aufbereitet.allowances or []) %}
     <tr><td>—</td><td>Abschlag: {{ a.reason }}</td><td></td><td></td>
-        <td class="zahl">−{{ '%.2f'|format(a.amount|float) }}</td>
+        <td class="zahl">{{ '%.2f'|format(-vz * a.amount|float) }}</td>
         <td class="zahl">{{ a.percent }} %</td></tr>
     {% endfor %}
   </table>
@@ -406,27 +417,27 @@
   {% set t = aufbereitet.totals %}
   <table class="summen">
     <tr><td>Positionen (BT-106)</td>
-        <td class="zahl">{{ '%.2f'|format(t.invoicenet|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(vz * t.invoicenet|float) }}</td></tr>
     {% if (t.allowancetotalamount|default(0)|float) != 0 %}
     <tr><td>Abschläge (BT-107)</td>
-        <td class="zahl">−{{ '%.2f'|format(t.allowancetotalamount|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(-vz * t.allowancetotalamount|float) }}</td></tr>
     {% endif %}
     <tr><td>Netto gesamt (BT-109)</td>
-        <td class="zahl">{{ '%.2f'|format(t.taxexclusiveamount|default(t.invoicenet)|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(vz * t.taxexclusiveamount|default(t.invoicenet)|float) }}</td></tr>
     <tr><td>Umsatzsteuer (BT-110)</td>
-        <td class="zahl">{{ '%.2f'|format(t.invoicetaxtotal|float) }}</td></tr>
-    <tr class="betont"><td>Gesamtbetrag (BT-112)</td>
-        <td class="zahl">{{ '%.2f'|format(t.invoicegross|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(vz * t.invoicetaxtotal|float) }}</td></tr>
+    <tr class="betont"><td>{{ 'Gutschrift gesamt' if gs else 'Gesamtbetrag' }} (BT-112)</td>
+        <td class="zahl">{{ '%.2f'|format(vz * t.invoicegross|float) }}</td></tr>
     {% if (t.prepaidamount|default(0)|float) != 0 %}
     <tr><td>Anzahlung (BT-113)</td>
-        <td class="zahl">−{{ '%.2f'|format(t.prepaidamount|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(-vz * t.prepaidamount|float) }}</td></tr>
     {% endif %}
     {% if (t.roundingamount|default(0)|float) != 0 %}
     <tr><td>Rundungsausgleich (BT-114)</td>
-        <td class="zahl">{{ '%.2f'|format(t.roundingamount|float) }}</td></tr>
+        <td class="zahl">{{ '%.2f'|format(vz * t.roundingamount|float) }}</td></tr>
     {% endif %}
-    <tr class="betont"><td>Zahlbetrag (BT-115)</td>
-        <td class="zahl">{{ '%.2f'|format(t.payableamount|float) }}</td></tr>
+    <tr class="betont"><td>{{ 'An den Kunden' if gs else 'Zahlbetrag' }} (BT-115)</td>
+        <td class="zahl">{{ '%.2f'|format(vz * t.payableamount|float) }}</td></tr>
   </table>
   {% if (t.prepaidamount|default(0)|float) != 0 and (t.payableamount|default(0)|float) == 0 %}
   <p class="hinweis">Zahlbetrag 0,00 — die Rechnung ist durch die Anzahlung
