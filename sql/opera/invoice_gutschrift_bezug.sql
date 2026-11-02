@@ -17,6 +17,13 @@
 --
 -- Interne Umbuchungen (FOLIO_TYPE 'INTERNAL') sind keine Rechnungen an
 -- Kunden, siehe invoice_folio.sql.
+--
+-- Keine Einschraenkung auf DOCUMENT_TYPE 'INVOICE': Jeder gueltige Beleg ist
+-- eine Rechnung, auch Voraus- und Zwischenrechnungen, und eine Gutschrift
+-- kann genau diese berichtigen. Mit dem Filter blieben solche Gutschriften
+-- ohne Verweis (gemessen 02.11.2026, 90 Tage: 150 Gutschriften, 3 gewinnen
+-- einen Verweis, keiner wechselt — bei mehreren Treffern gewinnt weiter der
+-- juengste). Laeuft damit auch in OPERA-Versionen ohne die Spalte.
 
 SELECT o.bill_no                                     AS billingreferenceid,
        TO_CHAR(o.bill_generation_date, 'YYYY-MM-DD') AS billingreferenceissuedate,
@@ -30,7 +37,6 @@ SELECT o.bill_no                                     AS billingreferenceid,
    AND g.folio_no = :folio_no
    AND o.bill_no <> g.bill_no
    AND o.status        = 'OK'
-   AND o.document_type = 'INVOICE'  -- NUR_MIT_DOCUMENT_TYPE
    AND NVL(o.folio_type, '-') <> 'INTERNAL'
    AND o.total_gross   = -g.total_gross
    AND o.bill_generation_date <= g.bill_generation_date

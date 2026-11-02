@@ -17,8 +17,7 @@ nicht mehr nötig):
   Oracle geht (Haken in `db.abfrage`). Nur an Aliasen von `FOLIO$_TAX`:
   - `DOCUMENT_TYPE` → `CAST(NULL AS VARCHAR2(40))`. Folgen: kein Hinweis
     „COPY OF INVOICE“ (die Belegart ist unbekannt); der Gutschrift-Bezug
-    verzichtet auf den Filter `DOCUMENT_TYPE = 'INVOICE'` (Zeile mit Vermerk
-    `NUR_MIT_DOCUMENT_TYPE`), es bleibt `STATUS = 'OK'`.
+    filtert ohnehin nicht nach Belegart (siehe unten).
   - `COMPANY_NAME` → `(SELECT MAX(nr.company_name) FROM NAME_RESERVATION nr
     WHERE nr.resv_name_id = f.resv_name_id)`.
   - Wo die Spalte im SELECT steht, trägt sie ein `AS`, damit der Name bleibt.
@@ -46,11 +45,11 @@ nicht mehr nötig):
     Nummern dieselbe Wahl.
   - Arbeitsliste 90 Tage: 3,4 s statt 1,6 s (zweimal `NAME_RESERVATION` je
     Zeile). Tragbar; nur im Ersatzbetrieb.
-- **Nebenbefund für das bisherige Haus:** Ohne den Filter `DOCUMENT_TYPE =
-  'INVOICE'` fände der Gutschrift-Bezug auch dort 3 Bezüge mehr (Gutschriften
-  auf Voraus- und Zwischenrechnungen), ohne einen bestehenden zu ändern. Das
-  ändert das ausgehende Dokument und ist deshalb nicht umgesetzt — Entscheidung
-  des Hauses.
+- **Gutschrift-Bezug in jedem Haus ohne Belegart-Filter** (Entscheidung
+  02.11.2026): Ohne den Filter `DOCUMENT_TYPE = 'INVOICE'` findet er auch
+  Gutschriften auf Voraus- und Zwischenrechnungen (3 in 90 Tagen), ohne einen
+  bestehenden Bezug zu ändern. Der Filter ist deshalb überall entfernt, nicht
+  nur im Ersatzbetrieb.
 - **Offen im Zielhaus:** wie es `STATUS` schreibt (siehe „Offen“).
 
 ## Entscheidung: Jeder gültige Beleg ist eine Rechnung (30.10.2026, abends)

@@ -4648,8 +4648,10 @@ pruefe(all(not r for _, _, r in _alt_sp.values()),
 pruefe(all(opera.ohne_spalten(r, frozenset(), "OPERA") == r for r, _, _ in _alt_sp.values()),
        "mit beiden Spalten bleibt jede Abfrage unveraendert")
 _gb = _alt_sp["invoice_gutschrift_bezug.sql"][1]
-pruefe("o.status        = 'OK'" in _gb and "document_type" not in _gb.lower(),
-       "Gutschrift-Bezug ohne DOCUMENT_TYPE: der Belegart-Filter faellt weg, der Status bleibt")
+_gb_ohne_k = "\n".join(z.split("--")[0] for z in _alt_sp["invoice_gutschrift_bezug.sql"][0].splitlines())
+pruefe("o.status        = 'OK'" in _gb and "document_type" not in _gb_ohne_k.lower(),
+       "Gutschrift-Bezug filtert nicht nach Belegart (auch Voraus- und Zwischenrechnungen), "
+       "nur nach Status")
 _fol = _alt_sp["invoice_folio.sql"][1]
 pruefe("CAST(NULL" not in _fol and "ORDER BY" in _fol and "f.folio_no DESC" in _fol,
        "Folio-Wahl ohne DOCUMENT_TYPE: das Kriterium faellt ganz weg, statt tot stehen zu bleiben")
