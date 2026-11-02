@@ -41,7 +41,7 @@ logging.basicConfig(
 log = logging.getLogger("xrechnung")
 seiten = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
-OEFFENTLICH = {"/login", "/health", "/static"}
+OEFFENTLICH = {"/login", "/health", "/static", "/favicon.ico"}
 
 
 @asynccontextmanager
@@ -74,6 +74,13 @@ async def lebenszyklus(app: FastAPI):
 
 
 app = FastAPI(title="OPERA XRechnung", lifespan=lebenszyklus)
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    """Browser fragen das Symbol auch ohne Verweis im Kopf am Wurzelpfad ab;
+    ohne diese Route bekamen sie die Umleitung zur Anmeldung."""
+    return RedirectResponse("/static/favicon.ico", status_code=301)
+
+
 app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent / "static")), name="static")
 
 # Das Erscheinungsbild des Hauses liegt im BESTAND, nicht im Programm — es

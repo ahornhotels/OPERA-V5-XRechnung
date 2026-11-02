@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>OPERA XRechnung</title>
+  <rect width="64" height="64" rx="12" fill="#3a5a78"/>
+  <path d="M28 17 53 47M53 17 28 47" stroke="#fff" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="14" cy="42" r="5.7" fill="none" stroke="#cfe0ef" stroke-width="3.6"/>
+</svg>

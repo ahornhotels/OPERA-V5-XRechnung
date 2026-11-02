@@ -1705,6 +1705,11 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     pruefe(klient.get("/health").status_code == 200, "/health erreichbar")
     pruefe(klient.get("/", follow_redirects=False).status_code == 303, "ohne Anmeldung Umleitung")
     pruefe(klient.get("/login").status_code == 200, "Anmeldeseite laedt")
+    _ico = klient.get("/favicon.ico")
+    pruefe(_ico.status_code == 200 and _ico.content[:4] == b"\x00\x00\x01\x00"
+           and klient.get("/static/favicon.svg").status_code == 200
+           and 'href="/static/favicon.svg"' in klient.get("/login").text,
+           "Symbol ohne Anmeldung abrufbar, ICO und SVG, im Kopf der Seiten verlinkt")
     antwort = klient.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"},
                           follow_redirects=False)
     pruefe(antwort.status_code == 303 and "sitzung" in antwort.cookies, "Anmeldung setzt Sitzung")
