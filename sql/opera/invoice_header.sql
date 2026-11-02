@@ -119,7 +119,7 @@ SELECT f.bill_no                                              AS id,
        TO_CHAR(NVL(resv.end_date,   f.business_date),   'YYYY-MM-DD') AS enddate,
        TO_CHAR(f.bill_start_date, 'YYYY-MM-DD')               AS folio_beginn,
        TO_CHAR(f.business_date,   'YYYY-MM-DD')               AS folio_ende,
-       f.document_type,
+       f.document_type                               AS document_type,
        -- Der Belegstatus wird bei JEDEM Erzeugen neu gelesen, nicht nur beim
        -- Einlesen: Ein Beleg, der waehrend der Wartezeit in OPERA storniert
        -- wird (VOID), faellt aus der Einleseliste heraus und wurde sonst

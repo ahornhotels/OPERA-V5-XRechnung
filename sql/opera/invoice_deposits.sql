@@ -37,7 +37,7 @@
 
 SELECT d.bill_no                                     AS billingreferenceid,
        TO_CHAR(d.bill_generation_date, 'YYYY-MM-DD') AS billingreferenceissuedate,
-       d.document_type,
+       d.document_type                               AS document_type,
        d.status,
        d.total_net,
        d.total_gross,

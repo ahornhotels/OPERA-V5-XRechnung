@@ -4629,6 +4629,71 @@ _liste_ohne_k = "\n".join(z.split("--")[0] for z in _liste_sql.splitlines())
 pruefe("document_type   = 'INVOICE'" not in _liste_ohne_k and ":anzahlung_status" in _liste_ohne_k
        and "'COPY OF INVOICE'" not in _liste_ohne_k,
        "invoice_list.sql waehlt nicht nach Belegart, nimmt Anzahlungsbelege und auch 'COPY OF INVOICE'")
+
+# Aeltere OPERA ohne FOLIO$_TAX.DOCUMENT_TYPE / COMPANY_NAME: Die Abfragen
+# laufen mit Ersatz (docs/16_OPERA_OHNE_DOCUMENT_TYPE.md).
+_beide = frozenset({"DOCUMENT_TYPE", "COMPANY_NAME"})
+_alt_sp = {}
+for _p in sorted((BASE / "sql" / "opera").glob("*.sql")):
+    _roh = _p.read_text(encoding="utf-8").replace("@SCHEMA@", "OPERA")
+    _neu = opera.ohne_spalten(_roh, _beide, "OPERA")
+    _ohne_k = "\n".join(z.split("--")[0] for z in _neu.splitlines())
+    _alias = {a.lower() for a in opera._FOLIO_ALIAS.findall(_ohne_k)}
+    _rest = [m.group(0) for m in _re0.finditer(r"(?i)\b(\w+)\.(document_type|company_name)\b", _ohne_k)
+             if m.group(1).lower() in _alias]
+    _alt_sp[_p.name] = (_roh, _neu, _rest)
+pruefe(all(not r for _, _, r in _alt_sp.values()),
+       "ohne die Spalten nennt keine Abfrage mehr FOLIO$_TAX.DOCUMENT_TYPE oder COMPANY_NAME: "
+       + str({k: r for k, (_, _, r) in _alt_sp.items() if r}))
+pruefe(all(opera.ohne_spalten(r, frozenset(), "OPERA") == r for r, _, _ in _alt_sp.values()),
+       "mit beiden Spalten bleibt jede Abfrage unveraendert")
+_gb = _alt_sp["invoice_gutschrift_bezug.sql"][1]
+pruefe("o.status        = 'OK'" in _gb and "document_type" not in _gb.lower(),
+       "Gutschrift-Bezug ohne DOCUMENT_TYPE: der Belegart-Filter faellt weg, der Status bleibt")
+_fol = _alt_sp["invoice_folio.sql"][1]
+pruefe("CAST(NULL" not in _fol and "ORDER BY" in _fol and "f.folio_no DESC" in _fol,
+       "Folio-Wahl ohne DOCUMENT_TYPE: das Kriterium faellt ganz weg, statt tot stehen zu bleiben")
+_kopf_alt = _alt_sp["invoice_header.sql"][1]
+pruefe("OPERA.name_reservation nr WHERE nr.resv_name_id = f.resv_name_id" in _kopf_alt
+       and "CAST(NULL AS VARCHAR2(40)) " in _kopf_alt and "AS document_type" in _kopf_alt,
+       "Kopf ohne die Spalten: Firma aus der Reservierung, Belegart leer, Spaltenname bleibt")
+_nur_dt = opera.ohne_spalten(_alt_sp["invoice_list.sql"][0], frozenset({"DOCUMENT_TYPE"}), "OPERA")
+pruefe("f.company_name" in _nur_dt and "f.document_type" not in _nur_dt,
+       "fehlt nur DOCUMENT_TYPE, bleibt COMPANY_NAME die echte Spalte")
+for _f in _alt_sp:
+    if "@SPALTE@" in _alt_sp[_f][0]:
+        continue
+    pruefe(opera._bindnamen(_alt_sp[_f][1]) == opera._bindnamen(_alt_sp[_f][0]),
+           f"{_f}: der Ersatz aendert die Bindvariablen nicht")
+
+_db_vorher_sp = opera.db.abfrage
+_gefragt_sp = []
+def _katalog(spalten):
+    def _f(sql, parameter=None):
+        _gefragt_sp.append((sql, parameter))
+        return [{"column_name": s} for s in spalten]
+    return _f
+opera._spaltenstand.clear()
+opera.db.abfrage = _katalog(["BILL_NO", "STATUS", "RESV_NAME_ID"])
+pruefe(opera.fehlende_spalten(_bcfg) == _beide, "Katalog ohne die Spalten: beide fehlen")
+opera.fehlende_spalten(_bcfg)
+pruefe(len(_gefragt_sp) == 1 and "all_tab_columns" in _gefragt_sp[0][0]
+       and _gefragt_sp[0][1] == {"besitzer": opera._schema(_bcfg).upper()},
+       "der Katalog wird einmal je Verbindung gefragt, mit dem Schema als Besitzer")
+opera._spaltenstand.clear()
+opera.db.abfrage = _katalog(["BILL_NO", "DOCUMENT_TYPE", "COMPANY_NAME"])
+pruefe(opera.fehlende_spalten(_bcfg) == frozenset(), "Katalog mit den Spalten: nichts fehlt")
+opera._spaltenstand.clear()
+opera.db.abfrage = _katalog([])
+pruefe(opera.fehlende_spalten(_bcfg) == frozenset(),
+       "Katalog kennt die Tabelle nicht: kein Ersatz, ein echter Fehler bleibt sichtbar")
+_gefragt_sp.clear()
+pruefe(opera._umschreiben("SELECT 1 FROM dual") == "SELECT 1 FROM dual" and not _gefragt_sp,
+       "eine Abfrage ohne die Spalten fragt den Katalog nicht")
+opera._spaltenstand.clear()
+opera.db.abfrage = _db_vorher_sp
+pruefe(opera.db.umschreiben is opera._umschreiben, "der Haken in db.abfrage ist gesetzt")
+
 _echt_k9, _echt_e9 = opera.kandidaten, opera.empfaenger
 from datetime import date as _d9, timedelta as _tdd9
 _morgen9 = (_d9.today() + _tdd9(days=1)).isoformat()

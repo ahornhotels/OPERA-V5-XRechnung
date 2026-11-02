@@ -41,12 +41,12 @@ SELECT f.bill_no,
        -- Ueber den NAMEN geht das nicht: Belege ohne Kundennamen landeten sonst
        -- alle in einem Topf, 28 Stueck von verschiedenen Kunden.
        NVL(f.payee_name_id, f.name_id)               AS name_id,
-       f.company_name,
+       f.company_name                                AS company_name,
        -- Fuer die Spalte "Kunde" der Arbeitsliste. Fehlte, dann blieb bei
        -- Belegen ohne Firmennamen die Spalte leer.
        f.payee_name,
        f.status                                      AS beleg_status,
-       f.document_type,
+       f.document_type                               AS document_type,
        f.fiscal_bill_no,
        -- Platzhalter fuer das benutzerdefinierte Kennzeichen an der
        -- Firmenkartei. app/opera.py ersetzt "NULL AS erechnung_kennzeichen"

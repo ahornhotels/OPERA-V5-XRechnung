@@ -29,7 +29,7 @@ SELECT f.folio_no,
  WHERE f.resort  = :resort
    AND f.bill_no = :bill_no
  ORDER BY CASE f.folio_type WHEN 'TSE_FOLIO' THEN 0 WHEN 'INTERNAL' THEN 2 ELSE 1 END,
-          CASE WHEN f.status = 'OK' AND f.document_type IS NOT NULL THEN 0 ELSE 1 END,
+          CASE WHEN f.status = 'OK' AND f.document_type IS NOT NULL THEN 0 ELSE 1 END,  -- NUR_MIT_DOCUMENT_TYPE
           f.bill_generation_date DESC,
           f.folio_no DESC
  FETCH FIRST 1 ROW ONLY

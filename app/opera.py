@@ -49,6 +49,80 @@ def _sql(name: str, cfg: dict | None = None) -> str:
     return _cache[name].replace("@SCHEMA@", _schema(cfg))
 
 
+# Aeltere OPERA-Versionen ohne FOLIO$_TAX.DOCUMENT_TYPE und COMPANY_NAME
+# (beide kamen mit 5.0.06.25 E00007, docs/16_OPERA_OHNE_DOCUMENT_TYPE.md).
+#
+# Die Abfragen bleiben, wie sie sind. Fehlt eine Spalte, wird sie vor dem
+# Ausfuehren ersetzt:
+# - DOCUMENT_TYPE durch NULL. Entschieden wird ohnehin nicht mehr nach
+#   Belegart — jeder gueltige Beleg ist eine Rechnung. Die Spalte liefert nur
+#   noch den Hinweis auf „COPY OF INVOICE“ und den Filter des
+#   Gutschrift-Bezugs; Zeilen, die ohne sie nichts bedeuten, tragen den
+#   Vermerk NUR_MIT_DOCUMENT_TYPE und fallen weg.
+# - COMPANY_NAME durch den Firmennamen an der Reservierung. Am bisherigen Haus
+#   gemessen: gefuellt genau dann, wenn die Reservierung eine Firma hat,
+#   ohne Ausnahme in 8.837 Rechnungen.
+#
+# Keine Einstellung: Die Datenbank weiss, welche Spalten sie hat. Eine falsch
+# gesetzte Einstellung gaebe ORA-00904 oder den Ersatz in einem Haus, das die
+# echte Spalte hat.
+ERSETZBARE_SPALTEN = ("DOCUMENT_TYPE", "COMPANY_NAME")
+_spaltenstand: dict[tuple, frozenset] = {}
+_FOLIO_ALIAS = re.compile(r"(?i)\bfolio\$_tax\s+(?!where\b|on\b|join\b)([a-z][a-z0-9_]*)")
+
+
+def fehlende_spalten(cfg: dict | None = None) -> frozenset:
+    """Welche der ersetzbaren Spalten fehlen FOLIO$_TAX in dieser Datenbank?
+    Einmal je Verbindung gefragt (ALL_TAB_COLUMNS, nur lesend). Kennt der
+    Katalog die Tabelle gar nicht, gilt nichts als fehlend — dann bleibt die
+    Abfrage unveraendert, und ein echter Fehler zeigt sich als solcher."""
+    schema = _schema(cfg)
+    schluessel = (schema, id(db._pool))
+    if schluessel not in _spaltenstand:
+        zeilen = db.abfrage(
+            "SELECT column_name FROM all_tab_columns "
+            "WHERE owner = :besitzer AND table_name = 'FOLIO$_TAX'",
+            {"besitzer": schema.upper()})
+        vorhanden = {str(z.get("column_name") or "").upper() for z in zeilen}
+        fehlt = frozenset(s for s in ERSETZBARE_SPALTEN if vorhanden and s not in vorhanden)
+        if fehlt:
+            log.warning("FOLIO$_TAX hat keine Spalte %s (aeltere OPERA-Version) — "
+                        "die Abfragen laufen mit Ersatz", ", ".join(sorted(fehlt)))
+        _spaltenstand.clear()
+        _spaltenstand[schluessel] = fehlt
+    return _spaltenstand[schluessel]
+
+
+def ohne_spalten(sql: str, fehlt, schema: str) -> str:
+    """Ersetzt die fehlenden Spalten in einer Abfrage, nur an Aliasen von
+    FOLIO$_TAX. Eine Spalte, die im SELECT steht, muss dort ein AS tragen,
+    damit der Name nach dem Ersetzen bleibt."""
+    if not fehlt:
+        return sql
+    if "DOCUMENT_TYPE" in fehlt:
+        sql = "\n".join(z for z in sql.splitlines() if "NUR_MIT_DOCUMENT_TYPE" not in z)
+    aliase = set(a.lower() for a in _FOLIO_ALIAS.findall(sql))
+    for alias in aliase:
+        if "DOCUMENT_TYPE" in fehlt:
+            sql = re.sub(rf"(?i)\b{alias}\.document_type\b", "CAST(NULL AS VARCHAR2(40))", sql)
+        if "COMPANY_NAME" in fehlt:
+            sql = re.sub(rf"(?i)\b{alias}\.company_name\b",
+                         f"(SELECT MAX(nr.company_name) FROM {schema}.name_reservation nr "
+                         f"WHERE nr.resv_name_id = {alias}.resv_name_id)", sql)
+    return sql
+
+
+def _umschreiben(sql: str) -> str:
+    """Haken fuer db.abfrage: nur Abfragen, die eine der Spalten nennen."""
+    if not re.search(r"(?i)\.(document_type|company_name)\b|NUR_MIT_DOCUMENT_TYPE", sql):
+        return sql
+    cfg = config.laden()
+    return ohne_spalten(sql, fehlende_spalten(cfg), _schema(cfg))
+
+
+db.umschreiben = _umschreiben
+
+
 def _zahl(wert) -> float:
     if wert is None:
         return 0.0

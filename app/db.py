@@ -12,6 +12,10 @@ log = logging.getLogger(__name__)
 _pool: oracledb.ConnectionPool | None = None
 ABFRAGE_GRENZE_MS = 120_000
 _thick = False
+# Passt eine Abfrage an die Datenbank an, bevor sie laeuft (gesetzt von
+# opera.py: fehlende Spalten aelterer OPERA-Versionen). Hier nur der Haken,
+# damit jede Abfrage ihn durchlaeuft, gleich wo sie herkommt.
+umschreiben = None
 
 
 def start(cfg: dict) -> None:
@@ -67,6 +71,8 @@ def abfrage(sql: str, params: dict | None = None) -> list[dict]:
     """Fuehrt ein SELECT aus und liefert Dicts mit kleingeschriebenen Schluesseln.
     Es werden ausschliesslich SELECTs abgesetzt — die App schreibt nie in OPERA."""
     sicherstellen()
+    if umschreiben is not None:
+        sql = umschreiben(sql)
     with _pool.acquire() as con:
         # Ohne Grenze haengt eine Abfrage, die in OPERA nicht zurueckkommt
         # (Sperre, Netz weg ohne Abbruch), den aufrufenden Thread auf

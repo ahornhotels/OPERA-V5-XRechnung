@@ -1,6 +1,57 @@
 # OPERA-Versionen ohne `DOCUMENT_TYPE` und `COMPANY_NAME` — Konzept
 
-Stand: 30.10.2026 · Status: **Entschieden: Jeder gültige Beleg ist eine Rechnung — die Belegart wird nicht mehr gebraucht. Umgesetzt als Testkandidat (Branch `testkandidat-belegarten`): Auswahl, Anzahlungsrechnung, Leistungszeitraum bei PM-Konten, tägliche Nachprüfung mit Aufgabenliste. Noch offen: Stornorechnung aus dem Archiv, TSE-Nachricht archivieren, Betrieb ohne `DOCUMENT_TYPE`.**
+Stand: 30.10.2026 · Status: **Entschieden: Jeder gültige Beleg ist eine Rechnung — die Belegart wird nicht mehr gebraucht. Umgesetzt als Testkandidat (Branch `testkandidat-belegarten`): Auswahl, Anzahlungsrechnung, Leistungszeitraum bei PM-Konten, tägliche Nachprüfung mit Aufgabenliste. Betrieb ohne `DOCUMENT_TYPE`/`COMPANY_NAME` umgesetzt (02.11.2026, siehe unten). Noch offen: Stornorechnung aus dem Archiv, TSE-Nachricht archivieren.**
+
+## Umsetzung: Betrieb ohne `DOCUMENT_TYPE` und `COMPANY_NAME` (02.11.2026)
+
+Seit der Entscheidung unten braucht die Anwendung die Belegart nicht mehr,
+um zu entscheiden. Damit ist der Ersatzweg viel kleiner als im Konzept
+weiter unten (Abschnitt „Konzept“, Ableitung aus `ADVANCE_BILL_YN` usw. —
+nicht mehr nötig):
+
+- **Erkennen:** Beim ersten Zugriff je Verbindung fragt die Anwendung
+  `ALL_TAB_COLUMNS`, welche Spalten `FOLIO$_TAX` hat (`opera.fehlende_spalten`).
+  Keine Einstellung. Kennt der Katalog die Tabelle gar nicht, wird nichts
+  ersetzt — ein echter Fehler bleibt dann sichtbar.
+- **Ersetzen:** Jede Abfrage läuft durch `opera.ohne_spalten`, bevor sie an
+  Oracle geht (Haken in `db.abfrage`). Nur an Aliasen von `FOLIO$_TAX`:
+  - `DOCUMENT_TYPE` → `CAST(NULL AS VARCHAR2(40))`. Folgen: kein Hinweis
+    „COPY OF INVOICE“ (die Belegart ist unbekannt); der Gutschrift-Bezug
+    verzichtet auf den Filter `DOCUMENT_TYPE = 'INVOICE'` (Zeile mit Vermerk
+    `NUR_MIT_DOCUMENT_TYPE`), es bleibt `STATUS = 'OK'`.
+  - `COMPANY_NAME` → `(SELECT MAX(nr.company_name) FROM NAME_RESERVATION nr
+    WHERE nr.resv_name_id = f.resv_name_id)`.
+  - Wo die Spalte im SELECT steht, trägt sie ein `AS`, damit der Name bleibt.
+- **Sichtbar:** „Datenbank testen“ nennt die ältere Version und den Ersatz.
+- **Vorsicht beim Start:** Beim ersten Einlesen gehen alle Belege des
+  Zeitfensters, die nicht als Endrechnung erkennbar sind, mit dem Hinweis
+  „vor der Umstellung“ in die Sichtprüfung. Ohne `DOCUMENT_TYPE` ist das jeder
+  Beleg des Altbestands — gewollt.
+- **Geprüft:** Alle 19 Abfragen nach dem Ersatz gegen den Strukturexport des
+  Zielhauses abgeglichen: keine fehlende Spalte (ohne Ersatz scheitern 8).
+  Selbsttest deckt Erkennung, Ersatz und unveränderte Abfragen bei
+  vorhandenen Spalten ab.
+- **Am bisherigen Haus gemessen** (02.11.2026, 90 Tage; die umgeschriebenen
+  Abfragen benutzen die Spalten nicht, laufen dort also als echter Test):
+  - Alle 8 betroffenen Abfragen parsen.
+  - Firmenname: 14.547 Belege, kein Beleg verliert den Namen; 57 bekommen
+    einen (Anzahlungsbelege), 54 haben einen anderen. Auf der Rechnung kommt
+    davon nichts an: Der Kundenname kommt aus Konto oder `PAYEE_NAME`; nur
+    1 Beleg fiele auf den Firmennamen zurück, und dort sind beide gleich.
+    Wirkung nur auf den Firmenbezug: 56 Belege rücken von „-“ auf
+    „Reservierung“, keiner verliert ihn.
+  - Gutschrift-Bezug ohne den Filter: 150 Gutschriften, in 18 Fällen derselbe
+    Bezug, 3 gewinnen einen (auf Voraus- bzw. Zwischenrechnung), 0 wechseln.
+  - Folio-Wahl: das Belegart-Kriterium fällt weg (Vermerk); in 15.339
+    Nummern dieselbe Wahl.
+  - Arbeitsliste 90 Tage: 3,4 s statt 1,6 s (zweimal `NAME_RESERVATION` je
+    Zeile). Tragbar; nur im Ersatzbetrieb.
+- **Nebenbefund für das bisherige Haus:** Ohne den Filter `DOCUMENT_TYPE =
+  'INVOICE'` fände der Gutschrift-Bezug auch dort 3 Bezüge mehr (Gutschriften
+  auf Voraus- und Zwischenrechnungen), ohne einen bestehenden zu ändern. Das
+  ändert das ausgehende Dokument und ist deshalb nicht umgesetzt — Entscheidung
+  des Hauses.
+- **Offen im Zielhaus:** wie es `STATUS` schreibt (siehe „Offen“).
 
 ## Entscheidung: Jeder gültige Beleg ist eine Rechnung (30.10.2026, abends)
 

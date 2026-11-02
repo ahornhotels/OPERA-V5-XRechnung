@@ -1117,13 +1117,19 @@ def dbtest(request: Request):
         cfg = config.laden()
         banner = db.pruefen(cfg)
         # Nicht nur die Verbindung: Passen die Abfragen zu dieser OPERA-Version?
+        opera._spaltenstand.clear()
         befunde = opera.abfragen_pruefen(cfg)
+        fehlt = opera.fehlende_spalten(cfg)
+        modus = (" Ältere OPERA-Version ohne " + " und ".join(sorted(fehlt))
+                 + " in FOLIO$_TAX — die Anwendung arbeitet mit Ersatz "
+                 "(Firma aus der Reservierung, ohne Belegart)." if fehlt else "")
         if befunde:
             meldung = (f"Verbindung steht ({banner}), aber {len(befunde)} Abfrage(n) passen nicht "
                        f"zu dieser OPERA-Datenbank — in diesem Punkt wird sie nicht unterstützt: "
-                       + " · ".join(befunde))
+                       + " · ".join(befunde) + modus)
         else:
-            meldung = f"Verbindung steht: {banner}. Alle Abfragen passen zu dieser OPERA-Datenbank."
+            meldung = (f"Verbindung steht: {banner}. Alle Abfragen passen zu dieser "
+                       f"OPERA-Datenbank.{modus}")
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)

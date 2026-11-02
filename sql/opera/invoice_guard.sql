@@ -18,7 +18,7 @@
 --   Anzahlungs-Codes) lag die Quote bei 353 von 353.
 
 SELECT f.bill_no,
-       f.document_type,
+       f.document_type                               AS document_type,
        f.status,
        f.total_net,
        f.total_gross,

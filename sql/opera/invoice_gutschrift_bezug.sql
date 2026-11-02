@@ -30,7 +30,7 @@ SELECT o.bill_no                                     AS billingreferenceid,
    AND g.folio_no = :folio_no
    AND o.bill_no <> g.bill_no
    AND o.status        = 'OK'
-   AND o.document_type = 'INVOICE'
+   AND o.document_type = 'INVOICE'  -- NUR_MIT_DOCUMENT_TYPE
    AND NVL(o.folio_type, '-') <> 'INTERNAL'
    AND o.total_gross   = -g.total_gross
    AND o.bill_generation_date <= g.bill_generation_date
