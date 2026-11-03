@@ -7,7 +7,7 @@
     <a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Zur Zahlungsanforderung</a>
   </div>
 </div>
-<p class="hinweis">Logo und Texte des Schreibens und der Mail. Anschrift, Beträge,
+<p class="hinweis">Logo, Texte und Anordnung des Schreibens und der Mail. Anschrift, Beträge,
 Bankverbindung und die Hausdaten in der Fußzeile kommen weiter aus OPERA und der
 Konfiguration. Gespeichert wird im Bestand — eine Aktualisierung lässt die Vorlage
 unberührt.</p>
@@ -37,6 +37,16 @@ unberührt.</p>
   Seitenverhältnis bleibt. Transparente PNGs gehen. Für eine saubere Darstellung reichen
   600 Pixel Breite.</p>
 
+  <h2>Nummernkreis</h2>
+  <p>Die nächste Zahlungsanforderung erhält <strong>{{ naechste or '—' }}</strong>.</p>
+  <form method="post" action="/zahlungsanforderung/vorlage/nummer">
+    <label>Nächste laufende Nummer{% if werte.nk_jaehrlich == 'ja' %} in diesem Jahr{% endif %}
+      <input type="number" name="naechste" value="{{ naechste_zahl }}" min="1" required></label>
+    <div class="knoepfe"><button>Setzen</button></div>
+  </form>
+  <p class="klein">Zum Anschluss an eine bisherige Zählung. Schon vergebene Nummern werden
+  übersprungen. Muster, Stellen und Jahreswechsel stehen rechts unter „Nummernkreis“.</p>
+
   <h2>Platzhalter</h2>
   <p class="klein">In allen Texten einsetzbar, mit geschweiften Klammern:</p>
   <table class="auswahl">
@@ -47,7 +57,7 @@ unberührt.</p>
 </section>
 
 <section class="karte">
-  <h2>Texte</h2>
+  <h2>Texte und Anordnung</h2>
   <form method="post" action="/zahlungsanforderung/vorlage" id="texte">
     <label>Titel
       <input name="titel" value="{{ werte.titel }}" maxlength="{{ laengen.titel }}" required></label>
@@ -63,6 +73,49 @@ unberührt.</p>
       <textarea name="fusszeile" rows="2" maxlength="{{ laengen.fusszeile }}">{{ werte.fusszeile }}</textarea></label>
     <p class="klein">Darüber stehen immer Firmierung mit USt-IdNr., Anschrift und Kontakt
     des Hauses.</p>
+    <h3>Nummernkreis</h3>
+    <label>Muster — {jahr} wird das Jahr, {nr} die laufende Nummer
+      <input name="nk_muster" value="{{ werte.nk_muster }}" maxlength="40" required></label>
+    <table class="auswahl anordnung">
+      <tr><td>Stellen der laufenden Nummer</td>
+          <td><input type="number" name="nk_stellen" value="{{ werte.nk_stellen }}" min="1" max="8" style="width:5.5rem"></td></tr>
+      <tr><td>Jedes Jahr neu bei 1 beginnen</td>
+          <td><select name="nk_jaehrlich"><option value="ja" {{ 'selected' if werte.nk_jaehrlich == 'ja' }}>ja</option>
+              <option value="nein" {{ 'selected' if werte.nk_jaehrlich == 'nein' }}>nein, fortlaufend</option></select></td></tr>
+    </table>
+    <p class="klein">Beispiel: „ZA-{jahr}-{nr}“ mit 4 Stellen ergibt ZA-2026-0001, ZA-2026-0002 …</p>
+
+    <h3>Anordnung</h3>
+    {% macro wahl(name, optionen) %}<select name="{{ name }}">{% for k, text in optionen.items() %}<option value="{{ k }}" {{ 'selected' if werte[name]|string == k }}>{{ text }}</option>{% endfor %}</select>{% endmacro %}
+    {% macro zahl(name, schritt=1) %}<input type="number" name="{{ name }}" value="{{ werte[name] }}" min="{{ regeln[name][0] }}" max="{{ regeln[name][1] }}" step="{{ schritt }}" style="width:5.5rem">{% endmacro %}
+    <table class="auswahl anordnung">
+      <tr><td><strong>Logo</strong></td>
+          <td>{{ wahl('logo_position', ausrichtungen) }} oben, ab {{ zahl('logo_oben') }} mm von oben,
+              höchstens {{ zahl('logo_breite') }} × {{ zahl('logo_hoehe') }} mm</td></tr>
+      <tr><td><strong>Hausname</strong></td>
+          <td>{{ wahl('kopf_position', ausrichtungen) }} — auf derselben Seite wie das Logo
+              rückt er darunter</td></tr>
+      <tr><td><strong>Anschrift</strong></td>
+          <td>{{ wahl('anschrift_seite', {'links': 'links', 'rechts': 'rechts'}) }}, ab
+              {{ zahl('anschrift_oben') }} mm von oben; Nummer, Datum und Kundennummer stehen
+              auf der anderen Seite</td></tr>
+      {% for feld, name in [('titel', 'Titel'), ('einleitung', 'Einleitung'), ('zahlungstext', 'Zahlungssatz'),
+                            ('hinweis', 'Hinweis'), ('schlusstext', 'Schlusstext'), ('fuss', 'Fußzeile')] %}
+      <tr><td><strong>{{ name }}</strong></td>
+          <td>{{ wahl(feld ~ '_ausrichtung', ausrichtungen) }}, Schriftgröße
+              {{ zahl(feld ~ '_groesse', 0.5) }} pt</td></tr>
+      {% endfor %}
+    </table>
+    <p class="klein">Reihenfolge und Abstand der Blöcke unter dem Titel (1 = zuerst):</p>
+    <table class="auswahl anordnung">
+      {% for block, name in bloecke.items() %}
+      <tr><td>{{ zahl('reihe_' ~ block) }}</td><td><strong>{{ name }}</strong></td>
+          <td>Abstand davor {{ zahl('abstand_' ~ block, 0.5) }} mm</td></tr>
+      {% endfor %}
+    </table>
+    <p class="klein">Beträge und Bankverbindung bleiben als Tabelle links mit Beträgen
+    rechtsbündig. Passt etwas nicht mehr auf die Seite, sagt das die Vorschau.</p>
+
     <h3>Mail</h3>
     <label>Betreff
       <input name="mail_betreff" value="{{ werte.mail_betreff }}" maxlength="{{ laengen.mail_betreff }}" required></label>
@@ -72,7 +125,7 @@ unberührt.</p>
       <button class="haupt">Speichern</button>
       <button formaction="/zahlungsanforderung/vorlage/muster" formtarget="_blank">Muster-PDF ansehen</button>
       <button name="aktion" value="vorgabe"
-              onclick="return confirm('Alle Texte auf die Vorgaben zurücksetzen? Das Logo bleibt.')">Vorgaben wiederherstellen</button>
+              onclick="return confirm('Alle Texte, die Anordnung und das Muster des Nummernkreises auf die Vorgaben zurücksetzen? Logo und Zählerstand bleiben.')">Vorgaben wiederherstellen</button>
     </div>
     <p class="klein">„Muster-PDF ansehen“ zeigt die Texte aus diesem Formular mit einem
     erfundenen Kunden, ohne zu speichern.</p>

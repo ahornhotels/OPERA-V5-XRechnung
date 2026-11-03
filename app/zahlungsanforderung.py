@@ -145,13 +145,9 @@ def eingabe_pruefen(e: dict, heute: date | None = None) -> dict:
     heute = heute or date.today()
     fehler: list[str] = []
     aus: dict = {}
-    nummer = str(e.get("nummer") or "").strip()
-    if not nummer:
-        fehler.append("Die Nummer fehlt.")
-    elif not NUMMER_MUSTER.match(nummer):
-        fehler.append("Die Nummer darf nur Buchstaben, Ziffern, Punkt, Binde- und "
-                      "Unterstrich enthalten (höchstens 40 Zeichen, kein Leerzeichen).")
-    aus["nummer"] = nummer
+    # Die Nummer vergibt der Nummernkreis beim Senden (nummer_ziehen); bis
+    # dahin traegt die Eingabe die voraussichtliche (vorbereiten).
+    aus["nummer"] = ""
     for satz in SAETZE:
         schluessel = f"brutto_{satz}"
         try:
@@ -272,18 +268,120 @@ LAENGEN = {"titel": 60, "einleitung": 500, "zahlungstext": 300, "hinweis": 600,
            "schlusstext": 500, "fusszeile": 400, "mail_betreff": 200, "mail_text": 3000}
 
 
+# Anordnung: feste Wahlmoeglichkeiten statt freier Koordinaten — so koennen
+# sich die Teile nicht ueberlappen, und jede Einstellung ergibt eine
+# brauchbare Seite. Die Vorgaben ergeben genau das bisherige Bild.
+AUSRICHTUNGEN = {"links": "links", "mitte": "mittig", "rechts": "rechts"}
+BLOECKE = {"betraege": "Einleitung und Beträge", "zahlung": "Zahlungssatz und Bankverbindung",
+           "hinweis": "Hinweis im Kasten", "schluss": "Schlusstext"}
+LAYOUT_VORGABE = {
+    "logo_position": "rechts", "logo_breite": 60, "logo_hoehe": 22, "logo_oben": 12,
+    "kopf_position": "links",
+    "anschrift_seite": "links", "anschrift_oben": 50,
+    "titel_ausrichtung": "links", "titel_groesse": 15,
+    "einleitung_ausrichtung": "links", "einleitung_groesse": 10,
+    "zahlungstext_ausrichtung": "links", "zahlungstext_groesse": 10,
+    "hinweis_ausrichtung": "links", "hinweis_groesse": 9.5,
+    "schlusstext_ausrichtung": "links", "schlusstext_groesse": 10,
+    "fuss_ausrichtung": "mitte", "fuss_groesse": 7.5,
+    "reihe_betraege": 1, "reihe_zahlung": 2, "reihe_hinweis": 3, "reihe_schluss": 4,
+    "abstand_betraege": 2, "abstand_zahlung": 5, "abstand_hinweis": 6, "abstand_schluss": 6,
+}
+# Je Schluessel: erlaubte Werte oder (kleinster, groesster Wert, Bezeichnung).
+LAYOUT_REGELN: dict = {
+    "logo_position": AUSRICHTUNGEN, "kopf_position": AUSRICHTUNGEN,
+    "anschrift_seite": {"links": "links", "rechts": "rechts"},
+    "logo_breite": (15, 90, "Logo, größte Breite (mm)"),
+    "logo_hoehe": (8, 45, "Logo, größte Höhe (mm)"),
+    "logo_oben": (5, 40, "Logo, Abstand von oben (mm)"),
+    "anschrift_oben": (30, 100, "Anschrift, Abstand von oben (mm)"),
+    "titel_groesse": (10, 24, "Titel, Schriftgröße"),
+    "fuss_groesse": (6, 10, "Fußzeile, Schriftgröße"),
+}
+for _feld in ("titel", "einleitung", "zahlungstext", "hinweis", "schlusstext", "fuss"):
+    LAYOUT_REGELN[f"{_feld}_ausrichtung"] = AUSRICHTUNGEN
+for _feld, _name in (("einleitung", "Einleitung"), ("zahlungstext", "Zahlungssatz"),
+                     ("hinweis", "Hinweis"), ("schlusstext", "Schlusstext")):
+    LAYOUT_REGELN[f"{_feld}_groesse"] = (7, 14, f"{_name}, Schriftgröße")
+for _block, _name in BLOECKE.items():
+    LAYOUT_REGELN[f"reihe_{_block}"] = (1, 4, f"{_name}, Reihenfolge")
+    LAYOUT_REGELN[f"abstand_{_block}"] = (0, 40, f"{_name}, Abstand davor (mm)")
+# Nummernkreis: Muster mit {jahr} und {nr}, Stellen der laufenden Nummer, und
+# ob jedes Jahr wieder bei 1 begonnen wird. Der Zaehler selbst steht in der
+# Datenbank (za_nummernkreis), nicht hier: Er muss beim Ziehen gesperrt werden.
+NK_VORGABE = {"nk_muster": "ZA-{jahr}-{nr}", "nk_stellen": 4, "nk_jaehrlich": "ja"}
+VORLAGE_VORGABE = {**VORGABE, **LAYOUT_VORGABE, **NK_VORGABE}
+
+
+def _nk_pruefen(werte: dict) -> tuple[dict, list[str]]:
+    aus, fehler = {}, []
+    muster = " ".join(str(werte.get("nk_muster", NK_VORGABE["nk_muster"])).split())
+    try:
+        stellen = int(str(werte.get("nk_stellen", NK_VORGABE["nk_stellen"])).strip())
+        if not 1 <= stellen <= 8:
+            raise ValueError
+    except ValueError:
+        fehler.append("Nummernkreis: Stellen zwischen 1 und 8.")
+        stellen = NK_VORGABE["nk_stellen"]
+    jaehrlich = str(werte.get("nk_jaehrlich", NK_VORGABE["nk_jaehrlich"])).strip()
+    if jaehrlich not in ("ja", "nein"):
+        fehler.append("Nummernkreis: „jedes Jahr neu“ ist ja oder nein.")
+        jaehrlich = "ja"
+    if muster.count("{nr}") != 1:
+        fehler.append("Nummernkreis: Das Muster braucht genau einmal {nr}.")
+    elif re.sub(r"\{(jahr|nr)\}", "", muster).count("{") or \
+            re.sub(r"\{(jahr|nr)\}", "", muster).count("}"):
+        fehler.append("Nummernkreis: Im Muster gehen nur {jahr} und {nr}.")
+    elif not NUMMER_MUSTER.match(muster.replace("{jahr}", "2026").replace("{nr}", "9" * stellen)):
+        fehler.append("Nummernkreis: Die Nummer darf nur Buchstaben, Ziffern, Punkt, Binde- und "
+                      "Unterstrich enthalten, höchstens 40 Zeichen, und muss mit einem "
+                      "Buchstaben oder einer Ziffer beginnen.")
+    if jaehrlich == "ja" and "{jahr}" not in muster:
+        fehler.append("Nummernkreis: Beginnt er jedes Jahr neu, braucht das Muster {jahr} — "
+                      "sonst gäbe es jede Nummer jedes Jahr wieder.")
+    aus.update(nk_muster=muster, nk_stellen=stellen, nk_jaehrlich=jaehrlich)
+    return aus, fehler
+
+
+def _layout_wert(schluessel: str, roh):
+    """Einen Wert der Anordnung lesen. Wirft ValueError mit verstaendlichem Text."""
+    regel = LAYOUT_REGELN[schluessel]
+    if isinstance(regel, dict):
+        wert = str(roh or "").strip()
+        if wert not in regel:
+            raise ValueError(f"„{wert}“ ist für {schluessel} nicht möglich.")
+        return wert
+    klein, gross, name = regel
+    try:
+        zahl = float(str(roh).replace(",", "."))
+    except ValueError:
+        raise ValueError(f"{name}: „{roh}“ ist keine Zahl.") from None
+    if not (klein <= zahl <= gross):
+        raise ValueError(f"{name}: zwischen {klein} und {gross}.")
+    return int(zahl) if zahl == int(zahl) else round(zahl, 1)
+
+
 def _vorlage_pfad():
     return pfade.DATEN_DIR / VORLAGE_DATEI
 
 
 def vorlage_laden() -> dict:
     """Die Texte des Hauses, ergaenzt um die Vorgaben."""
-    werte = dict(VORGABE)
+    werte = dict(VORLAGE_VORGABE)
     try:
         gespeichert = json.loads(_vorlage_pfad().read_text(encoding="utf-8"))
-        werte.update({k: str(v) for k, v in gespeichert.items() if k in VORGABE})
     except (OSError, ValueError):
-        pass
+        return werte
+    werte.update({k: str(v) for k, v in gespeichert.items() if k in VORGABE})
+    for k in LAYOUT_VORGABE:
+        if k in gespeichert:
+            try:
+                werte[k] = _layout_wert(k, gespeichert[k])
+            except ValueError:
+                pass    # ein unbrauchbarer Wert faellt auf die Vorgabe zurueck
+    nk, fehler = _nk_pruefen({k: gespeichert[k] for k in NK_VORGABE if k in gespeichert})
+    if not fehler:
+        werte.update(nk)
     return werte
 
 
@@ -297,7 +395,8 @@ def fuellen(text: str, werte: dict) -> str:
 
 
 def vorlage_pruefen(werte: dict) -> dict:
-    """Prueft die eingegebenen Texte. Wirft Eingabefehler mit allen Maengeln."""
+    """Prueft Texte und Anordnung. Wirft Eingabefehler mit allen Maengeln.
+    Fehlt ein Wert der Anordnung, gilt die Vorgabe."""
     aus, fehler = {}, []
     probe = {k: "x" for k in PLATZHALTER}
     for feld, name in (("titel", "Titel"), ("einleitung", "Einleitung"),
@@ -321,6 +420,17 @@ def vorlage_pruefen(werte: dict) -> dict:
     for feld in ("titel", "hinweis", "mail_betreff", "mail_text"):
         if not aus[feld]:
             fehler.append(f"{feld.replace('_', ' ').capitalize()} darf nicht leer sein.")
+    for k in LAYOUT_VORGABE:
+        try:
+            aus[k] = _layout_wert(k, werte.get(k, LAYOUT_VORGABE[k]))
+        except ValueError as e:
+            fehler.append(str(e))
+    nk, nk_fehler = _nk_pruefen(werte)
+    aus.update(nk)
+    fehler += nk_fehler
+    reihen = [aus.get(f"reihe_{b}") for b in BLOECKE]
+    if None not in reihen and sorted(reihen) != [1, 2, 3, 4]:
+        fehler.append("Reihenfolge: Jede Zahl von 1 bis 4 genau einmal vergeben.")
     if "keine rechnung" not in aus["hinweis"].lower():
         fehler.append("Der Hinweis muss sagen, dass das Schreiben keine Rechnung ist "
                       "(„keine Rechnung“). Sonst kann es als Rechnung gelten.")
@@ -390,14 +500,18 @@ class ZuLang(Eingabefehler):
 def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
         komprimieren: bool = True, vorlage: dict | None = None, logo: bytes | None = None) -> bytes:
     """Die Zahlungsanforderung als PDF (A4, eine Seite). vorlage und logo
-    sind zum Ausprobieren; sonst gilt, was gespeichert ist."""
+    sind zum Ausprobieren; sonst gilt, was gespeichert ist. Die Anordnung
+    steht in der Vorlage (LAYOUT_VORGABE)."""
     p = cfg.get("property") or {}
     heute = heute or date.today()
-    v = vorlage or vorlage_laden()
+    v = dict(VORLAGE_VORGABE, **(vorlage or vorlage_laden()))
     werte = platzhalter_werte(eingabe, k, heute, cfg)
     t = _pdf_text
     breite = RECHTS - LINKS
     s = pdf_einfach.Seite()
+
+    def x_fuer(ausrichtung: str) -> float:
+        return {"links": LINKS, "mitte": (LINKS + RECHTS) / 2, "rechts": RECHTS}[ausrichtung]
 
     haus_name = h.get("supplierregistrationname") or h.get("suppliername") or ""
     haus_zeile = " · ".join(x for x in (
@@ -408,112 +522,149 @@ def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
         str(p.get("kontakt_email") or h.get("suppliercontactelectronicmail") or "").strip()) if x)
 
     # Fusszeile zuerst: Sie legt fest, wie weit der Inhalt reichen darf.
+    fg = float(v["fuss_groesse"])
     fuss = [haus_name + (f" · USt-IdNr. {p.get('ust_id')}" if p.get("ust_id") else ""),
             haus_zeile, kontakt]
     for z in fuellen(v.get("fusszeile"), werte).split("\n"):
-        fuss += pdf_einfach.umbrechen(t(z), breite, 7.5)
+        fuss += pdf_einfach.umbrechen(t(z), breite, fg)
     fuss = [z for z in fuss if z.strip()]
-    fuss_oben = FUSS_UNTEN - 3.6 * len(fuss)
+    zeile_fuss = fg * 0.48
+    fuss_oben = FUSS_UNTEN - zeile_fuss * len(fuss)
     for i, z in enumerate(fuss):
-        s.text(105, fuss_oben + 3.6 * (i + 1) - 0.8, t(z), 7.5, grau=0.35, ausrichtung="mitte")
+        s.text(x_fuer(v["fuss_ausrichtung"]), fuss_oben + zeile_fuss * (i + 1) - 0.8, t(z), fg,
+               grau=0.35, ausrichtung=v["fuss_ausrichtung"])
     grenze = fuss_oben - 6
 
-    # Logo rechts oben, hoechstens 60 x 22 mm, Seitenverhaeltnis bleibt.
+    # Logo: links, mittig oder rechts oben; Seitenverhaeltnis bleibt.
+    logo_unten = 0.0
     logo_daten = logo if logo is not None else (logo_pfad().read_bytes() if logo_pfad() else None)
     if logo_daten:
         try:
             bild = pdf_einfach.bild_lesen(logo_daten)
-            massstab = min(60 / bild["breite"], 22 / bild["hoehe"])
+            massstab = min(float(v["logo_breite"]) / bild["breite"],
+                           float(v["logo_hoehe"]) / bild["hoehe"])
             b, hoehe = bild["breite"] * massstab, bild["hoehe"] * massstab
-            s.bild(bild, RECHTS - b, 12, b, hoehe)
+            lx = {"links": LINKS, "mitte": (LINKS + RECHTS - b) / 2,
+                  "rechts": RECHTS - b}[v["logo_position"]]
+            s.bild(bild, lx, float(v["logo_oben"]), b, hoehe)
+            logo_unten = float(v["logo_oben"]) + hoehe
         except pdf_einfach.BildFehler:
             pass   # beim Hochladen geprueft; ein spaeter beschaedigtes Logo haelt nichts auf
 
-    # Kopf: Haus
-    s.text(LINKS, 20, t(h.get("suppliername") or ""), 13, fett=True)
-    s.text(LINKS, 25, t(haus_zeile), 8, grau=0.35)
+    # Kopf: Haus. Auf derselben Seite wie das Logo rueckt er darunter.
+    ky = 20.0
+    if logo_unten and v["kopf_position"] == v["logo_position"]:
+        ky = logo_unten + 6
+    kx = x_fuer(v["kopf_position"])
+    s.text(kx, ky, t(h.get("suppliername") or ""), 13, fett=True, ausrichtung=v["kopf_position"])
+    s.text(kx, ky + 5, t(haus_zeile), 8, grau=0.35, ausrichtung=v["kopf_position"])
+    kopf_unten = ky + 5
 
-    # Anschrift links, Angaben rechts
-    y = 50.0
+    # Anschrift und Angaben: die eine Seite, die andere Seite.
+    oben = max(float(v["anschrift_oben"]), kopf_unten + 10, logo_unten + 6)
+    if v["anschrift_seite"] == "links":
+        ax, aw, lx_, vx = LINKS, 95.0, 124.0, 150.0
+    else:
+        ax, aw, lx_, vx = 118.0, RECHTS - 118.0, LINKS, LINKS + 26
+    y = oben
     land = str(k.get("country") or "").strip().upper()
     for z in (k.get("legal_company") or k.get("name"), k.get("address1"), k.get("address2"),
               f"{k.get('zip_code') or ''} {k.get('city') or ''}".strip(),
               land if land and land != str(h.get("supplieridentificationcode") or "DE").upper() else ""):
         if z:
-            for teil in pdf_einfach.umbrechen(t(z), 95, 10):
-                s.text(LINKS, y, teil, 10)
+            for teil in pdf_einfach.umbrechen(t(z), aw, 10):
+                s.text(ax, y, teil, 10)
                 y += 5
-    links_unten = y
-    y = 50.0
+    anschrift_unten = y
+    y = oben
     angaben = [("Nummer", eingabe["nummer"]), ("Datum", werte["datum"])]
     if k.get("debitorennummer"):
         angaben.append(("Kundennummer", str(k["debitorennummer"])))
     if eingabe.get("referenz"):
         angaben.append(("Ihre Referenz", eingabe["referenz"]))
+    werte_breite = (RECHTS - vx) if v["anschrift_seite"] == "links" else (ax - 6 - vx)
     for name, wert in angaben:
-        s.text(124, y, name, 9)
-        for teil in pdf_einfach.umbrechen(t(wert), RECHTS - 150, 9, fett=True):
-            s.text(150, y, teil, 9, fett=True)
+        s.text(lx_, y, name, 9)
+        for teil in pdf_einfach.umbrechen(t(wert), werte_breite, 9, fett=True):
+            s.text(vx, y, teil, 9, fett=True)
             y += 5
-    y = max(links_unten, y) + 12
+    y = max(anschrift_unten, y) + 12
 
-    # Titel und Text
-    s.text(LINKS, y, t(fuellen(v["titel"], werte)), 15, fett=True)
-    y += 9
-
-    def absatz(text: str, groesse: float = 10, fett: bool = False, abstand: float = 2) -> None:
+    def absatz(text: str, ausrichtung: str, groesse: float, fett: bool = False,
+               abstand: float = 2) -> None:
         nonlocal y
         text = fuellen(text, werte).strip()
         if not text:
             return
         for z in pdf_einfach.umbrechen(t(text), breite, groesse, fett):
-            s.text(LINKS, y, z, groesse, fett=fett)
+            s.text(x_fuer(ausrichtung), y, z, groesse, fett=fett, ausrichtung=ausrichtung)
             y += groesse * 0.5
         y += abstand
 
-    absatz(f"Anzahlung für: {eingabe['grund']}", abstand=0)
+    # Titel, Grund, Leistungszeitraum
+    tg = float(v["titel_groesse"])
+    s.text(x_fuer(v["titel_ausrichtung"]), y, t(fuellen(v["titel"], werte)), tg, fett=True,
+           ausrichtung=v["titel_ausrichtung"])
+    y += tg * 0.6
+    absatz(f"Anzahlung für: {eingabe['grund']}", v["titel_ausrichtung"], 10, abstand=0)
     if eingabe.get("von") and eingabe.get("bis"):
-        absatz(f"Leistungszeitraum: {datum(eingabe['von'])} bis {datum(eingabe['bis'])}", abstand=0)
-    y += 2
-    absatz(v["einleitung"], abstand=3)
+        absatz(f"Leistungszeitraum: {datum(eingabe['von'])} bis {datum(eingabe['bis'])}",
+               v["titel_ausrichtung"], 10, abstand=0)
 
-    # Betraege
-    for satz in SAETZE:
-        wert = eingabe[f"brutto_{satz}"]
-        if wert:
-            s.text(LINKS, y, t(f"Anzahlung auf Leistungen mit {satz} % Umsatzsteuer"), 10)
-            s.text(RECHTS, y, euro(wert), 10, ausrichtung="rechts")
-            y += 6
-    s.linie(LINKS, y - 3, RECHTS, y - 3)
-    y += 3
-    s.text(LINKS, y, "Zu zahlen", 11, fett=True)
-    s.text(RECHTS, y, euro(eingabe["gesamt"]), 11, fett=True, ausrichtung="rechts")
-    y += 11
+    def betraege() -> None:
+        nonlocal y
+        absatz(v["einleitung"], v["einleitung_ausrichtung"], float(v["einleitung_groesse"]),
+               abstand=3)
+        for satz in SAETZE:
+            wert = eingabe[f"brutto_{satz}"]
+            if wert:
+                s.text(LINKS, y, t(f"Anzahlung auf Leistungen mit {satz} % Umsatzsteuer"), 10)
+                s.text(RECHTS, y, euro(wert), 10, ausrichtung="rechts")
+                y += 6
+        s.linie(LINKS, y - 3, RECHTS, y - 3)
+        y += 3
+        s.text(LINKS, y, "Zu zahlen", 11, fett=True)
+        s.text(RECHTS, y, euro(eingabe["gesamt"]), 11, fett=True, ausrichtung="rechts")
+        y += 6
 
-    # Zahlung
-    absatz(v["zahlungstext"], abstand=1.5)
-    for name, wert in (("Kontoinhaber", p.get("kontoinhaber") or haus_name),
-                       ("IBAN", p.get("iban")), ("BIC", p.get("bic")),
-                       ("Verwendungszweck", verwendungszweck(eingabe, k))):
-        if wert:
-            s.text(LINKS, y, name, 10)
-            s.text(LINKS + 38, y, t(wert), 10, fett=True)
-            y += 5.5
-    y += 6
+    def zahlung() -> None:
+        nonlocal y
+        absatz(v["zahlungstext"], v["zahlungstext_ausrichtung"], float(v["zahlungstext_groesse"]),
+               abstand=1.5)
+        for name, wert in (("Kontoinhaber", p.get("kontoinhaber") or haus_name),
+                           ("IBAN", p.get("iban")), ("BIC", p.get("bic")),
+                           ("Verwendungszweck", verwendungszweck(eingabe, k))):
+            if wert:
+                s.text(LINKS, y, name, 10)
+                s.text(LINKS + 38, y, t(wert), 10, fett=True)
+                y += 5.5
 
-    # Hinweis im Kasten
-    zeilen = pdf_einfach.umbrechen(t(fuellen(v["hinweis"], werte)), breite - 6, 9.5, fett=True)
-    hoehe = len(zeilen) * 4.8 + 5
-    s.flaeche(LINKS - 1, y - 4, breite + 2, hoehe)
-    for z in zeilen:
-        s.text(LINKS + 2, y + 0.5, z, 9.5, fett=True)
-        y += 4.8
-    y += 10
+    def hinweis() -> None:
+        nonlocal y
+        hg = float(v["hinweis_groesse"])
+        zeile = hg * 0.505
+        zeilen = pdf_einfach.umbrechen(t(fuellen(v["hinweis"], werte)), breite - 6, hg, fett=True)
+        oben_kasten = y - 4
+        s.flaeche(LINKS - 1, oben_kasten, breite + 2, len(zeilen) * zeile + 5)
+        a = v["hinweis_ausrichtung"]
+        hx = {"links": LINKS + 2, "mitte": (LINKS + RECHTS) / 2, "rechts": RECHTS - 2}[a]
+        for z in zeilen:
+            s.text(hx, y + 0.5, z, hg, fett=True, ausrichtung=a)
+            y += zeile
+        y = oben_kasten + len(zeilen) * zeile + 5 + 4
 
-    absatz(v.get("schlusstext") or "")
+    def schluss() -> None:
+        absatz(v.get("schlusstext") or "", v["schlusstext_ausrichtung"],
+               float(v["schlusstext_groesse"]))
+
+    teile = {"betraege": betraege, "zahlung": zahlung, "hinweis": hinweis, "schluss": schluss}
+    for block in sorted(BLOECKE, key=lambda b_: int(v[f"reihe_{b_}"])):
+        y += float(v[f"abstand_{block}"])
+        teile[block]()
+
     if y > grenze:
-        raise ZuLang("Der Inhalt passt nicht auf eine Seite. Bitte Grund, Einleitung, "
-                     "Schlusstext oder Fußzeile kürzen.")
+        raise ZuLang("Der Inhalt passt nicht auf eine Seite. Bitte Texte, Schriftgrößen oder "
+                     "Abstände verkleinern.")
     return s.pdf(titel=t(f"{fuellen(v['titel'], werte)} {eingabe['nummer']}"),
                  autor=t(h.get("suppliername") or ""), komprimieren=komprimieren)
 
@@ -557,6 +708,7 @@ CREATE TABLE IF NOT EXISTS zahlungsanforderungen (
 def _verbindung() -> sqlite3.Connection:
     con = store.verbindung()
     con.execute(TABELLE)
+    con.execute(KREIS_TABELLE)
     return con
 
 
@@ -572,17 +724,112 @@ def liste(limit: int = 100) -> list[dict]:
             "SELECT * FROM zahlungsanforderungen ORDER BY erstellt_am DESC LIMIT ?", (limit,))]
 
 
-def _anlegen(satz: dict) -> bool:
-    """Legt die Nummer an. False, wenn es sie schon gibt — die Nummer ist
-    damit vergeben, auch bei zwei gleichzeitigen Versuchen."""
-    spalten = list(satz)
+# ------------------------------------------------------------------ Nummernkreis
+KREIS_TABELLE = ("CREATE TABLE IF NOT EXISTS za_nummernkreis "
+                 "(kreis TEXT PRIMARY KEY, naechste INTEGER NOT NULL)")
+
+
+def _kreis(v: dict, heute: date) -> str:
+    return str(heute.year) if v["nk_jaehrlich"] == "ja" else "fortlaufend"
+
+
+def nummer_bilden(v: dict, heute: date, zahl: int) -> str:
+    return (v["nk_muster"].replace("{jahr}", str(heute.year))
+            .replace("{nr}", str(zahl).zfill(int(v["nk_stellen"]))))
+
+
+def _zaehler(con, kreis: str) -> int:
+    z = con.execute("SELECT naechste FROM za_nummernkreis WHERE kreis = ?", (kreis,)).fetchone()
+    return int(z[0]) if z else 1
+
+
+def _frei(con, cfg: dict, v: dict, heute: date, zahl: int) -> tuple[int, str]:
+    """Ab zahl die erste Nummer, die weder vergeben ist noch in der Ablage
+    liegt — etwa nach einem von Hand zurueckgesetzten Zaehler."""
+    for _ in range(100_000):
+        nummer = nummer_bilden(v, heute, zahl)
+        belegt = con.execute("SELECT 1 FROM zahlungsanforderungen WHERE nummer = ?",
+                             (nummer,)).fetchone()
+        if not belegt and not (ordner(cfg) / f"{nummer}.pdf").exists():
+            return zahl, nummer
+        zahl += 1
+    raise ValueError("Im Nummernkreis ist keine freie Nummer zu finden.")
+
+
+def naechste_nummer(cfg: dict, heute: date | None = None, v: dict | None = None) -> str:
+    """Die Nummer, die die naechste Zahlungsanforderung bekaeme. Vergibt nichts."""
+    heute, v = heute or date.today(), v or vorlage_laden()
+    with _verbindung() as con:
+        return _frei(con, cfg, v, heute, _zaehler(con, _kreis(v, heute)))[1]
+
+
+def naechste_zahl(heute: date | None = None, v: dict | None = None) -> int:
+    heute, v = heute or date.today(), v or vorlage_laden()
+    with _verbindung() as con:
+        return _zaehler(con, _kreis(v, heute))
+
+
+def naechste_setzen(zahl, heute: date | None = None) -> None:
+    """Den Zaehler des laufenden Kreises setzen — etwa um an eine bisherige
+    Zaehlung anzuschliessen. Schon vergebene Nummern werden beim Ziehen
+    uebersprungen, doppelt vergeben wird also nie."""
+    heute, v = heute or date.today(), vorlage_laden()
     try:
-        with _verbindung() as con:
-            con.execute(f"INSERT INTO zahlungsanforderungen ({', '.join(spalten)}) "
-                        f"VALUES ({', '.join('?' for _ in spalten)})", [satz[s] for s in spalten])
-        return True
-    except sqlite3.IntegrityError:
-        return False
+        zahl = int(str(zahl).strip())
+    except ValueError:
+        raise Eingabefehler("Die nächste Nummer muss eine ganze Zahl sein.") from None
+    if not 1 <= zahl < 10 ** int(v["nk_stellen"]):
+        raise Eingabefehler(f"Die nächste Nummer liegt zwischen 1 und {10 ** int(v['nk_stellen']) - 1}.")
+    with _verbindung() as con:
+        con.execute("INSERT INTO za_nummernkreis (kreis, naechste) VALUES (?, ?) "
+                    "ON CONFLICT(kreis) DO UPDATE SET naechste = excluded.naechste",
+                    (_kreis(v, heute), zahl))
+
+
+def nummer_ziehen(cfg: dict, satz: dict, heute: date | None = None) -> tuple[str, str, int]:
+    """Vergibt die naechste Nummer und legt die Zahlungsanforderung damit an —
+    in EINER Transaktion unter Schreibsperre. Zwei gleichzeitige Versuche
+    bekommen so nie dieselbe Nummer. Liefert (nummer, kreis, zahl)."""
+    heute, v = heute or date.today(), vorlage_laden()
+    kreis = _kreis(v, heute)
+    con = _verbindung()
+    con.isolation_level = None
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        zahl, nummer = _frei(con, cfg, v, heute, _zaehler(con, kreis))
+        daten = dict(satz, nummer=nummer)
+        spalten = list(daten)
+        con.execute(f"INSERT INTO zahlungsanforderungen ({', '.join(spalten)}) "
+                    f"VALUES ({', '.join('?' for _ in spalten)})", [daten[s] for s in spalten])
+        con.execute("INSERT INTO za_nummernkreis (kreis, naechste) VALUES (?, ?) "
+                    "ON CONFLICT(kreis) DO UPDATE SET naechste = excluded.naechste",
+                    (kreis, zahl + 1))
+        con.execute("COMMIT")
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
+    return nummer, kreis, zahl
+
+
+def nummer_freigeben(nummer: str, kreis: str, zahl: int) -> None:
+    """Nach einem Versand, der nachweislich nicht hinausging: Satz weg, und war
+    es die zuletzt gezogene Nummer, wird sie wieder die naechste. So entsteht
+    keine Luecke im Nummernkreis."""
+    con = _verbindung()
+    con.isolation_level = None
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        con.execute("DELETE FROM zahlungsanforderungen WHERE nummer = ?", (nummer,))
+        con.execute("UPDATE za_nummernkreis SET naechste = ? WHERE kreis = ? AND naechste = ?",
+                    (zahl, kreis, zahl + 1))
+        con.execute("COMMIT")
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
 
 
 def _setzen(nummer: str, **felder) -> None:
@@ -591,10 +838,6 @@ def _setzen(nummer: str, **felder) -> None:
                     "WHERE nummer = ?", [*felder.values(), nummer])
 
 
-def _entfernen(nummer: str) -> None:
-    """Nur fuer einen Versand, der nachweislich nicht hinausging."""
-    with _verbindung() as con:
-        con.execute("DELETE FROM zahlungsanforderungen WHERE nummer = ?", (nummer,))
 
 
 def ordner(cfg: dict):
@@ -625,14 +868,8 @@ def vorbereiten(cfg: dict, form: dict, name_id: int,
     k = kunde(cfg, name_id)
     h = haus(cfg)
     befunde = maengel(cfg, k, h)
-    vorhanden = satz_lesen(eingabe["nummer"])
-    if vorhanden:
-        befunde.append(f"Die Nummer {eingabe['nummer']} ist bereits vergeben "
-                       f"(Zahlungsanforderung vom {datum(vorhanden.get('datum'))} an "
-                       f"{vorhanden.get('kunde')}).")
-    elif (ordner(cfg) / f"{eingabe['nummer']}.pdf").exists():
-        befunde.append(f"In der Ablage liegt schon eine Zahlungsanforderung "
-                       f"{eingabe['nummer']} — bitte eine andere Nummer wählen.")
+    # Voraussichtlich: Vergeben wird erst beim Senden, unter Sperre.
+    eingabe["nummer"] = naechste_nummer(cfg)
     return eingabe, k, h, befunde
 
 
@@ -640,47 +877,50 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
               mit_mail: bool = True) -> str:
     """Baut die Zahlungsanforderung, legt sie ab und verschickt sie.
     mit_mail=False legt sie nur ab. Gibt 'gesendet', 'abgelegt' oder
-    'testlauf' zurueck; wirft bei jedem Hindernis, ohne etwas zu hinterlassen."""
+    'testlauf' zusammen mit der Nummer zurueck; wirft bei jedem Hindernis,
+    ohne etwas zu hinterlassen — auch die Nummer ist dann wieder frei."""
     if not ablauf._versand_sperre.acquire(timeout=2):
         raise ablauf.Beschaeftigt("Gerade wird eine Rechnung versendet (Automatiklauf). "
                                   "Bitte einen Moment warten und es erneut versuchen.")
     try:
         eingabe, k, h, befunde = vorbereiten(cfg, form, name_id)
-        nummer, an = eingabe["nummer"], eingabe["empfaenger"]
+        an = eingabe["empfaenger"]
         if mit_mail and not an:
             befunde.append("Es ist keine Empfängeradresse gewählt.")
         if befunde:
             raise ValueError("Nicht erstellt: " + " ".join(befunde))
-        dokument = pdf(cfg, eingabe, k, h)   # ZuLang ist ein Eingabefehler
+        pdf(cfg, eingabe, k, h)   # vorab: passt es auf die Seite? (ZuLang)
         if (cfg.get("automatik") or {}).get("testlauf"):
-            store.protokoll("testlauf", f"Zahlungsanforderung {nummer} über "
-                            f"{euro(eingabe['gesamt'])}: nicht abgelegt und nicht versendet "
-                            f"(Testlauf aktiv). Ziel wäre {an or '-'}", benutzer=benutzer)
-            return "testlauf"
-        satz = {"nummer": nummer, "name_id": int(name_id), "kunde": k.get("name"),
+            store.protokoll("testlauf", f"Zahlungsanforderung (voraussichtlich "
+                            f"{eingabe['nummer']}) über {euro(eingabe['gesamt'])}: keine Nummer "
+                            f"vergeben, nichts abgelegt, nichts versendet (Testlauf aktiv). Ziel "
+                            f"wäre {an or '-'}", benutzer=benutzer)
+            return "testlauf", eingabe["nummer"]
+        satz = {"name_id": int(name_id), "kunde": k.get("name"),
                 "datum": date.today().isoformat(), "faellig": eingabe["faellig"],
                 "brutto_7": float(eingabe["brutto_7"]), "brutto_19": float(eingabe["brutto_19"]),
                 "gesamt": float(eingabe["gesamt"]), "grund": eingabe["grund"],
                 "empfaenger": an or None, "status": "begonnen", "erstellt_von": benutzer,
                 "erstellt_am": store.jetzt()}
-        if not _anlegen(satz):
-            raise ValueError(f"Die Nummer {nummer} ist inzwischen vergeben.")
+        nummer, kreis, zahl = nummer_ziehen(cfg, satz)
+        eingabe["nummer"] = nummer
         # Erst ablegen, dann senden. 'x' legt nur neu an — eine gleichnamige
         # Datei bleibt unberuehrt.
         datei = ordner(cfg) / f"{nummer}.pdf"
         try:
+            dokument = pdf(cfg, eingabe, k, h)
             with open(datei, "xb") as f:
                 f.write(dokument)
-        except OSError as e:
-            _entfernen(nummer)
-            raise ValueError(f"Nicht erstellt: Die Ablage ließ sich nicht schreiben ({e}).") from e
+        except (OSError, Eingabefehler) as e:
+            nummer_freigeben(nummer, kreis, zahl)
+            raise ValueError(f"Nicht erstellt: {e}") from e
         _setzen(nummer, pdf_pfad=str(datei))
         if not mit_mail:
             _setzen(nummer, status="abgelegt")
             store.protokoll("zahlungsanforderung", f"Zahlungsanforderung {nummer} über "
                             f"{euro(eingabe['gesamt'])} an {k.get('name')} abgelegt, nicht "
                             "versendet", benutzer=benutzer)
-            return "abgelegt"
+            return "abgelegt", nummer
         try:
             betreff, text = mail(cfg, eingabe, k)
             kennung = mailer.senden(
@@ -689,7 +929,7 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
         except mailer.MailFehler as e:
             # Nichts ging hinaus: Nummer und Ablage wieder frei.
             datei.unlink(missing_ok=True)
-            _entfernen(nummer)
+            nummer_freigeben(nummer, kreis, zahl)
             store.protokoll("zahlungsanforderung", f"Zahlungsanforderung {nummer}: Versand an "
                             f"{an} fehlgeschlagen: {e}", benutzer=benutzer, erfolg=False)
             raise
@@ -698,7 +938,7 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
         store.protokoll("zahlungsanforderung", f"Zahlungsanforderung {nummer} über "
                         f"{euro(eingabe['gesamt'])} an {an}, BCC {bcc}, {kennung}",
                         benutzer=benutzer)
-        return "gesendet"
+        return "gesendet", nummer
     finally:
         ablauf._versand_sperre.release()
 
@@ -707,7 +947,7 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
 MUSTER_KUNDE = {"name": "Muster & Söhne AG", "legal_company": None, "address1": "Hauptstraße 1",
                 "address2": None, "zip_code": "80331", "city": "München", "country": "DE",
                 "debitorennummer": "4711"}
-MUSTER_EINGABE = {"nummer": "ZA-MUSTER-001", "brutto_7": "12.450,00", "brutto_19": "3.980,50",
+MUSTER_EINGABE = {"brutto_7": "12.450,00", "brutto_19": "3.980,50",
                   "grund": "Tagung Frühjahrsklausur, 40 Zimmer, Tagungspauschale",
                   "referenz": "PO-0815"}
 
@@ -718,6 +958,8 @@ def muster(cfg: dict, vorlage: dict | None = None) -> bytes:
     Konfiguration."""
     heute = date.today()
     eingabe = eingabe_pruefen(dict(MUSTER_EINGABE, faellig=faellig_vorgabe(cfg, heute)), heute)
+    eingabe["nummer"] = nummer_bilden(dict(VORLAGE_VORGABE, **(vorlage or vorlage_laden())),
+                                      heute, 1)
     try:
         h = haus(cfg)
     except Exception:

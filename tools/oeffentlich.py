@@ -50,6 +50,11 @@ AUSGELASSEN = {
     # ueberholt, liest sich fuer einen Fremden wie ein unfertiger Prototyp.
     # Sein Inhalt steht in README, INSTALLATION und HANDBUCH.
     "PROTOTYP.md": "Projektstandsbericht, ueberholt",
+    # Vorstellung des Programms fuer das eigene Haus, mit dessen Namen und
+    # Farben. Ausdruecklich nicht oeffentlich (03.11.2026).
+    "docs/praesentation/XRechnung_Vorstellung.pptx": "Vorstellung fuer das Haus",
+    "docs/praesentation/vorstellung_erzeugen.py": "erzeugt ebendiese Vorstellung",
+    "docs/praesentation/vorstellung_aufnahmen.py": "Bilder fuer ebendiese Vorstellung",
 }
 
 # Bloecke in gemeinsamen Dateien, die nur privat sind: von der Zeile mit der

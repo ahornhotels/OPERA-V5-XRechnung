@@ -16,7 +16,7 @@ from .main import _darf_verwalten, _kontext, seiten
 
 router = APIRouter()
 
-FELDER = ("nummer", "brutto_7", "brutto_19", "grund", "faellig", "von", "bis", "referenz",
+FELDER = ("brutto_7", "brutto_19", "grund", "faellig", "von", "bis", "referenz",
           "empfaenger")
 
 
@@ -60,11 +60,12 @@ def _seite(request: Request, *, suche: str = "", name_id: int | None = None,
                  "empfaenger": (kunde.get("mails") or [{}])[0].get("email", "")}
     try:
         liste = za.liste(50)
+        naechste = za.naechste_nummer(cfg)
     except Exception:
-        liste = []
+        liste, naechste = [], ""
     return seiten.TemplateResponse(request, "zahlungsanforderung.html", _kontext(
         request, suche=suche, treffer=treffer, kunde=kunde, name_id=name_id, werte=werte,
-        vorschau=vorschau, meldung=meldung, fehler=fehler, liste=liste,
+        vorschau=vorschau, meldung=meldung, fehler=fehler, liste=liste, naechste=naechste,
         euro=za.euro, datum=za.datum, hinweis=za.HINWEIS_KEINE_RECHNUNG,
         testlauf=bool((cfg.get("automatik") or {}).get("testlauf")),
         blindkopien=mailer.blindkopien(cfg, False)))
@@ -99,7 +100,7 @@ async def pdf_ansehen(request: Request):
     cfg = config.laden()
     try:
         eingabe, k, h, _ = za.vorbereiten(cfg, werte, name_id or 0)
-        dokument = za.pdf(cfg, eingabe, k, h)
+        dokument = za.pdf(cfg, eingabe, k, h)   # mit der voraussichtlichen Nummer
     except Exception as e:
         return Response(f"Nicht möglich: {e}", media_type="text/plain; charset=utf-8",
                         status_code=409)
@@ -114,13 +115,14 @@ async def senden(request: Request):
         return _seite(request, name_id=name_id, werte=werte,
                       fehler="Keine Berechtigung — Versenden dürfen nur Verwalter.")
     try:
-        ergebnis = za.versenden(config.laden(), werte, name_id or 0, request.state.benutzer,
-                                mit_mail=werte["aktion"] != "ablegen")
+        ergebnis, nummer = za.versenden(config.laden(), werte, name_id or 0,
+                                        request.state.benutzer,
+                                        mit_mail=werte["aktion"] != "ablegen")
     except Exception as e:
         return _seite(request, name_id=name_id, werte=werte, fehler=str(e))
-    nummer = werte.get("nummer", "").strip()
-    meldung = {"testlauf": f"Testlauf aktiv — die Zahlungsanforderung {nummer} wurde geprüft, "
-                           "aber weder abgelegt noch versendet.",
+    meldung = {"testlauf": f"Testlauf aktiv — die Zahlungsanforderung wurde geprüft, aber keine "
+                           f"Nummer vergeben (voraussichtlich {nummer}), nichts abgelegt und "
+                           "nichts versendet.",
                "abgelegt": f"Zahlungsanforderung {nummer} abgelegt (nicht versendet).",
                }.get(ergebnis, f"Zahlungsanforderung {nummer} versendet.")
     return RedirectResponse("/zahlungsanforderung?" + urlencode({"meldung": meldung}),
@@ -145,14 +147,25 @@ def _vorlage_seite(request: Request, werte: dict | None = None, meldung: str = "
                    fehler: str = ""):
     logo = za.logo_pfad()
     return seiten.TemplateResponse(request, "zahlungsanforderung_vorlage.html", _kontext(
-        request, werte=werte or za.vorlage_laden(), vorgabe=za.VORGABE,
+        request, werte=werte or za.vorlage_laden(), vorgabe=za.VORLAGE_VORGABE,
         platzhalter=za.PLATZHALTER, laengen=za.LAENGEN, logo=logo,
+        ausrichtungen=za.AUSRICHTUNGEN, bloecke=za.BLOECKE, regeln=za.LAYOUT_REGELN,
+        naechste_zahl=_still(za.naechste_zahl), naechste=_still(za.naechste_nummer, config.laden()),
         logo_stand=int(logo.stat().st_mtime) if logo else 0,
         meldung=meldung, fehler=fehler))
 
 
+def _still(f, *a):
+    try:
+        return f(*a)
+    except Exception:
+        return ""
+
+
 def _texte(form) -> dict:
-    return {f: str(form.get(f) or "") for f in za.VORGABE}
+    """Texte und Anordnung aus dem Formular. Was fehlt, bleibt weg — dann
+    gilt die Vorgabe."""
+    return {f: str(form.get(f)) for f in za.VORLAGE_VORGABE if form.get(f) is not None}
 
 
 @router.get("/zahlungsanforderung/vorlage", response_class=HTMLResponse)
@@ -167,11 +180,12 @@ async def vorlage_speichern(request: Request):
     if not _darf_verwalten(request):
         return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
     form = await request.form()
-    werte = za.VORGABE if form.get("aktion") == "vorgabe" else _texte(form)
+    werte = za.VORLAGE_VORGABE if form.get("aktion") == "vorgabe" else _texte(form)
     try:
         za.vorlage_speichern(werte)
     except za.Eingabefehler as e:
-        return _vorlage_seite(request, werte=_texte(form), fehler=str(e))
+        return _vorlage_seite(request, werte=dict(za.vorlage_laden(), **_texte(form)),
+                              fehler=str(e))
     meldung = ("Vorgaben wiederhergestellt." if form.get("aktion") == "vorgabe"
                else "Vorlage gespeichert.")
     return RedirectResponse("/zahlungsanforderung/vorlage?" + urlencode({"meldung": meldung}),
@@ -221,3 +235,18 @@ def vorlage_logo_zeigen(request: Request):
         return Response(status_code=404)
     return Response(pfad.read_bytes(),
                     media_type="image/jpeg" if pfad.suffix == ".jpg" else "image/png")
+
+
+@router.post("/zahlungsanforderung/vorlage/nummer", response_class=HTMLResponse)
+async def vorlage_nummer(request: Request):
+    """Die naechste Nummer des laufenden Kreises setzen."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
+    form = await request.form()
+    try:
+        za.naechste_setzen(form.get("naechste"))
+    except za.Eingabefehler as e:
+        return _vorlage_seite(request, fehler=str(e))
+    meldung = f"Nächste Nummer: {za.naechste_nummer(config.laden())}"
+    return RedirectResponse("/zahlungsanforderung/vorlage?" + urlencode({"meldung": meldung}),
+                            status_code=303)

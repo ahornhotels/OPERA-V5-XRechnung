@@ -5644,6 +5644,7 @@ _ze = _za.eingabe_pruefen({"nummer": "ZA-31-001", "brutto_7": "1.234,56", "brutt
                            "grund": "Tagung  Frühjahr\n2032", "faellig": "2031-05-18",
                            "referenz": "PO 99", "von": "2031-06-01", "bis": "2031-06-02",
                            "empfaenger": "rechnung@beispiel.de"}, heute=_heute)
+_ze["nummer"] = "ZA-31-001"   # sonst vergibt sie der Nummernkreis beim Senden
 pruefe(_ze["grund"] == "Tagung Frühjahr 2032" and _ze["gesamt"] == _D("1235.59"),
        "Grund auf einer Zeile, Gesamtbetrag ist die Summe der Eingaben")
 pruefe(_za.maengel(_zcfg, _zk, _zh) == [], "vollstaendige Stammdaten: kein Mangel")
@@ -5660,8 +5661,7 @@ for _wort in ("Zahlungsanforderung", "ZA-31-001", "04.05.2031", "18.05.2031", "1
     pruefe(_wort in _zt, f"im PDF steht: {_wort}")
 pruefe("Rechnungsnummer" not in _zt and "Steuerbetrag" not in _zt,
        "das PDF nennt sich nirgends Rechnung und weist keinen Steuerbetrag aus")
-for _bad, _wort in (({"nummer": "A B"}, "Nummer"), ({"nummer": "x/1"}, "Nummer"),
-                    ({"brutto_7": ""}, "kein Betrag"), ({"grund": " "}, "Grund"),
+for _bad, _wort in (({"brutto_7": ""}, "kein Betrag"), ({"grund": " "}, "Grund"),
                     ({"faellig": "2031-05-01"}, "Vergangenheit"), ({"von": "2031-06-01"}, "beide Daten")):
     _eing = dict({"nummer": "ZA-9", "brutto_7": "10", "grund": "x", "faellig": "2031-05-18"}, **_bad)
     try:
@@ -5750,8 +5750,20 @@ pruefe(_stellen and all(_roh[st:].startswith(b"%d 0 obj" % (n + 1)) for n, st in
        f"PDF: jeder Eintrag der Objekttabelle zeigt auf sein Objekt ({len(_stellen)})")
 
 # --- Vorlage -----------------------------------------------------------------
-pruefe(_za.vorlage_pruefen(_za.VORGABE) == {k: v.strip() for k, v in _za.VORGABE.items()},
-       "die Vorgaben bestehen die eigene Pruefung")
+pruefe(_za.vorlage_pruefen(_za.VORLAGE_VORGABE) == _za.VORLAGE_VORGABE
+       and _za.vorlage_pruefen(_za.VORGABE) == _za.VORLAGE_VORGABE,
+       "die Vorgaben bestehen die eigene Pruefung; fehlende Anordnung heisst Vorgabe")
+for _aend, _wort in (({"logo_breite": "200"}, "zwischen 15 und 90"),
+                     ({"logo_position": "unten"}, "nicht möglich"),
+                     ({"titel_groesse": "gross"}, "keine Zahl"),
+                     ({"reihe_hinweis": "1"}, "genau einmal")):
+    try:
+        _za.vorlage_pruefen(dict(_za.VORLAGE_VORGABE, **_aend))
+        pruefe(False, f"Anordnung {_aend}: wird abgelehnt")
+    except _za.Eingabefehler as _e:
+        pruefe(_wort in str(_e), f"Anordnung {_aend}: wird abgelehnt ({_wort})")
+pruefe(_za.vorlage_pruefen(dict(_za.VORLAGE_VORGABE, hinweis_groesse="8,5"))["hinweis_groesse"] == 8.5,
+       "Schriftgroesse mit Komma wird gelesen")
 for _aend, _wort in (({"einleitung": "Bitte bis {gestern}"}, "{gestern}"),
                      ({"hinweis": "Bitte zahlen Sie."}, "keine Rechnung"),
                      ({"zahlungstext": "Kosten { offen"}, "Klammern"),
@@ -5798,7 +5810,7 @@ _echt_h = (opera.db.abfrage, config.laden, _mailer.senden)
 opera.db.abfrage = _db_za
 config.laden = lambda: _hcfg
 _mailer.senden = lambda cfg, **k: (_hgesendet.append(k), "<za@test>")[1]
-_hform = {"name_id": "77", "nummer": "ZA-31-010", "brutto_7": "100", "brutto_19": "",
+_hform = {"name_id": "77", "brutto_7": "100", "brutto_19": "",
           "grund": "Tagung", "faellig": "2099-01-31", "empfaenger": "rechnung@beispiel.de"}
 try:
     with TestClient(app, client=("127.0.0.1", 50000)) as _ka:
@@ -5812,47 +5824,89 @@ try:
         _m = _ka.get("/zahlungsanforderung?name_id=77")
         pruefe('value="rechnung@beispiel.de"' in _m.text and 'name="faellig" value="' in _m.text,
                "nach der Auswahl: Empfaenger und Zahlungsziel vorbelegt")
+        from datetime import date as _dt
+        _jahr = _dt.today().year
+        _nr = lambda n: f"ZA-{_jahr}-{n:04d}"
+        pruefe(_za.naechste_nummer(_hcfg) == _nr(1) and _nr(1) in _m.text,
+               "ohne Vorgeschichte beginnt der Kreis bei ZA-<Jahr>-0001, die Maske zeigt sie")
         _v = _ka.post("/zahlungsanforderung/pruefen", data=_hform)
         pruefe("Ablegen und senden" in _v.text and "100,00 EUR" in _v.text
-               and "keine Rechnung" in _v.text, "Pruefen zeigt die Zusammenfassung mit Sendeknopf")
+               and "keine Rechnung" in _v.text and "voraussichtlich " + _nr(1) in _v.text,
+               "Pruefen zeigt die Zusammenfassung mit voraussichtlicher Nummer")
         _x = _ka.post("/zahlungsanforderung/pdf", data=_hform)
         pruefe(_x.status_code == 200 and _x.content.startswith(b"%PDF-")
                and _x.headers["content-type"] == "application/pdf"
-               and not _za.satz_lesen("ZA-31-010"), "PDF ansehen vergibt keine Nummer")
+               and _za.naechste_nummer(_hcfg) == _nr(1), "PDF ansehen vergibt keine Nummer")
         _o = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"),
                       follow_redirects=False)
-        _sa = _za.satz_lesen("ZA-31-010") or {}
+        _sa = _za.satz_lesen(_nr(1)) or {}
         pruefe(_o.status_code == 303 and _sa.get("status") == "gesendet" and len(_hgesendet) == 1
-               and _hgesendet[0]["xml"] is None and _hgesendet[0]["pdf"].name == "ZA-31-010.pdf"
-               and _hgesendet[0]["vorlage"][0].startswith("Zahlungsanforderung ZA-31-010 vom ")
+               and _hgesendet[0]["xml"] is None and _hgesendet[0]["pdf"].name == _nr(1) + ".pdf"
+               and _hgesendet[0]["vorlage"][0].startswith(f"Zahlungsanforderung {_nr(1)} vom ")
                and "100,00 EUR" in _hgesendet[0]["vorlage"][1]
-               and (_zablage / "ZA-31-010.pdf").is_file(),
-               "Senden: PDF abgelegt und als einziger Anhang verschickt, ohne XML")
-        _z = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
-        pruefe("bereits vergeben" in _z.text and len(_hgesendet) == 1,
-               "dieselbe Nummer ein zweites Mal: abgelehnt, nichts versendet")
-        _z2 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="za-31-010", aktion="senden"))
-        pruefe("bereits vergeben" in _z2.text, "auch in anderer Schreibweise")
+               and (_zablage / (_nr(1) + ".pdf")).is_file(),
+               "Senden: Nummer vergeben, PDF abgelegt und als einziger Anhang verschickt")
+        _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
+        pruefe((_za.satz_lesen(_nr(2)) or {}).get("status") == "gesendet" and len(_hgesendet) == 2,
+               "die zweite bekommt die naechste Nummer")
         _mailer.senden = lambda cfg, **k: (_ for _ in ()).throw(_mailer.MailFehler("Server weg"))
-        _z4 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-011", aktion="senden"))
-        pruefe("Server weg" in _z4.text and not _za.satz_lesen("ZA-31-011")
-               and not (_zablage / "ZA-31-011.pdf").exists(),
-               "Versand scheitert: Nummer und Ablage wieder frei")
-        _z5 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-012", aktion="ablegen"),
+        _z4 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
+        pruefe("Server weg" in _z4.text and not _za.satz_lesen(_nr(3))
+               and not (_zablage / (_nr(3) + ".pdf")).exists()
+               and _za.naechste_nummer(_hcfg) == _nr(3),
+               "Versand scheitert: Nummer und Ablage wieder frei, keine Luecke im Kreis")
+        _z5 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="ablegen"),
                        follow_redirects=False)
-        pruefe(_z5.status_code == 303 and (_za.satz_lesen("ZA-31-012") or {}).get("status") == "abgelegt",
-               "Nur ablegen: abgelegt, ohne Mail")
+        pruefe(_z5.status_code == 303 and (_za.satz_lesen(_nr(3)) or {}).get("status") == "abgelegt",
+               "Nur ablegen: abgelegt, ohne Mail, mit der freigewordenen Nummer")
         _l = _ka.get("/zahlungsanforderung")
-        pruefe("ZA-31-010" in _l.text and "/zahlungsanforderung/ablage/ZA-31-010.pdf" in _l.text
-               and _ka.get("/zahlungsanforderung/ablage/ZA-31-010.pdf").content.startswith(b"%PDF-"),
+        pruefe(_nr(1) in _l.text and f"/zahlungsanforderung/ablage/{_nr(1)}.pdf" in _l.text
+               and _ka.get(f"/zahlungsanforderung/ablage/{_nr(1)}.pdf").content.startswith(b"%PDF-"),
                "die Liste zeigt die erstellten, das PDF ist abrufbar")
         pruefe(_ka.get("/zahlungsanforderung/ablage/..%2Fapp.pdf").status_code == 404,
                "die Ablage gibt nur eigene Nummern heraus")
+        # Belegte Nummern werden uebersprungen, auch nach Zuruecksetzen
+        _ka.post("/zahlungsanforderung/vorlage/nummer", data={"naechste": "2"})
+        pruefe(_za.naechste_nummer(_hcfg) == _nr(4),
+               "ein zurueckgesetzter Zaehler ueberspringt vergebene Nummern")
+        _ka.post("/zahlungsanforderung/vorlage/nummer", data={"naechste": "120"})
+        pruefe(_za.naechste_nummer(_hcfg) == _nr(120) and _nr(120) in _ka.get("/zahlungsanforderung/vorlage").text,
+               "die naechste Nummer laesst sich setzen, etwa zum Anschluss an eine bisherige Zaehlung")
+        _nf = _ka.post("/zahlungsanforderung/vorlage/nummer", data={"naechste": "0"})
+        pruefe("zwischen 1 und 9999" in _nf.text, "eine unmoegliche naechste Nummer wird abgelehnt")
+        # Gleichzeitig: nie dieselbe Nummer
+        _gezogen = []
+        def _ziehen_parallel():
+            _gezogen.append(_za.nummer_ziehen(_hcfg, {"status": "abgelegt", "kunde": "P"})[0])
+        _fd = [_threading.Thread(target=_ziehen_parallel) for _ in range(6)]
+        for _f in _fd: _f.start()
+        for _f in _fd: _f.join()
+        pruefe(len(set(_gezogen)) == 6 and sorted(_gezogen) == [_nr(n) for n in range(120, 126)],
+               f"sechs gleichzeitige Vergaben: sechs verschiedene, lueckenlose Nummern")
+        # Jahreswechsel und Muster
+        _v26 = dict(_za.vorlage_laden())
+        pruefe(_za.nummer_bilden(_v26, _dt(2031, 1, 2), 7) == "ZA-2031-0007"
+               and _za._kreis(_v26, _dt(2031, 1, 2)) != _za._kreis(_v26, _dt(2032, 1, 2)),
+               "jedes Jahr ein eigener Kreis")
+        pruefe(_za._kreis(dict(_v26, nk_jaehrlich="nein"), _dt(2031, 1, 2)) == "fortlaufend",
+               "oder fortlaufend ueber die Jahre")
+        for _nk, _wort in (({"nk_muster": "ZA-{jahr}"}, "genau einmal {nr}"),
+                           ({"nk_muster": "ZA {nr}"}, "Buchstaben, Ziffern"),
+                           ({"nk_muster": "ZA-{monat}-{nr}"}, "nur {jahr} und {nr}"),
+                           ({"nk_muster": "ZA-{nr}", "nk_jaehrlich": "ja"}, "braucht das Muster {jahr}"),
+                           ({"nk_stellen": "12"}, "Stellen")):
+            try:
+                _za.vorlage_pruefen(dict(_za.VORLAGE_VORGABE, **_nk))
+                pruefe(False, f"Nummernkreis {_nk}: wird abgelehnt")
+            except _za.Eingabefehler as _e:
+                pruefe(_wort in str(_e), f"Nummernkreis {_nk}: wird abgelehnt")
+        _mailer.senden = lambda cfg, **k: (_hgesendet.append(k), "<za@test>")[1]
         _hcfg["automatik"]["testlauf"] = True
-        _z6 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-013", aktion="senden"),
+        _vor = _za.naechste_nummer(_hcfg)
+        _z6 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"),
                        follow_redirects=False)
-        pruefe(_z6.status_code == 303 and not _za.satz_lesen("ZA-31-013"),
-               "Testlauf: nichts abgelegt, nichts versendet")
+        pruefe(_z6.status_code == 303 and not _za.satz_lesen(_vor) and _za.naechste_nummer(_hcfg) == _vor,
+               "Testlauf: keine Nummer vergeben, nichts abgelegt, nichts versendet")
         _hcfg["automatik"]["testlauf"] = False
         # Vorlage: Seite, Speichern, Muster, Logo
         pruefe(_ka.get("/zahlungsanforderung/vorlage").status_code == 200
@@ -5880,29 +5934,51 @@ try:
         pruefe(b"/Im1 Do" in _zp2 and b"/SMask" in _zp2 and b"HRB 000 Musterstadt" in _zp2
                and b"Herzliche Gr\xfc\xdfe" in _zp2,
                "das PDF traegt Logo, Fusszeile und Schlusstext der Vorlage")
+        # Anordnung: Logo links, Anschrift rechts, Hinweis zuerst
+        _anord = dict(_vt, logo_position="links", kopf_position="rechts", anschrift_seite="rechts",
+                      reihe_hinweis="1", reihe_betraege="2", reihe_zahlung="3", reihe_schluss="4",
+                      titel_ausrichtung="mitte", fuss_ausrichtung="links")
+        _ka.post("/zahlungsanforderung/vorlage", data=_anord, follow_redirects=False)
+        _gel = _za.vorlage_laden()
+        pruefe(_gel["logo_position"] == "links" and _gel["reihe_hinweis"] == 1
+               and isinstance(_gel["logo_breite"], int), "die Anordnung wird gespeichert und geladen")
+        _zp3 = _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute, komprimieren=False)
+        _logo_x = float(_zp3.split(b" cm /Im1 Do")[0].rsplit(b"q ", 1)[1].split()[4])
+        _anschrift_x = float(_zp3.split(b" Td (Muster & S")[0].rsplit(b"Tf ", 1)[1].split()[0])
+        pruefe(abs(_logo_x - 22 * 72 / 25.4) < 0.1 and abs(_anschrift_x - 118 * 72 / 25.4) < 0.1,
+               f"Logo links oben, Anschrift rechts ({_logo_x:.1f} / {_anschrift_x:.1f} pt)")
+        pruefe(_zp3.index(b"(Dies ist keine Rechnung") < _zp3.index(b"(Zu zahlen)"),
+               "der Hinweis steht vor den Betraegen, wie eingestellt")
+        pruefe(_ka.get("/zahlungsanforderung/vorlage").text.count('selected') >= 6,
+               "die Seite zeigt die gespeicherte Anordnung")
         _lf = _ka.post("/zahlungsanforderung/vorlage/logo", files={"logo": ("x.gif", b"GIF89a", "image/gif")})
         pruefe("Nur PNG oder JPG" in _lf.text and _za.logo_pfad().read_bytes() == _lp,
                "ein fremdes Format wird abgelehnt, das bisherige Logo bleibt")
         _ka.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"})
         _ka.post("/zahlungsanforderung/vorlage", data={"aktion": "vorgabe"})
-        pruefe(_za.logo_pfad() is None and _za.vorlage_laden() == {k: v.strip() for k, v in _za.VORGABE.items()},
+        pruefe(_za.logo_pfad() is None and _za.vorlage_laden() == _za.VORLAGE_VORGABE,
                "Logo entfernen und Vorgaben wiederherstellen")
         auth.anlegen("seher", "Geheim!123", "ansehen")
     with TestClient(app, client=("127.0.0.1", 50000)) as _kb:
         _kb.post("/login", data={"benutzer": "seher", "passwort": "Geheim!123"})
-        _z7 = _kb.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-014", aktion="senden"))
-        pruefe("Keine Berechtigung" in _z7.text and not _za.satz_lesen("ZA-31-014"),
+        _vor7 = _za.naechste_nummer(_hcfg)
+        _z7 = _kb.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
+        pruefe("Keine Berechtigung" in _z7.text and _za.naechste_nummer(_hcfg) == _vor7,
                "Versenden duerfen nur Verwalter")
         pruefe(_kb.get("/zahlungsanforderung/vorlage", follow_redirects=False).status_code == 303
                and _kb.post("/zahlungsanforderung/vorlage", data=_za.VORGABE,
                             follow_redirects=False).status_code == 303
                and _kb.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"},
-                            follow_redirects=False).status_code == 303,
+                            follow_redirects=False).status_code == 303
+               and _kb.post("/zahlungsanforderung/vorlage/nummer", data={"naechste": "1"},
+                            follow_redirects=False).status_code == 303
+               and _za.naechste_nummer(_hcfg) == _vor7,
                "die Vorlage aendern duerfen nur Verwalter")
 finally:
     opera.db.abfrage, config.laden, _mailer.senden = _echt_h
     with _za._verbindung() as con:
-        con.execute("DELETE FROM zahlungsanforderungen WHERE nummer LIKE 'ZA-31-%'")
+        con.execute("DELETE FROM zahlungsanforderungen")
+        con.execute("DELETE FROM za_nummernkreis")
 
 print()
 if fehler:

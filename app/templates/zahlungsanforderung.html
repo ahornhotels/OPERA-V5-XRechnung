@@ -72,11 +72,8 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
   <h2>2. Anzahlung</h2>
   <form method="post" action="/zahlungsanforderung/pruefen">
     <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
-    <label>Nummer der Zahlungsanforderung
-      <input name="nummer" value="{{ werte.nummer or '' }}" required maxlength="40"
-             pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" placeholder="z. B. ZA-2026-001"></label>
-    <p class="klein">Aus einem eigenen Nummernkreis. Jede Nummer gibt es nur einmal — das
-    wird geprüft.</p>
+    <p><strong>Nummer:</strong> wird beim Senden aus dem Nummernkreis vergeben{% if naechste %},
+    voraussichtlich <strong>{{ naechste }}</strong>{% endif %}.</p>
     <label>Betrag auf Leistungen mit 7 % USt (brutto)
       <input name="brutto_7" value="{{ werte.brutto_7 or '' }}" inputmode="decimal" placeholder="0,00"></label>
     <label>Betrag auf Leistungen mit 19 % USt (brutto)
@@ -134,7 +131,7 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
     </tbody>
   </table>
   <dl>
-    <dt>Nummer</dt><dd>{{ e.nummer }}</dd>
+    <dt>Nummer</dt><dd>voraussichtlich {{ e.nummer }} — vergeben wird sie beim Senden</dd>
     <dt>Anzahlung für</dt><dd>{{ e.grund }}</dd>
     {% if e.von %}<dt>Leistungszeitraum</dt><dd>{{ datum(e.von) }} bis {{ datum(e.bis) }}</dd>{% endif %}
     <dt>Zahlbar bis</dt><dd>{{ datum(e.faellig) }}</dd>
@@ -149,7 +146,7 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
   {% endif %}
 
   <div class="knoepfe">
-    {% set felder = ['nummer', 'brutto_7', 'brutto_19', 'grund', 'faellig', 'von', 'bis', 'referenz', 'empfaenger', 'empfaenger_eigen'] %}
+    {% set felder = ['brutto_7', 'brutto_19', 'grund', 'faellig', 'von', 'bis', 'referenz', 'empfaenger', 'empfaenger_eigen'] %}
     <form method="post" action="/zahlungsanforderung/pdf" target="_blank">
       <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
       {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
@@ -157,14 +154,14 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
     </form>
     {% if verwalten and not vorschau.befunde %}
     <form method="post" action="/zahlungsanforderung/senden"
-          onsubmit="return confirm('Zahlungsanforderung {{ e.nummer }} über {{ euro(e.gesamt) }} jetzt senden?')">
+          onsubmit="return confirm('Zahlungsanforderung über {{ euro(e.gesamt) }} jetzt senden?')">
       <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
       {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
       <input type="hidden" name="aktion" value="senden">
       <button class="haupt" {{ 'disabled' if not e.empfaenger }}>Ablegen und senden</button>
     </form>
     <form method="post" action="/zahlungsanforderung/senden"
-          onsubmit="return confirm('Zahlungsanforderung {{ e.nummer }} nur ablegen, ohne Mail? Die Nummer ist danach vergeben.')">
+          onsubmit="return confirm('Zahlungsanforderung nur ablegen, ohne Mail? Die Nummer ist danach vergeben.')">
       <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
       {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
       <input type="hidden" name="aktion" value="ablegen">

@@ -617,14 +617,13 @@ Rechnung.
    höchstens 50 Treffer, sortiert nach Namen. Inaktive Profile und Ansprechpartner einer
    Firma erscheinen nicht. Wer nicht dabei ist, mit mehr Buchstaben suchen.
 2. **Angaben eintragen:**
-   - **Nummer** aus einem eigenen Nummernkreis, etwa „ZA-2026-001“.
    - **Betrag brutto** auf Leistungen mit 7 % und mit 19 %. Ein Feld darf leer bleiben.
    - **Grund**, zum Beispiel die Veranstaltung mit Datum.
    - **Zahlbar bis**, vorbelegt mit dem Zahlungsziel aus der Konfiguration.
    - Wahlweise der **Leistungszeitraum** und die **Referenz des Kunden**.
    - **Empfänger:** eine Adresse aus dem Profil oder eine eigene.
-3. **Prüfen.** Die Seite zeigt die Zusammenfassung. „PDF ansehen“ öffnet das PDF, ohne
-   die Nummer zu vergeben. **„Ablegen und senden“** und **„Nur ablegen“** gibt es nur für
+3. **Prüfen.** Die Seite zeigt die Zusammenfassung mit der voraussichtlichen Nummer.
+   „PDF ansehen“ öffnet das PDF, ohne eine Nummer zu vergeben. **„Ablegen und senden“** und **„Nur ablegen“** gibt es nur für
    Verwalter.
 
 **Auf dem PDF steht:**
@@ -636,12 +635,22 @@ Rechnung.
   ausgewiesen. Nach Zahlungseingang erhalten Sie eine Anzahlungsrechnung mit
   ausgewiesener Umsatzsteuer; sie wird mit der späteren Rechnung verrechnet.“
 
-**Logo und Texte anpassen** (nur Verwalter): auf der Seite oben **„Vorlage anpassen“**.
+**Logo, Texte, Anordnung und Nummernkreis anpassen** (nur Verwalter): auf der Seite oben
+**„Vorlage anpassen“**.
 - **Logo:** PNG oder JPG bis 2 MB, auch mit transparentem Hintergrund. Es steht rechts
   oben, höchstens 60 × 22 mm.
 - **Texte:** Titel, Einleitung vor den Beträgen, Satz vor der Bankverbindung, Hinweis
   im Kasten, Schlusstext (etwa die Grußformel), weitere Zeilen der Fußzeile (etwa
   Handelsregister und Geschäftsführung), dazu Betreff und Text der Mail.
+- **Anordnung:**
+  - Logo links, mittig oder rechts oben, mit Größe und Abstand.
+  - Hausname links, mittig oder rechts; auf der Seite des Logos rückt er darunter.
+  - Anschrift links oder rechts, Nummer und Datum auf der anderen Seite, mit Abstand von
+    oben, etwa passend zum Fenster im Umschlag.
+  - Je Textbaustein Ausrichtung und Schriftgröße.
+  - Reihenfolge und Abstand der Blöcke Beträge, Bankverbindung, Hinweis und Schlusstext.
+- **Nummernkreis:** Muster mit `{jahr}` und `{nr}`, Stellen der laufenden Nummer, jedes
+  Jahr neu oder fortlaufend, nächste Nummer.
 - **Platzhalter** in geschweiften Klammern setzen Werte ein: `{nummer}`, `{datum}`,
   `{faellig}`, `{betrag}`, `{kunde}`, `{kundennummer}`, `{grund}`, `{absender}`. Die
   Seite listet sie auf.
@@ -656,8 +665,12 @@ Rechnung.
 Sonderzeichen außerhalb der westeuropäischen Schrift erscheinen im PDF vereinfacht,
 etwa „Lódz“ statt „Łódź“, und „EUR“ statt „€“.
 
-**Jede Nummer gibt es nur einmal**, auch in anderer Groß- und Kleinschreibung.
-Scheitert der Mailversand, ist die Nummer wieder frei. Die Zahlungsanforderungen liegen
+**Die Nummer vergibt der Nummernkreis beim Senden**, fortlaufend und ohne Zutun, etwa
+ZA-2026-0001, ZA-2026-0002 … Zwei gleichzeitige Sendungen bekommen nie dieselbe Nummer.
+Scheitert der Mailversand, ist die Nummer wieder frei, und der Kreis bekommt keine
+Lücke. Muster, Stellen und ob jedes Jahr neu bei 1 begonnen wird, stellt ein Verwalter
+unter „Vorlage anpassen“ ein. Dort lässt sich auch die nächste Nummer setzen, etwa um an
+eine bisherige Zählung anzuschließen. Schon vergebene Nummern werden übersprungen. Die Zahlungsanforderungen liegen
 im Archivordner unter `zahlungsanforderungen/` und stehen unten auf der Seite, mit dem
 PDF. Im Testlauf wird geprüft, aber nichts abgelegt und nichts versendet.
 
