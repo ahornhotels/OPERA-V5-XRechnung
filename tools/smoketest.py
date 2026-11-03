@@ -5670,6 +5670,111 @@ for _bad, _wort in (({"nummer": "A B"}, "Nummer"), ({"nummer": "x/1"}, "Nummer")
     except _za.Eingabefehler as _e:
         pruefe(_wort in str(_e), f"Eingabe {_bad} wird abgelehnt ({_wort})")
 
+# --- PDF-Baustein ohne fremde Bibliothek (app/pdf_einfach.py) ---------------
+import struct as _st, zlib as _zl
+from app import pdf_einfach as _pe
+# Von Hand aus der Adobe-Metrik: Z611 a556 h556 l222 u556 n556 g556 s500 a556 n556
+# f278 o556 r333 d556 e556 r333 u556 n556 g556 = 9505/1000 x 10 pt = 33,53 mm.
+pruefe(abs(_pe.breite("Zahlungsanforderung", 10) - 33.53) < 0.01,
+       f"Textbreite nach Helvetica-Metrik ({_pe.breite('Zahlungsanforderung', 10):.2f} mm)")
+_umb = _pe.umbrechen("eins zwei drei vier fünf sechs sieben acht neun zehn", 30, 10)
+pruefe(len(_umb) > 1 and all(_pe.breite(z, 10) <= 30 for z in _umb)
+       and " ".join(_umb) == "eins zwei drei vier fünf sechs sieben acht neun zehn",
+       "Zeilenumbruch: keine Zeile zu breit, kein Wort verloren")
+pruefe(_pe.umbrechen("a\nb", 100, 10) == ["a", "b"], "Zeilenumbrueche im Text bleiben")
+
+
+def _png_bauen(b, h, typ, pixel, filter_je_zeile, extra=b""):
+    """Kleiner PNG-Kodierer fuer den Test, mit allen fuenf Zeilenfiltern."""
+    bpp = {0: 1, 2: 3, 4: 2, 6: 4}[typ]
+    zeile = b * bpp
+    roh, vorige = bytearray(), bytes(zeile)
+    for y in range(h):
+        akt = pixel[y * zeile:(y + 1) * zeile]
+        f = filter_je_zeile[y % len(filter_je_zeile)]
+        aus = bytearray()
+        for x in range(zeile):
+            a = akt[x - bpp] if x >= bpp else 0
+            c = vorige[x - bpp] if x >= bpp else 0
+            o = vorige[x]
+            if f == 0: v = 0
+            elif f == 1: v = a
+            elif f == 2: v = o
+            elif f == 3: v = (a + o) >> 1
+            else:
+                pp = a + o - c
+                v = a if abs(pp - a) <= abs(pp - o) and abs(pp - a) <= abs(pp - c) else o if abs(pp - o) <= abs(pp - c) else c
+            aus.append((akt[x] - v) & 0xFF)
+        roh += bytes([f]) + aus
+        vorige = akt
+
+    def teil(art, daten):
+        return _st.pack(">I", len(daten)) + art + daten + _st.pack(">I", _zl.crc32(art + daten))
+    return (b"\x89PNG\r\n\x1a\n" + teil(b"IHDR", _st.pack(">IIBBBBB", b, h, 8, typ, 0, 0, 0))
+            + extra + teil(b"IDAT", _zl.compress(bytes(roh))) + teil(b"IEND", b""))
+
+
+_rgba = bytes((x * 7 + y * 13 + k * 31) & 0xFF for y in range(9) for x in range(11) for k in range(4))
+_bild = _pe.bild_lesen(_png_bauen(11, 9, 6, _rgba, [0, 1, 2, 3, 4]))
+_farbe = _zl.decompress(_bild["daten"])
+_soll_farbe = b"".join(_rgba[i:i + 3] for i in range(0, len(_rgba), 4))
+pruefe(_bild["breite"] == 11 and _bild["hoehe"] == 9 and _farbe == _soll_farbe
+       and _zl.decompress(_bild["maske"]) == _rgba[3::4],
+       "PNG mit Alphakanal: alle fuenf Zeilenfilter richtig entpackt, Transparenz als Maske")
+_grau = bytes(range(0, 200, 2))
+_g = _pe.bild_lesen(_png_bauen(10, 10, 0, _grau, [4, 3]))
+pruefe(_zl.decompress(_g["daten"]) == _grau and _g["maske"] is None and _g["farbraum"] == b"/DeviceGray",
+       "PNG in Graustufen ohne Transparenz: keine Maske")
+_jpg = (b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+        b"\xff\xc0\x00\x11\x08\x00\x40\x00\xc8\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01")
+_j = _pe.bild_lesen(_jpg)
+pruefe((_j["breite"], _j["hoehe"], _j["farbraum"], _j["filter"]) == (200, 64, b"/DeviceRGB", b"/DCTDecode"),
+       "JPEG: Groesse und Farbraum aus dem Kopf, Daten unveraendert")
+for _kaputt, _was in ((b"GIF89a....", "fremdes Format"), (b"\x89PNG\r\n\x1a\n" + b"\x00" * 20, "kaputtes PNG")):
+    try:
+        _pe.bild_lesen(_kaputt)
+        pruefe(False, f"{_was} wird abgelehnt")
+    except _pe.BildFehler:
+        pruefe(True, f"{_was} wird abgelehnt")
+_seite = _pe.Seite()
+_seite.text(20, 20, "Klammer (auf) und \\ Rückstrich", 10)
+_seite.bild(_bild, 10, 10, 20, 15)
+_roh = _seite.pdf(titel="T", komprimieren=False)
+pruefe(_roh.startswith(b"%PDF-1.4") and _roh.endswith(b"%%EOF\n") and b"/SMask" in _roh
+       and b"(Klammer \\(auf\\) und \\\\ R\xfcckstrich)" in _roh,
+       "PDF: Klammern und Rueckstrich maskiert, Umlaut in WinAnsi, Logo mit Maske")
+_xref = int(_roh.rsplit(b"startxref\n", 1)[1].split(b"\n")[0])
+pruefe(_roh[_xref:_xref + 4] == b"xref", "PDF: der Verweis auf die Objekttabelle stimmt")
+_stellen = [int(z[:10]) for z in _roh[_xref:].split(b"\n")[3:] if len(z) >= 18 and z[:10].isdigit()]
+pruefe(_stellen and all(_roh[st:].startswith(b"%d 0 obj" % (n + 1)) for n, st in enumerate(_stellen)),
+       f"PDF: jeder Eintrag der Objekttabelle zeigt auf sein Objekt ({len(_stellen)})")
+
+# --- Vorlage -----------------------------------------------------------------
+pruefe(_za.vorlage_pruefen(_za.VORGABE) == {k: v.strip() for k, v in _za.VORGABE.items()},
+       "die Vorgaben bestehen die eigene Pruefung")
+for _aend, _wort in (({"einleitung": "Bitte bis {gestern}"}, "{gestern}"),
+                     ({"hinweis": "Bitte zahlen Sie."}, "keine Rechnung"),
+                     ({"zahlungstext": "Kosten { offen"}, "Klammern"),
+                     ({"titel": ""}, "leer"),
+                     ({"schlusstext": "x" * 501}, "höchstens")):
+    try:
+        _za.vorlage_pruefen(dict(_za.VORGABE, **_aend))
+        pruefe(False, f"Vorlage {list(_aend)[0]}: wird abgelehnt")
+    except _za.Eingabefehler as _e:
+        pruefe(_wort in str(_e), f"Vorlage {list(_aend)[0]}: wird abgelehnt ({_wort})")
+pruefe(_za.fuellen("Bis {faellig}, {{wörtlich}}", {"faellig": "01.01.2032"}) == "Bis 01.01.2032, {wörtlich}",
+       "Platzhalter werden eingesetzt, doppelte Klammern bleiben als Klammer")
+try:
+    _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute, vorlage=dict(_za.VORGABE, einleitung="Lang. " * 900))
+    pruefe(False, "zu viel Text fuer eine Seite wird gemeldet")
+except _za.ZuLang:
+    pruefe(True, "zu viel Text fuer eine Seite wird gemeldet")
+_mt = _za.mail(dict(_zcfg, mail={"absender_name": "Musterhotel"}),
+               dict(_ze, grund="Raum {A}"), _zk, heute=_heute)
+pruefe(_mt[0] == "Zahlungsanforderung ZA-31-001 vom 04.05.2031" and "Musterhotel" in _mt[1]
+       and "Raum {{A}}" in _mt[1] and mailer._text(_mt[1], {}) .count("Raum {A}") == 1,
+       "Mail aus der Vorlage; Klammern im Grund ueberstehen das Einsetzen im Mailer")
+
 
 def _db_za(sql, parameter=None):
     if "profil_suche" in sql:
@@ -5719,8 +5824,8 @@ try:
         _sa = _za.satz_lesen("ZA-31-010") or {}
         pruefe(_o.status_code == 303 and _sa.get("status") == "gesendet" and len(_hgesendet) == 1
                and _hgesendet[0]["xml"] is None and _hgesendet[0]["pdf"].name == "ZA-31-010.pdf"
-               and _hgesendet[0]["vorlage"][0] == _za.MAIL_BETREFF
-               and _hgesendet[0]["werte_dazu"]["betrag"] == "100,00 EUR"
+               and _hgesendet[0]["vorlage"][0].startswith("Zahlungsanforderung ZA-31-010 vom ")
+               and "100,00 EUR" in _hgesendet[0]["vorlage"][1]
                and (_zablage / "ZA-31-010.pdf").is_file(),
                "Senden: PDF abgelegt und als einziger Anhang verschickt, ohne XML")
         _z = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
@@ -5749,12 +5854,51 @@ try:
         pruefe(_z6.status_code == 303 and not _za.satz_lesen("ZA-31-013"),
                "Testlauf: nichts abgelegt, nichts versendet")
         _hcfg["automatik"]["testlauf"] = False
+        # Vorlage: Seite, Speichern, Muster, Logo
+        pruefe(_ka.get("/zahlungsanforderung/vorlage").status_code == 200
+               and "Vorlage anpassen" in _ka.get("/zahlungsanforderung").text,
+               "die Vorlage ist fuer Verwalter erreichbar und verlinkt")
+        _vt = dict(_za.VORGABE, schlusstext="Herzliche Grüße\nIhr Team", fusszeile="HRB 000 Musterstadt")
+        _vs = _ka.post("/zahlungsanforderung/vorlage", data=_vt, follow_redirects=False)
+        pruefe(_vs.status_code == 303 and _za.vorlage_laden()["schlusstext"] == "Herzliche Grüße\nIhr Team"
+               and (_sandkasten / "data" / _za.VORLAGE_DATEI).is_file(),
+               "die Vorlage wird im Bestand gespeichert und geladen")
+        _vf = _ka.post("/zahlungsanforderung/vorlage", data=dict(_vt, hinweis="Bitte zahlen."))
+        pruefe("keine Rechnung" in _vf.text and _za.vorlage_laden()["hinweis"] == _za.VORGABE["hinweis"],
+               "ein Hinweis ohne 'keine Rechnung' wird nicht gespeichert")
+        _vm = _ka.post("/zahlungsanforderung/vorlage/muster", data=dict(_vt, titel="Anforderung"))
+        pruefe(_vm.status_code == 200 and _vm.content.startswith(b"%PDF-")
+               and _za.vorlage_laden()["titel"] == "Zahlungsanforderung",
+               "Muster-PDF mit den Formulartexten, ohne zu speichern")
+        _lp = _png_bauen(11, 9, 6, _rgba, [0, 1, 2, 3, 4])
+        _lo = _ka.post("/zahlungsanforderung/vorlage/logo", files={"logo": ("logo.png", _lp, "image/png")},
+                       follow_redirects=False)
+        pruefe(_lo.status_code == 303 and _za.logo_pfad() and _za.logo_pfad().read_bytes() == _lp
+               and _ka.get("/zahlungsanforderung/vorlage/logo").content == _lp,
+               "Logo hochladen: im Bestand abgelegt und abrufbar")
+        _zp2 = _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute, komprimieren=False)
+        pruefe(b"/Im1 Do" in _zp2 and b"/SMask" in _zp2 and b"HRB 000 Musterstadt" in _zp2
+               and b"Herzliche Gr\xfc\xdfe" in _zp2,
+               "das PDF traegt Logo, Fusszeile und Schlusstext der Vorlage")
+        _lf = _ka.post("/zahlungsanforderung/vorlage/logo", files={"logo": ("x.gif", b"GIF89a", "image/gif")})
+        pruefe("Nur PNG oder JPG" in _lf.text and _za.logo_pfad().read_bytes() == _lp,
+               "ein fremdes Format wird abgelehnt, das bisherige Logo bleibt")
+        _ka.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"})
+        _ka.post("/zahlungsanforderung/vorlage", data={"aktion": "vorgabe"})
+        pruefe(_za.logo_pfad() is None and _za.vorlage_laden() == {k: v.strip() for k, v in _za.VORGABE.items()},
+               "Logo entfernen und Vorgaben wiederherstellen")
         auth.anlegen("seher", "Geheim!123", "ansehen")
     with TestClient(app, client=("127.0.0.1", 50000)) as _kb:
         _kb.post("/login", data={"benutzer": "seher", "passwort": "Geheim!123"})
         _z7 = _kb.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-014", aktion="senden"))
         pruefe("Keine Berechtigung" in _z7.text and not _za.satz_lesen("ZA-31-014"),
                "Versenden duerfen nur Verwalter")
+        pruefe(_kb.get("/zahlungsanforderung/vorlage", follow_redirects=False).status_code == 303
+               and _kb.post("/zahlungsanforderung/vorlage", data=_za.VORGABE,
+                            follow_redirects=False).status_code == 303
+               and _kb.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"},
+                            follow_redirects=False).status_code == 303,
+               "die Vorlage aendern duerfen nur Verwalter")
 finally:
     opera.db.abfrage, config.laden, _mailer.senden = _echt_h
     with _za._verbindung() as con:

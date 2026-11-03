@@ -454,7 +454,13 @@ def _abhaengigkeiten_nachziehen(quelle_ordner: Path, sekunden: int = 600) -> str
     except (OSError, subprocess.SubprocessError) as e:
         return f"Abhängigkeiten liessen sich nicht nachziehen ({e}). Nicht umgeschaltet."
     if lauf.returncode != 0:
-        letzte = (lauf.stderr or lauf.stdout or "").strip().splitlines()[-3:]
+        # Ohne die Hinweise von pip ("[notice] A new release of pip ...") — sie
+        # stehen am Ende und verdeckten am 03.11.2026 den eigentlichen Fehler.
+        # ERROR-Zeilen gehen vor, sonst die letzten Zeilen.
+        zeilen = [z for z in (lauf.stderr or lauf.stdout or "").strip().splitlines()
+                  if z.strip() and not z.lstrip().startswith("[notice]")]
+        fehler = [z for z in zeilen if "ERROR" in z or "error:" in z.lower()]
+        letzte = (fehler or zeilen)[-3:]
         return ("Abhängigkeiten liessen sich nicht nachziehen. Nicht umgeschaltet, "
                 "die laufende Fassung bleibt. Meldung: " + " | ".join(letzte)[:400])
     log.info("Abhängigkeiten nachgezogen")

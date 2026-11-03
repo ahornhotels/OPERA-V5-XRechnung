@@ -1,0 +1,82 @@
+{% extends "basis.html" %}
+{% block titel %}Vorlage Zahlungsanforderung – OPERA XRechnung{% endblock %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Vorlage der Zahlungsanforderung</h1>
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Zur Zahlungsanforderung</a>
+  </div>
+</div>
+<p class="hinweis">Logo und Texte des Schreibens und der Mail. Anschrift, Beträge,
+Bankverbindung und die Hausdaten in der Fußzeile kommen weiter aus OPERA und der
+Konfiguration. Gespeichert wird im Bestand — eine Aktualisierung lässt die Vorlage
+unberührt.</p>
+
+{% if fehler %}<div class="karte fehler"><strong>{{ fehler }}</strong></div>{% endif %}
+
+<div class="spalten vor-versand">
+<section class="karte">
+  <h2>Logo</h2>
+  {% if logo %}
+  <p><img src="/zahlungsanforderung/vorlage/logo?v={{ logo_stand }}" alt="Logo"
+          style="max-width:60mm;max-height:22mm;border:1px solid var(--rand);padding:4px;background:#fff"></p>
+  {% else %}<p class="leer">Kein Logo hinterlegt.</p>{% endif %}
+  <form method="post" action="/zahlungsanforderung/vorlage/logo" enctype="multipart/form-data">
+    <label>PNG oder JPG, höchstens 2 MB
+      <input type="file" name="logo" accept="image/png,image/jpeg" required></label>
+    <div class="knoepfe"><button class="haupt">Logo hochladen</button></div>
+  </form>
+  {% if logo %}
+  <form method="post" action="/zahlungsanforderung/vorlage/logo"
+        onsubmit="return confirm('Logo entfernen?')">
+    <input type="hidden" name="aktion" value="entfernen">
+    <div class="knoepfe"><button>Logo entfernen</button></div>
+  </form>
+  {% endif %}
+  <p class="klein">Das Logo steht rechts oben, höchstens 60 mm breit und 22 mm hoch; das
+  Seitenverhältnis bleibt. Transparente PNGs gehen. Für eine saubere Darstellung reichen
+  600 Pixel Breite.</p>
+
+  <h2>Platzhalter</h2>
+  <p class="klein">In allen Texten einsetzbar, mit geschweiften Klammern:</p>
+  <table class="auswahl">
+    {% for name, text in platzhalter.items() %}
+    <tr><td><code>{{ '{' ~ name ~ '}' }}</code></td><td class="klein">{{ text }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="karte">
+  <h2>Texte</h2>
+  <form method="post" action="/zahlungsanforderung/vorlage" id="texte">
+    <label>Titel
+      <input name="titel" value="{{ werte.titel }}" maxlength="{{ laengen.titel }}" required></label>
+    <label>Einleitung vor den Beträgen
+      <textarea name="einleitung" rows="2" maxlength="{{ laengen.einleitung }}">{{ werte.einleitung }}</textarea></label>
+    <label>Satz vor der Bankverbindung
+      <textarea name="zahlungstext" rows="2" maxlength="{{ laengen.zahlungstext }}">{{ werte.zahlungstext }}</textarea></label>
+    <label>Hinweis im Kasten — muss „keine Rechnung“ enthalten
+      <textarea name="hinweis" rows="3" maxlength="{{ laengen.hinweis }}" required>{{ werte.hinweis }}</textarea></label>
+    <label>Schlusstext, etwa Grußformel (leer: keiner)
+      <textarea name="schlusstext" rows="3" maxlength="{{ laengen.schlusstext }}">{{ werte.schlusstext }}</textarea></label>
+    <label>Weitere Zeilen der Fußzeile, etwa Handelsregister und Geschäftsführung
+      <textarea name="fusszeile" rows="2" maxlength="{{ laengen.fusszeile }}">{{ werte.fusszeile }}</textarea></label>
+    <p class="klein">Darüber stehen immer Firmierung mit USt-IdNr., Anschrift und Kontakt
+    des Hauses.</p>
+    <h3>Mail</h3>
+    <label>Betreff
+      <input name="mail_betreff" value="{{ werte.mail_betreff }}" maxlength="{{ laengen.mail_betreff }}" required></label>
+    <label>Text
+      <textarea name="mail_text" rows="10" maxlength="{{ laengen.mail_text }}" required>{{ werte.mail_text }}</textarea></label>
+    <div class="knoepfe">
+      <button class="haupt">Speichern</button>
+      <button formaction="/zahlungsanforderung/vorlage/muster" formtarget="_blank">Muster-PDF ansehen</button>
+      <button name="aktion" value="vorgabe"
+              onclick="return confirm('Alle Texte auf die Vorgaben zurücksetzen? Das Logo bleibt.')">Vorgaben wiederherstellen</button>
+    </div>
+    <p class="klein">„Muster-PDF ansehen“ zeigt die Texte aus diesem Formular mit einem
+    erfundenen Kunden, ohne zu speichern.</p>
+  </form>
+</section>
+</div>
+{% endblock %}

@@ -3,11 +3,10 @@
 {% block inhalt %}
 <div class="kopfzeile">
   <h1>Zahlungsanforderung erstellen</h1>
-  {% if kunde %}
   <div class="knoepfe">
-    <a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Anderen Kunden suchen</a>
+    {% if kunde %}<a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Anderen Kunden suchen</a>{% endif %}
+    {% if verwalten %}<a class="knopf" href="/zahlungsanforderung/vorlage">Vorlage anpassen</a>{% endif %}
   </div>
-  {% endif %}
 </div>
 <p class="hinweis">Für Anzahlungen, die vor der Zahlung angefordert werden. Aus dem
 Kundenprofil in OPERA, dem Betrag, einer Nummer, dem Zahlungsziel und dem Grund entsteht

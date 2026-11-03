@@ -136,3 +136,88 @@ def ablage(request: Request, nummer: str):
                         status_code=404)
     return Response(pfad.read_bytes(), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{pfad.name}"'})
+
+
+# ------------------------------------------------------------------ Vorlage
+# Logo und Texte des Schreibens, nur fuer Verwalter.
+
+def _vorlage_seite(request: Request, werte: dict | None = None, meldung: str = "",
+                   fehler: str = ""):
+    logo = za.logo_pfad()
+    return seiten.TemplateResponse(request, "zahlungsanforderung_vorlage.html", _kontext(
+        request, werte=werte or za.vorlage_laden(), vorgabe=za.VORGABE,
+        platzhalter=za.PLATZHALTER, laengen=za.LAENGEN, logo=logo,
+        logo_stand=int(logo.stat().st_mtime) if logo else 0,
+        meldung=meldung, fehler=fehler))
+
+
+def _texte(form) -> dict:
+    return {f: str(form.get(f) or "") for f in za.VORGABE}
+
+
+@router.get("/zahlungsanforderung/vorlage", response_class=HTMLResponse)
+def vorlage(request: Request, meldung: str = ""):
+    if not _darf_verwalten(request):
+        return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
+    return _vorlage_seite(request, meldung=meldung)
+
+
+@router.post("/zahlungsanforderung/vorlage", response_class=HTMLResponse)
+async def vorlage_speichern(request: Request):
+    if not _darf_verwalten(request):
+        return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
+    form = await request.form()
+    werte = za.VORGABE if form.get("aktion") == "vorgabe" else _texte(form)
+    try:
+        za.vorlage_speichern(werte)
+    except za.Eingabefehler as e:
+        return _vorlage_seite(request, werte=_texte(form), fehler=str(e))
+    meldung = ("Vorgaben wiederhergestellt." if form.get("aktion") == "vorgabe"
+               else "Vorlage gespeichert.")
+    return RedirectResponse("/zahlungsanforderung/vorlage?" + urlencode({"meldung": meldung}),
+                            status_code=303)
+
+
+@router.post("/zahlungsanforderung/vorlage/muster")
+async def vorlage_muster(request: Request):
+    """Muster-PDF mit den Texten aus dem Formular, ohne sie zu speichern."""
+    if not _darf_verwalten(request):
+        return Response("Keine Berechtigung.", media_type="text/plain; charset=utf-8",
+                        status_code=403)
+    try:
+        texte = za.vorlage_pruefen(_texte(await request.form()))
+        dokument = za.muster(config.laden(), texte)
+    except za.Eingabefehler as e:
+        return Response(f"So geht es nicht: {e}", media_type="text/plain; charset=utf-8",
+                        status_code=409)
+    return Response(dokument, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="muster.pdf"'})
+
+
+@router.post("/zahlungsanforderung/vorlage/logo", response_class=HTMLResponse)
+async def vorlage_logo(request: Request):
+    if not _darf_verwalten(request):
+        return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
+    form = await request.form()
+    if form.get("aktion") == "entfernen":
+        za.logo_entfernen()
+        meldung = "Logo entfernt."
+    else:
+        datei = form.get("logo")
+        daten = await datei.read(za.LOGO_HOECHSTENS + 1) if hasattr(datei, "read") else b""
+        try:
+            za.logo_speichern(daten)
+        except za.Eingabefehler as e:
+            return _vorlage_seite(request, fehler=str(e))
+        meldung = "Logo gespeichert."
+    return RedirectResponse("/zahlungsanforderung/vorlage?" + urlencode({"meldung": meldung}),
+                            status_code=303)
+
+
+@router.get("/zahlungsanforderung/vorlage/logo")
+def vorlage_logo_zeigen(request: Request):
+    pfad = za.logo_pfad()
+    if not pfad:
+        return Response(status_code=404)
+    return Response(pfad.read_bytes(),
+                    media_type="image/jpeg" if pfad.suffix == ".jpg" else "image/png")

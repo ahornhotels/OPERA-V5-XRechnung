@@ -636,6 +636,23 @@ Rechnung.
   ausgewiesen. Nach Zahlungseingang erhalten Sie eine Anzahlungsrechnung mit
   ausgewiesener Umsatzsteuer; sie wird mit der späteren Rechnung verrechnet.“
 
+**Logo und Texte anpassen** (nur Verwalter): auf der Seite oben **„Vorlage anpassen“**.
+- **Logo:** PNG oder JPG bis 2 MB, auch mit transparentem Hintergrund. Es steht rechts
+  oben, höchstens 60 × 22 mm.
+- **Texte:** Titel, Einleitung vor den Beträgen, Satz vor der Bankverbindung, Hinweis
+  im Kasten, Schlusstext (etwa die Grußformel), weitere Zeilen der Fußzeile (etwa
+  Handelsregister und Geschäftsführung), dazu Betreff und Text der Mail.
+- **Platzhalter** in geschweiften Klammern setzen Werte ein: `{nummer}`, `{datum}`,
+  `{faellig}`, `{betrag}`, `{kunde}`, `{kundennummer}`, `{grund}`, `{absender}`. Die
+  Seite listet sie auf.
+- **„Muster-PDF ansehen“** zeigt die Texte aus dem Formular mit einem erfundenen Kunden,
+  ohne zu speichern.
+- **Der Hinweis muss „keine Rechnung“ enthalten.** Sonst wird nicht gespeichert, denn
+  ohne diesen Satz kann das Schreiben als Rechnung gelten.
+- **Eine Seite:** Ist der Text zu lang, meldet die Anwendung das, statt eine zweite
+  Seite anzufangen.
+- **Ablage:** Logo und Texte liegen im Bestand und überstehen jede Aktualisierung.
+
 Sonderzeichen außerhalb der westeuropäischen Schrift erscheinen im PDF vereinfacht,
 etwa „Lódz“ statt „Łódź“, und „EUR“ statt „€“.
 

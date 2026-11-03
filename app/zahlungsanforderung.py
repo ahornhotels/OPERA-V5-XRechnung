@@ -21,13 +21,14 @@ Leistung, auf die angezahlt wird. Die Aufteilung steht auf der Anforderung,
 die Steuerbetraege nicht."""
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from . import ablauf, db, mailer, opera, store
+from . import ablauf, db, mailer, opera, pdf_einfach, pfade, store
 
 CENT = Decimal("0.01")
 SAETZE = (Decimal(7), Decimal(19))
@@ -205,8 +206,8 @@ def maengel(cfg: dict, k: dict, h: dict) -> list[str]:
     return fehler
 
 
-# ------------------------------------------------------------------ PDF
-# Die eingebaute Schrift (Helvetica) kennt nur Latin-1. Was darueber hinausgeht,
+# ------------------------------------------------------------------ Zeichen
+# Die PDF-Schrift (Helvetica, app/pdf_einfach.py) kennt nur Latin-1. Was darueber hinausgeht,
 # wird in die naechstliegende Form gebracht, statt den Bau scheitern zu lassen:
 # typografische Zeichen ersetzt, Akzente abgetrennt (Łódź -> Lodz). Eine
 # eigene Schriftdatei mitzuliefern waere die Alternative; fuer Namen in
@@ -233,15 +234,171 @@ def _pdf_text(text) -> str:
     return "".join(aus)
 
 
-def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
-        komprimieren: bool = True) -> bytes:
-    """Die Zahlungsanforderung als PDF (A4)."""
-    from fpdf import FPDF
-    from fpdf.enums import XPos, YPos
+# ------------------------------------------------------------------ Vorlage
+# Was das Haus am Schreiben selbst gestalten kann: Logo, Texte, Fusszeile und
+# die Mail. Gespeichert im BESTAND (data/, branding/), nicht im Programm —
+# eine Aktualisierung tauscht das Programm aus und darf die Gestaltung des
+# Hauses nicht mitnehmen. Fehlt die Datei, gelten die Vorgaben unten.
+VORLAGE_DATEI = "zahlungsanforderung_vorlage.json"
+LOGO_NAME = "logo_zahlungsanforderung"
+LOGO_HOECHSTENS = 2 * 1024 * 1024
+PLATZHALTER = {
+    "nummer": "Nummer der Zahlungsanforderung",
+    "datum": "Datum der Zahlungsanforderung",
+    "faellig": "Zahlbar bis",
+    "betrag": "Betrag, etwa 1.234,50 EUR",
+    "kunde": "Name des Kunden",
+    "kundennummer": "Kundennummer (Debitor), sonst leer",
+    "grund": "Grund der Anzahlung",
+    "absender": "Absendername aus der Mail-Konfiguration",
+}
+VORGABE = {
+    "titel": "Zahlungsanforderung",
+    "einleitung": "Wir bitten Sie um folgende Anzahlung:",
+    "zahlungstext": "Bitte überweisen Sie den Betrag bis zum {faellig} auf folgendes Konto:",
+    "hinweis": HINWEIS_KEINE_RECHNUNG,
+    "schlusstext": "",
+    "fusszeile": "",
+    "mail_betreff": "Zahlungsanforderung {nummer} vom {datum}",
+    "mail_text": ("Guten Tag,\n\nanbei erhalten Sie unsere Zahlungsanforderung {nummer} über "
+                  "{betrag} für: {grund}.\n\nWir bitten um Zahlung bis zum {faellig}. Die "
+                  "Bankverbindung steht in der angehängten PDF-Datei.\n\n"
+                  "Dies ist keine Rechnung. Nach Zahlungseingang erhalten Sie eine "
+                  "Anzahlungsrechnung mit ausgewiesener Umsatzsteuer.\n\n"
+                  "Mit freundlichen Grüßen\n{absender}"),
+}
+# Hoechstlaengen: Das Schreiben hat genau eine Seite.
+LAENGEN = {"titel": 60, "einleitung": 500, "zahlungstext": 300, "hinweis": 600,
+           "schlusstext": 500, "fusszeile": 400, "mail_betreff": 200, "mail_text": 3000}
 
+
+def _vorlage_pfad():
+    return pfade.DATEN_DIR / VORLAGE_DATEI
+
+
+def vorlage_laden() -> dict:
+    """Die Texte des Hauses, ergaenzt um die Vorgaben."""
+    werte = dict(VORGABE)
+    try:
+        gespeichert = json.loads(_vorlage_pfad().read_text(encoding="utf-8"))
+        werte.update({k: str(v) for k, v in gespeichert.items() if k in VORGABE})
+    except (OSError, ValueError):
+        pass
+    return werte
+
+
+def fuellen(text: str, werte: dict) -> str:
+    """Platzhalter einsetzen. Unbekannte stehen nie im Text — das prueft
+    vorlage_pruefen beim Speichern; geht es trotzdem schief, bleibt der Text."""
+    try:
+        return str(text or "").format_map({k: werte.get(k, "") for k in PLATZHALTER})
+    except (KeyError, IndexError, ValueError, AttributeError):
+        return str(text or "")
+
+
+def vorlage_pruefen(werte: dict) -> dict:
+    """Prueft die eingegebenen Texte. Wirft Eingabefehler mit allen Maengeln."""
+    aus, fehler = {}, []
+    probe = {k: "x" for k in PLATZHALTER}
+    for feld, name in (("titel", "Titel"), ("einleitung", "Einleitung"),
+                       ("zahlungstext", "Zahlungssatz"), ("hinweis", "Hinweis"),
+                       ("schlusstext", "Schlusstext"), ("fusszeile", "Fußzeile"),
+                       ("mail_betreff", "Betreff der Mail"), ("mail_text", "Text der Mail")):
+        text = str(werte.get(feld) or "").replace("\r\n", "\n").strip()
+        if feld == "mail_betreff":
+            text = " ".join(text.split())
+        if len(text) > LAENGEN[feld]:
+            fehler.append(f"{name}: höchstens {LAENGEN[feld]} Zeichen.")
+        try:
+            text.format_map(probe)
+        except KeyError as e:
+            fehler.append(f"{name}: Den Platzhalter {{{e.args[0]}}} gibt es nicht. Möglich sind "
+                          + ", ".join("{" + p + "}" for p in PLATZHALTER) + ".")
+        except (IndexError, ValueError):
+            fehler.append(f"{name}: Geschweifte Klammern gehören nur um einen Platzhalter. "
+                          "Für eine Klammer im Text bitte {{ oder }} schreiben.")
+        aus[feld] = text
+    for feld in ("titel", "hinweis", "mail_betreff", "mail_text"):
+        if not aus[feld]:
+            fehler.append(f"{feld.replace('_', ' ').capitalize()} darf nicht leer sein.")
+    if "keine rechnung" not in aus["hinweis"].lower():
+        fehler.append("Der Hinweis muss sagen, dass das Schreiben keine Rechnung ist "
+                      "(„keine Rechnung“). Sonst kann es als Rechnung gelten.")
+    if fehler:
+        raise Eingabefehler(" ".join(fehler))
+    return aus
+
+
+def vorlage_speichern(werte: dict) -> None:
+    geprueft = vorlage_pruefen(werte)
+    pfad = _vorlage_pfad()
+    pfad.parent.mkdir(parents=True, exist_ok=True)
+    zwischen = pfad.with_suffix(".neu")
+    zwischen.write_text(json.dumps(geprueft, ensure_ascii=False, indent=2), encoding="utf-8")
+    zwischen.replace(pfad)
+
+
+def logo_pfad():
+    """Die Logodatei, falls eine hinterlegt ist."""
+    for endung in (".png", ".jpg"):
+        p = pfade.BRANDING_DIR / (LOGO_NAME + endung)
+        if p.is_file():
+            return p
+    return None
+
+
+def logo_speichern(daten: bytes) -> None:
+    """Ein Logo hinterlegen (PNG oder JPG). Wirft Eingabefehler."""
+    if not daten:
+        raise Eingabefehler("Es wurde keine Datei gewählt.")
+    if len(daten) > LOGO_HOECHSTENS:
+        raise Eingabefehler("Das Logo ist größer als 2 MB.")
+    try:
+        bild = pdf_einfach.bild_lesen(daten)
+    except pdf_einfach.BildFehler as e:
+        raise Eingabefehler(f"Das Logo lässt sich nicht verwenden: {e}") from e
+    if not (bild["breite"] and bild["hoehe"]):
+        raise Eingabefehler("Das Logo hat keine Größe.")
+    endung = ".jpg" if daten[:3] == b"\xff\xd8\xff" else ".png"
+    pfade.BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+    logo_entfernen()
+    (pfade.BRANDING_DIR / (LOGO_NAME + endung)).write_bytes(daten)
+
+
+def logo_entfernen() -> None:
+    for endung in (".png", ".jpg"):
+        (pfade.BRANDING_DIR / (LOGO_NAME + endung)).unlink(missing_ok=True)
+
+
+def platzhalter_werte(eingabe: dict, k: dict, heute: date, cfg: dict | None = None) -> dict:
+    return {"absender": ((cfg or {}).get("mail") or {}).get("absender_name") or "",
+            "nummer": eingabe["nummer"], "datum": datum(heute.isoformat()),
+            "faellig": datum(eingabe["faellig"]), "betrag": euro(eingabe["gesamt"]),
+            "kunde": k.get("name") or "", "kundennummer": str(k.get("debitorennummer") or ""),
+            "grund": eingabe["grund"]}
+
+
+# ------------------------------------------------------------------ PDF
+LINKS, RECHTS = 22.0, 190.0
+FUSS_UNTEN = 287.0
+
+
+class ZuLang(Eingabefehler):
+    """Der Inhalt passt nicht auf eine Seite."""
+
+
+def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
+        komprimieren: bool = True, vorlage: dict | None = None, logo: bytes | None = None) -> bytes:
+    """Die Zahlungsanforderung als PDF (A4, eine Seite). vorlage und logo
+    sind zum Ausprobieren; sonst gilt, was gespeichert ist."""
     p = cfg.get("property") or {}
     heute = heute or date.today()
+    v = vorlage or vorlage_laden()
+    werte = platzhalter_werte(eingabe, k, heute, cfg)
     t = _pdf_text
+    breite = RECHTS - LINKS
+    s = pdf_einfach.Seite()
+
     haus_name = h.get("supplierregistrationname") or h.get("suppliername") or ""
     haus_zeile = " · ".join(x for x in (
         h.get("suppliername"), h.get("supplierstreetname"),
@@ -250,112 +407,115 @@ def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
         str(p.get("kontakt_telefon") or h.get("suppliercontacttelephone") or "").strip(),
         str(p.get("kontakt_email") or h.get("suppliercontactelectronicmail") or "").strip()) if x)
 
-    class Blatt(FPDF):
-        def footer(self):
-            self.set_y(-22)
-            self.set_font("helvetica", size=7.5)
-            self.set_text_color(90, 90, 90)
-            zeilen = [haus_name + (f" · USt-IdNr. {p.get('ust_id')}" if p.get("ust_id") else ""),
-                      haus_zeile.replace(" · ", ", ", 1) if haus_zeile else "", kontakt]
-            for z in zeilen:
-                if z:
-                    self.cell(0, 3.6, t(z), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    # Fusszeile zuerst: Sie legt fest, wie weit der Inhalt reichen darf.
+    fuss = [haus_name + (f" · USt-IdNr. {p.get('ust_id')}" if p.get("ust_id") else ""),
+            haus_zeile, kontakt]
+    for z in fuellen(v.get("fusszeile"), werte).split("\n"):
+        fuss += pdf_einfach.umbrechen(t(z), breite, 7.5)
+    fuss = [z for z in fuss if z.strip()]
+    fuss_oben = FUSS_UNTEN - 3.6 * len(fuss)
+    for i, z in enumerate(fuss):
+        s.text(105, fuss_oben + 3.6 * (i + 1) - 0.8, t(z), 7.5, grau=0.35, ausrichtung="mitte")
+    grenze = fuss_oben - 6
 
-    doc = Blatt(format="A4")
-    doc.set_compression(komprimieren)
-    doc.set_title(t(f"Zahlungsanforderung {eingabe['nummer']}"))
-    doc.set_author(t(h.get("suppliername") or ""))
-    doc.set_margins(22, 18, 20)
-    doc.set_auto_page_break(True, margin=28)
-    doc.add_page()
-    breite = doc.w - doc.l_margin - doc.r_margin
+    # Logo rechts oben, hoechstens 60 x 22 mm, Seitenverhaeltnis bleibt.
+    logo_daten = logo if logo is not None else (logo_pfad().read_bytes() if logo_pfad() else None)
+    if logo_daten:
+        try:
+            bild = pdf_einfach.bild_lesen(logo_daten)
+            massstab = min(60 / bild["breite"], 22 / bild["hoehe"])
+            b, hoehe = bild["breite"] * massstab, bild["hoehe"] * massstab
+            s.bild(bild, RECHTS - b, 12, b, hoehe)
+        except pdf_einfach.BildFehler:
+            pass   # beim Hochladen geprueft; ein spaeter beschaedigtes Logo haelt nichts auf
 
     # Kopf: Haus
-    doc.set_font("helvetica", "B", 13)
-    doc.cell(0, 6, t(h.get("suppliername") or ""), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.set_font("helvetica", size=8)
-    doc.set_text_color(90, 90, 90)
-    doc.cell(0, 4, t(haus_zeile), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.set_text_color(0, 0, 0)
+    s.text(LINKS, 20, t(h.get("suppliername") or ""), 13, fett=True)
+    s.text(LINKS, 25, t(haus_zeile), 8, grau=0.35)
 
     # Anschrift links, Angaben rechts
-    oben = doc.get_y() + 12
-    doc.set_xy(doc.l_margin, oben)
-    doc.set_font("helvetica", size=10)
+    y = 50.0
     land = str(k.get("country") or "").strip().upper()
-    anschrift = [k.get("legal_company") or k.get("name"), k.get("address1"), k.get("address2"),
-                 f"{k.get('zip_code') or ''} {k.get('city') or ''}".strip(),
-                 land if land and land != str(h.get("supplieridentificationcode") or "DE").upper() else ""]
-    for z in anschrift:
+    for z in (k.get("legal_company") or k.get("name"), k.get("address1"), k.get("address2"),
+              f"{k.get('zip_code') or ''} {k.get('city') or ''}".strip(),
+              land if land and land != str(h.get("supplieridentificationcode") or "DE").upper() else ""):
         if z:
-            doc.cell(95, 5, t(z), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    links_unten = doc.get_y()
-    angaben = [("Nummer", eingabe["nummer"]), ("Datum", datum(heute.isoformat()))]
+            for teil in pdf_einfach.umbrechen(t(z), 95, 10):
+                s.text(LINKS, y, teil, 10)
+                y += 5
+    links_unten = y
+    y = 50.0
+    angaben = [("Nummer", eingabe["nummer"]), ("Datum", werte["datum"])]
     if k.get("debitorennummer"):
         angaben.append(("Kundennummer", str(k["debitorennummer"])))
     if eingabe.get("referenz"):
         angaben.append(("Ihre Referenz", eingabe["referenz"]))
-    doc.set_xy(doc.l_margin + 110, oben)
     for name, wert in angaben:
-        doc.set_x(doc.l_margin + 110)
-        doc.set_font("helvetica", size=9)
-        doc.cell(28, 5, t(name))
-        doc.set_font("helvetica", "B", 9)
-        doc.cell(0, 5, t(wert), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.set_y(max(links_unten, doc.get_y()) + 14)
+        s.text(124, y, name, 9)
+        for teil in pdf_einfach.umbrechen(t(wert), RECHTS - 150, 9, fett=True):
+            s.text(150, y, teil, 9, fett=True)
+            y += 5
+    y = max(links_unten, y) + 12
 
     # Titel und Text
-    doc.set_font("helvetica", "B", 15)
-    doc.cell(0, 8, "Zahlungsanforderung", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(2)
-    doc.set_font("helvetica", size=10)
-    doc.multi_cell(breite, 5, t(f"Anzahlung für: {eingabe['grund']}"),
-                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    s.text(LINKS, y, t(fuellen(v["titel"], werte)), 15, fett=True)
+    y += 9
+
+    def absatz(text: str, groesse: float = 10, fett: bool = False, abstand: float = 2) -> None:
+        nonlocal y
+        text = fuellen(text, werte).strip()
+        if not text:
+            return
+        for z in pdf_einfach.umbrechen(t(text), breite, groesse, fett):
+            s.text(LINKS, y, z, groesse, fett=fett)
+            y += groesse * 0.5
+        y += abstand
+
+    absatz(f"Anzahlung für: {eingabe['grund']}", abstand=0)
     if eingabe.get("von") and eingabe.get("bis"):
-        doc.multi_cell(breite, 5, t(f"Leistungszeitraum: {datum(eingabe['von'])} bis "
-                                    f"{datum(eingabe['bis'])}"),
-                       new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(2)
-    doc.multi_cell(breite, 5, "Wir bitten Sie um folgende Anzahlung:",
-                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(2)
+        absatz(f"Leistungszeitraum: {datum(eingabe['von'])} bis {datum(eingabe['bis'])}", abstand=0)
+    y += 2
+    absatz(v["einleitung"], abstand=3)
 
     # Betraege
     for satz in SAETZE:
         wert = eingabe[f"brutto_{satz}"]
         if wert:
-            doc.cell(breite - 45, 6, t(f"Anzahlung auf Leistungen mit {satz} % Umsatzsteuer"))
-            doc.cell(45, 6, t(euro(wert)), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.set_draw_color(120, 120, 120)
-    doc.line(doc.l_margin, doc.get_y() + 1, doc.l_margin + breite, doc.get_y() + 1)
-    doc.ln(2.5)
-    doc.set_font("helvetica", "B", 11)
-    doc.cell(breite - 45, 7, "Zu zahlen")
-    doc.cell(45, 7, t(euro(eingabe["gesamt"])), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(5)
+            s.text(LINKS, y, t(f"Anzahlung auf Leistungen mit {satz} % Umsatzsteuer"), 10)
+            s.text(RECHTS, y, euro(wert), 10, ausrichtung="rechts")
+            y += 6
+    s.linie(LINKS, y - 3, RECHTS, y - 3)
+    y += 3
+    s.text(LINKS, y, "Zu zahlen", 11, fett=True)
+    s.text(RECHTS, y, euro(eingabe["gesamt"]), 11, fett=True, ausrichtung="rechts")
+    y += 11
 
     # Zahlung
-    doc.set_font("helvetica", size=10)
-    doc.multi_cell(breite, 5, t(f"Bitte überweisen Sie den Betrag bis zum {datum(eingabe['faellig'])} "
-                                "auf folgendes Konto:"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(1)
-    zweck = verwendungszweck(eingabe, k)
+    absatz(v["zahlungstext"], abstand=1.5)
     for name, wert in (("Kontoinhaber", p.get("kontoinhaber") or haus_name),
                        ("IBAN", p.get("iban")), ("BIC", p.get("bic")),
-                       ("Verwendungszweck", zweck)):
+                       ("Verwendungszweck", verwendungszweck(eingabe, k))):
         if wert:
-            doc.set_font("helvetica", size=10)
-            doc.cell(38, 5.5, t(name))
-            doc.set_font("helvetica", "B", 10)
-            doc.cell(0, 5.5, t(wert), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    doc.ln(7)
+            s.text(LINKS, y, name, 10)
+            s.text(LINKS + 38, y, t(wert), 10, fett=True)
+            y += 5.5
+    y += 6
 
-    # Hinweis
-    doc.set_fill_color(242, 239, 232)
-    doc.set_font("helvetica", "B", 9.5)
-    doc.multi_cell(breite, 5, t(HINWEIS_KEINE_RECHNUNG), fill=True, padding=3, align="L",
-                   new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    return bytes(doc.output())
+    # Hinweis im Kasten
+    zeilen = pdf_einfach.umbrechen(t(fuellen(v["hinweis"], werte)), breite - 6, 9.5, fett=True)
+    hoehe = len(zeilen) * 4.8 + 5
+    s.flaeche(LINKS - 1, y - 4, breite + 2, hoehe)
+    for z in zeilen:
+        s.text(LINKS + 2, y + 0.5, z, 9.5, fett=True)
+        y += 4.8
+    y += 10
+
+    absatz(v.get("schlusstext") or "")
+    if y > grenze:
+        raise ZuLang("Der Inhalt passt nicht auf eine Seite. Bitte Grund, Einleitung, "
+                     "Schlusstext oder Fußzeile kürzen.")
+    return s.pdf(titel=t(f"{fuellen(v['titel'], werte)} {eingabe['nummer']}"),
+                 autor=t(h.get("suppliername") or ""), komprimieren=komprimieren)
 
 
 def verwendungszweck(eingabe: dict, k: dict) -> str:
@@ -446,13 +606,14 @@ def ordner(cfg: dict):
 
 
 # ------------------------------------------------------------------ Versand
-MAIL_BETREFF = "Zahlungsanforderung {bill_no} vom {issuedate}"
-MAIL_TEXT = ("Guten Tag,\n\nanbei erhalten Sie unsere Zahlungsanforderung {bill_no} über "
-             "{betrag} für: {grund}.\n\nWir bitten um Zahlung bis zum {faellig}. Die "
-             "Bankverbindung steht in der angehängten PDF-Datei.\n\n"
-             "Dies ist keine Rechnung. Nach Zahlungseingang erhalten Sie eine "
-             "Anzahlungsrechnung mit ausgewiesener Umsatzsteuer.\n\n"
-             "Mit freundlichen Gruessen\n{absender_name}")
+def mail(cfg: dict, eingabe: dict, k: dict, heute: date | None = None) -> tuple[str, str]:
+    """Betreff und Text der Mail, Platzhalter eingesetzt. Klammern werden fuer
+    mailer.senden verdoppelt: Der setzt seinerseits Platzhalter ein, und ein
+    Grund wie "Raum {A}" liesse ihn sonst stolpern."""
+    v = vorlage_laden()
+    werte = platzhalter_werte(eingabe, k, heute or date.today(), cfg)
+    return tuple(fuellen(v[f], werte).replace("{", "{{").replace("}", "}}")
+                 for f in ("mail_betreff", "mail_text"))
 
 
 def vorbereiten(cfg: dict, form: dict, name_id: int,
@@ -490,7 +651,7 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
             befunde.append("Es ist keine Empfängeradresse gewählt.")
         if befunde:
             raise ValueError("Nicht erstellt: " + " ".join(befunde))
-        dokument = pdf(cfg, eingabe, k, h)
+        dokument = pdf(cfg, eingabe, k, h)   # ZuLang ist ein Eingabefehler
         if (cfg.get("automatik") or {}).get("testlauf"):
             store.protokoll("testlauf", f"Zahlungsanforderung {nummer} über "
                             f"{euro(eingabe['gesamt'])}: nicht abgelegt und nicht versendet "
@@ -521,12 +682,10 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
                             "versendet", benutzer=benutzer)
             return "abgelegt"
         try:
+            betreff, text = mail(cfg, eingabe, k)
             kennung = mailer.senden(
                 cfg, an=an, bill_no=nummer, issuedate=datum(satz["datum"]),
-                xml=None, xml_name="", pdf=datei,
-                vorlage=(MAIL_BETREFF, MAIL_TEXT),
-                werte_dazu={"betrag": euro(eingabe["gesamt"]), "faellig": datum(eingabe["faellig"]),
-                            "grund": eingabe["grund"]})
+                xml=None, xml_name="", pdf=datei, vorlage=(betreff, text))
         except mailer.MailFehler as e:
             # Nichts ging hinaus: Nummer und Ablage wieder frei.
             datei.unlink(missing_ok=True)
@@ -542,3 +701,27 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
         return "gesendet"
     finally:
         ablauf._versand_sperre.release()
+
+
+# ------------------------------------------------------------------ Muster
+MUSTER_KUNDE = {"name": "Muster & Söhne AG", "legal_company": None, "address1": "Hauptstraße 1",
+                "address2": None, "zip_code": "80331", "city": "München", "country": "DE",
+                "debitorennummer": "4711"}
+MUSTER_EINGABE = {"nummer": "ZA-MUSTER-001", "brutto_7": "12.450,00", "brutto_19": "3.980,50",
+                  "grund": "Tagung Frühjahrsklausur, 40 Zimmer, Tagungspauschale",
+                  "referenz": "PO-0815"}
+
+
+def muster(cfg: dict, vorlage: dict | None = None) -> bytes:
+    """Ein Muster-PDF mit erfundenem Kunden, fuer die Seite der Vorlage. Die
+    Hausdaten kommen aus OPERA; ist die Datenbank nicht erreichbar, aus der
+    Konfiguration."""
+    heute = date.today()
+    eingabe = eingabe_pruefen(dict(MUSTER_EINGABE, faellig=faellig_vorgabe(cfg, heute)), heute)
+    try:
+        h = haus(cfg)
+    except Exception:
+        p = cfg.get("property") or {}
+        h = {"suppliername": p.get("haus") or p.get("resort") or "Ihr Haus",
+             "supplierstreetname": "", "suppliercityname": "", "supplierpostalzone": ""}
+    return pdf(cfg, eingabe, MUSTER_KUNDE, h, heute, vorlage=vorlage)
