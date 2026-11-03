@@ -1,0 +1,206 @@
+{% extends "basis.html" %}
+{% block titel %}Zahlungsanforderung – OPERA XRechnung{% endblock %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Zahlungsanforderung erstellen</h1>
+  {% if kunde %}
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Anderen Kunden suchen</a>
+  </div>
+  {% endif %}
+</div>
+<p class="hinweis">Für Anzahlungen, die vor der Zahlung angefordert werden. Aus dem
+Kundenprofil in OPERA, dem Betrag, einer Nummer, dem Zahlungsziel und dem Grund entsteht
+eine Zahlungsanforderung als PDF. <strong>Sie ist keine Rechnung</strong> und weist keine
+Umsatzsteuer aus. Die Anzahlungsrechnung kommt nach dem Zahlungseingang: Wird die Zahlung in
+OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung hinaus.
+{% if testlauf %}<strong>Testlauf aktiv: Es wird nichts abgelegt und nichts versendet.</strong>{% endif %}</p>
+
+{% if fehler %}<div class="karte fehler"><strong>{{ fehler }}</strong></div>{% endif %}
+
+{# ------------------------------------------------ Schritt 1: Kunde suchen #}
+{% if not kunde %}
+<section class="karte">
+  <h2>1. Kunde</h2>
+  <form method="get" action="/zahlungsanforderung" class="suche">
+    <label for="suche">Name beginnt mit</label>
+    <input id="suche" name="suche" value="{{ suche }}" autofocus minlength="2"
+           placeholder="Firmenname oder Nachname, mindestens 2 Buchstaben">
+    <button class="haupt">In OPERA suchen</button>
+  </form>
+  <p class="klein">Gesucht wird nach dem Anfang des Namens, so wie OPERA ihn führt — bei
+  Firmen der Firmenname, bei Personen der Nachname. Höchstens 50 Treffer; wer nicht dabei
+  ist, mit mehr Buchstaben suchen. <strong>Nicht angezeigt werden inaktive Profile und
+  Ansprechpartner einer Firma</strong> — fehlt eine Person, die in OPERA zu sehen ist, ist
+  sie dort meist als Ansprechpartner angelegt. Dann die Firma suchen.</p>
+  {% if treffer %}
+  <table>
+    <thead><tr><th>Name</th><th>Typ</th><th>Anschrift</th><th>Kundennr.</th><th></th></tr></thead>
+    <tbody>
+    {% for t in treffer %}
+      <tr>
+        <td><strong>{{ t.name }}</strong>{% if t.legal_company and t.legal_company != t.name %}<br><span class="klein">{{ t.legal_company }}</span>{% endif %}</td>
+        <td>{{ t.name_type }}</td>
+        <td>{{ t.address1 or '' }}{% if t.address1 %}, {% endif %}{{ t.zip_code or '' }} {{ t.city or '' }} {{ t.country or '' }}</td>
+        <td>{{ t.debitorennummer or '—' }}</td>
+        <td><a class="knopf" href="/zahlungsanforderung?name_id={{ t.name_id }}">Auswählen</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
+{# ------------------------------------------------ Schritt 2: Angaben #}
+{% if kunde %}
+<div class="spalten vor-versand">
+<section class="karte">
+  <h2>1. Kunde</h2>
+  <dl>
+    <dt>Name</dt><dd><strong>{{ kunde.name }}</strong></dd>
+    {% if kunde.legal_company and kunde.legal_company != kunde.name %}<dt>Firmierung</dt><dd>{{ kunde.legal_company }}</dd>{% endif %}
+    <dt>Anschrift</dt><dd>{{ kunde.address1 or '' }}{% if kunde.address2 %}, {{ kunde.address2 }}{% endif %}<br>
+      {{ kunde.zip_code or '' }} {{ kunde.city or '' }} {{ kunde.country or '' }}
+      {% if not kunde.city %}<br><span class="fehler">Am Profil fehlt der Ort. Bitte in OPERA
+      ergänzen und den Kunden neu auswählen.</span>{% endif %}</dd>
+    <dt>Kundennummer</dt><dd>{{ kunde.debitorennummer or '—' }}</dd>
+    <dt>Profil</dt><dd>{{ kunde.name_id }} ({{ kunde.name_type }})</dd>
+  </dl>
+</section>
+
+<section class="karte">
+  <h2>2. Anzahlung</h2>
+  <form method="post" action="/zahlungsanforderung/pruefen">
+    <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
+    <label>Nummer der Zahlungsanforderung
+      <input name="nummer" value="{{ werte.nummer or '' }}" required maxlength="40"
+             pattern="[A-Za-z0-9][A-Za-z0-9._\-]*" placeholder="z. B. ZA-2026-001"></label>
+    <p class="klein">Aus einem eigenen Nummernkreis. Jede Nummer gibt es nur einmal — das
+    wird geprüft.</p>
+    <label>Betrag auf Leistungen mit 7 % USt (brutto)
+      <input name="brutto_7" value="{{ werte.brutto_7 or '' }}" inputmode="decimal" placeholder="0,00"></label>
+    <label>Betrag auf Leistungen mit 19 % USt (brutto)
+      <input name="brutto_19" value="{{ werte.brutto_19 or '' }}" inputmode="decimal" placeholder="0,00"></label>
+    <p class="klein">Bruttobeträge, so wie mit dem Kunden vereinbart. Ein Feld darf leer
+    bleiben. Auf der Anforderung steht die Aufteilung nach Steuersatz, aber keine
+    Steuerbeträge.</p>
+    <label>Grund der Anzahlung
+      <input name="grund" value="{{ werte.grund or '' }}" required maxlength="200"
+             placeholder="z. B. Tagung „Frühjahrsklausur“ 12.–14.03.2027, 40 Zimmer"></label>
+    <label>Zahlbar bis
+      <input type="date" name="faellig" value="{{ werte.faellig or '' }}" required></label>
+    <label>Leistungszeitraum, falls bekannt (Anreise bis Abreise)
+      <span class="wahl"><input type="date" name="von" value="{{ werte.von or '' }}"> bis
+      <input type="date" name="bis" value="{{ werte.bis or '' }}"></span></label>
+    <label>Referenz des Kunden (Bestellnummer), falls vorhanden
+      <input name="referenz" value="{{ werte.referenz or '' }}" maxlength="80"></label>
+
+    <h3>Empfänger</h3>
+    {% if kunde.mails %}
+    <table class="auswahl">
+      {% for m in kunde.mails %}
+      <tr><td><input type="radio" name="empfaenger" value="{{ m.email }}" id="m{{ loop.index }}"
+                     {{ 'checked' if werte.empfaenger == m.email }}></td>
+          <td><label for="m{{ loop.index }}"><strong>{{ m.email }}</strong></label></td>
+          <td class="klein">{{ m.quelle }}{% if m.primaer == 'Y' %}, primär{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="klein">Am Profil ist keine E-Mail-Adresse hinterlegt.</p>
+    {% endif %}
+    <label>Andere Adresse
+      <input type="email" name="empfaenger_eigen" value="{{ werte.empfaenger_eigen or '' }}"
+             placeholder="geht vor die Auswahl oben"></label>
+    {% if blindkopien %}<p class="klein">Blindkopie an {{ blindkopien|join(', ') }}.</p>{% endif %}
+
+    <div class="knoepfe">
+      <button class="haupt">Prüfen</button>
+    </div>
+  </form>
+</section>
+</div>
+
+{# ------------------------------------------------ Schritt 3: Vorschau #}
+{% if vorschau %}
+{% set e = vorschau.eingabe %}
+<section class="karte aktionsleiste">
+  <h2>3. Prüfen und senden</h2>
+  <table class="summen">
+    <tbody>
+    {% for satz in (7, 19) %}{% if e['brutto_' ~ satz] %}
+      <tr><td>Anzahlung auf Leistungen mit {{ satz }} % Umsatzsteuer</td><td>{{ euro(e['brutto_' ~ satz]) }}</td></tr>
+    {% endif %}{% endfor %}
+      <tr class="betont"><td>Zu zahlen</td><td>{{ euro(e.gesamt) }}</td></tr>
+    </tbody>
+  </table>
+  <dl>
+    <dt>Nummer</dt><dd>{{ e.nummer }}</dd>
+    <dt>Anzahlung für</dt><dd>{{ e.grund }}</dd>
+    {% if e.von %}<dt>Leistungszeitraum</dt><dd>{{ datum(e.von) }} bis {{ datum(e.bis) }}</dd>{% endif %}
+    <dt>Zahlbar bis</dt><dd>{{ datum(e.faellig) }}</dd>
+    <dt>Empfänger</dt><dd>{{ e.empfaenger or 'keine Adresse gewählt' }}</dd>
+    <dt>Hinweis auf dem PDF</dt><dd>{{ hinweis }}</dd>
+  </dl>
+
+  {% if vorschau.befunde %}
+  <div class="fehler"><strong>So geht die Zahlungsanforderung nicht hinaus:</strong>
+    <ul>{% for b in vorschau.befunde %}<li>{{ b }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="knoepfe">
+    {% set felder = ['nummer', 'brutto_7', 'brutto_19', 'grund', 'faellig', 'von', 'bis', 'referenz', 'empfaenger', 'empfaenger_eigen'] %}
+    <form method="post" action="/zahlungsanforderung/pdf" target="_blank">
+      <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
+      {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
+      <button>PDF ansehen</button>
+    </form>
+    {% if verwalten and not vorschau.befunde %}
+    <form method="post" action="/zahlungsanforderung/senden"
+          onsubmit="return confirm('Zahlungsanforderung {{ e.nummer }} über {{ euro(e.gesamt) }} jetzt senden?')">
+      <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
+      {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
+      <input type="hidden" name="aktion" value="senden">
+      <button class="haupt" {{ 'disabled' if not e.empfaenger }}>Ablegen und senden</button>
+    </form>
+    <form method="post" action="/zahlungsanforderung/senden"
+          onsubmit="return confirm('Zahlungsanforderung {{ e.nummer }} nur ablegen, ohne Mail? Die Nummer ist danach vergeben.')">
+      <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
+      {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
+      <input type="hidden" name="aktion" value="ablegen">
+      <button>Nur ablegen</button>
+    </form>
+    {% elif not verwalten %}
+    <p class="klein">Versenden dürfen nur Verwalter.</p>
+    {% endif %}
+  </div>
+  <p class="klein">Geändert? Oben anpassen und erneut „Prüfen“. Beim Senden wird alles noch
+  einmal geprüft.</p>
+</section>
+{% endif %}
+{% endif %}
+
+{# ------------------------------------------------ bisherige #}
+<section class="karte">
+  <h2>Bisher erstellte Zahlungsanforderungen</h2>
+  {% if liste %}
+  <table>
+    <thead><tr><th>Nummer</th><th>Datum</th><th>Kunde</th><th>Grund</th><th>Betrag</th><th>Zahlbar bis</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for a in liste %}
+      <tr>
+        <td>{{ a.nummer }}</td><td>{{ datum(a.datum) }}</td><td>{{ a.kunde }}</td><td>{{ a.grund }}</td>
+        <td>{{ euro(a.gesamt or 0) }}</td><td>{{ datum(a.faellig) }}</td>
+        <td>{% if a.status == 'gesendet' %}gesendet {{ (a.gesendet_am or '')[:16]|replace('T', ' ') }} an {{ a.empfaenger }}
+            {% elif a.status == 'abgelegt' %}abgelegt, nicht versendet
+            {% elif a.status == 'begonnen' %}<span class="fehler">Versand nicht bestätigt — bitte im Postausgang nachsehen</span>
+            {% else %}{{ a.status }}{% endif %}</td>
+        <td>{% if a.pdf_pfad %}<a href="/zahlungsanforderung/ablage/{{ a.nummer }}.pdf" target="_blank">PDF</a>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="leer">Noch keine.</p>{% endif %}
+</section>
+{% endblock %}

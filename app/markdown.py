@@ -42,6 +42,12 @@ def rendern(quelle: str) -> tuple[str, list[tuple[int, str, str]]]:
     """Gibt (HTML, Inhaltsverzeichnis) zurück.
     Das Verzeichnis ist eine Liste aus (Ebene, Text, Anker)."""
     zeilen = quelle.replace("\r\n", "\n").split("\n")
+    # Marken fuer den oeffentlichen Abzug (tools/oeffentlich.py). Sie trennen
+    # Abschnitte, die nur im privaten Repository stehen, und gehoeren nicht
+    # auf die Seite. Zusammengesetzt, weil das Werkzeug jede Zeile mit der
+    # woertlichen Marke als Marke liest.
+    marken = {f"<!-- PRIVAT-{w} -->" for w in ("ANFANG", "ENDE")}
+    zeilen = [z for z in zeilen if z.strip() not in marken]
     aus: list[str] = []
     verzeichnis: list[tuple[int, str, str]] = []
     i = 0

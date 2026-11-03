@@ -600,6 +600,54 @@ versucht es stündlich wieder („Wartet auf die zugehörige
 Anzahlungsrechnung“). Ist die Anzahlungsrechnung zurückgelegt, kommt die
 Rechnung in die Sichtprüfung. Von Hand lässt sie sich jederzeit senden.
 
+### Zahlungsanforderung für eine Anzahlung
+
+Eine Anzahlung **vor** der Zahlung anfordern: oben im Menü **„Zahlungsanforderung“**. Es
+entsteht ein PDF, das per Mail an den Kunden geht. **Es ist keine Rechnung** und weist
+keine Umsatzsteuer aus. Die Rechnung über die Anzahlung kommt nach dem Zahlungseingang:
+Bucht das Haus die Zahlung in OPERA als Anzahlung, legt OPERA einen Anzahlungsbeleg an.
+Die Anwendung schickt ihn wie gewohnt als Anzahlungsrechnung (XRechnung, mit Steuer)
+hinaus, und die Schlussrechnung zieht ihn ab. So steht die Steuer auf genau einer
+Rechnung.
+
+**Ablauf in drei Schritten:**
+
+1. **Kunde suchen.** Den Anfang des Namens eingeben: bei Firmen den Firmennamen, bei
+   Personen den Nachnamen. Gesucht wird in den Profilen in OPERA. Angezeigt werden
+   höchstens 50 Treffer, sortiert nach Namen. Inaktive Profile und Ansprechpartner einer
+   Firma erscheinen nicht. Wer nicht dabei ist, mit mehr Buchstaben suchen.
+2. **Angaben eintragen:**
+   - **Nummer** aus einem eigenen Nummernkreis, etwa „ZA-2026-001“.
+   - **Betrag brutto** auf Leistungen mit 7 % und mit 19 %. Ein Feld darf leer bleiben.
+   - **Grund**, zum Beispiel die Veranstaltung mit Datum.
+   - **Zahlbar bis**, vorbelegt mit dem Zahlungsziel aus der Konfiguration.
+   - Wahlweise der **Leistungszeitraum** und die **Referenz des Kunden**.
+   - **Empfänger:** eine Adresse aus dem Profil oder eine eigene.
+3. **Prüfen.** Die Seite zeigt die Zusammenfassung. „PDF ansehen“ öffnet das PDF, ohne
+   die Nummer zu vergeben. **„Ablegen und senden“** und **„Nur ablegen“** gibt es nur für
+   Verwalter.
+
+**Auf dem PDF steht:**
+- Absender, Anschrift und Bankverbindung aus OPERA und der Konfiguration.
+- Die Anschrift des Kunden, Nummer, Datum, Kundennummer und Referenz.
+- Der Grund und je Steuersatz der Betrag, darunter „Zu zahlen“.
+- Zahlungsziel, Konto und Verwendungszweck.
+- Unten der Satz: „Dies ist keine Rechnung. Die Umsatzsteuer wird hier nicht
+  ausgewiesen. Nach Zahlungseingang erhalten Sie eine Anzahlungsrechnung mit
+  ausgewiesener Umsatzsteuer; sie wird mit der späteren Rechnung verrechnet.“
+
+Sonderzeichen außerhalb der westeuropäischen Schrift erscheinen im PDF vereinfacht,
+etwa „Lódz“ statt „Łódź“, und „EUR“ statt „€“.
+
+**Jede Nummer gibt es nur einmal**, auch in anderer Groß- und Kleinschreibung.
+Scheitert der Mailversand, ist die Nummer wieder frei. Die Zahlungsanforderungen liegen
+im Archivordner unter `zahlungsanforderungen/` und stehen unten auf der Seite, mit dem
+PDF. Im Testlauf wird geprüft, aber nichts abgelegt und nichts versendet.
+
+> **Wichtig nach dem Zahlungseingang:** Die Zahlung in OPERA als **Anzahlung** buchen.
+> Nur dann entsteht die Anzahlungsrechnung, die der Kunde für seine Vorsteuer braucht,
+> und nur dann zieht die Schlussrechnung die Anzahlung ab.
+
 ## Gutschriften
 
 Ein Beleg, dessen Positionen zusammen negativ sind und dem keine Anzahlung

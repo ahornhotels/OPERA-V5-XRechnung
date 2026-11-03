@@ -52,6 +52,45 @@ AUSGELASSEN = {
     "PROTOTYP.md": "Projektstandsbericht, ueberholt",
 }
 
+# Bloecke in gemeinsamen Dateien, die nur privat sind: von der Zeile mit der
+# Anfangsmarke bis zur Zeile mit der Endmarke, beide eingeschlossen. Die Marke
+# steht im Kommentar der jeweiligen Sprache (#, {# #}, <!-- -->). Auch diese
+# Datei wird so gekuerzt. Deshalb stehen die Marken hier nur zusammengesetzt:
+# woertlich waere jede dieser Zeilen selbst eine Marke.
+PRIVAT_ANFANG, PRIVAT_ENDE = "PRIVAT-" + "ANFANG", "PRIVAT-" + "ENDE"
+# Was nach dem Herausschneiden nirgends mehr stehen darf. Steht es doch
+# irgendwo, hat jemand eine Stelle nicht eingefasst.
+PRIVAT_SPUREN = [PRIVAT_ANFANG, PRIVAT_ENDE]
+# Weitere Namen, die nicht hinausgehen duerfen, kommen hier dazu, solange eine
+# private Funktion eingefasst ist. Derzeit gibt es keine.
+
+
+class Unausgeglichen(ValueError):
+    pass
+
+
+def privat_entfernen(text: str) -> str:
+    """Schneidet die privaten Bloecke heraus. Wirft Unausgeglichen, wenn eine
+    Marke ohne Gegenstueck steht — dann bliebe entweder privater Code stehen
+    oder es fiele oeffentlicher weg."""
+    aus, drin = [], False
+    for zeile in text.splitlines(keepends=True):
+        if PRIVAT_ANFANG in zeile:
+            if drin:
+                raise Unausgeglichen("Anfangsmarke zweimal ohne Endmarke")
+            drin = True
+            continue
+        if PRIVAT_ENDE in zeile:
+            if not drin:
+                raise Unausgeglichen("Endmarke ohne Anfangsmarke")
+            drin = False
+            continue
+        if not drin:
+            aus.append(zeile)
+    if drin:
+        raise Unausgeglichen("Anfangsmarke ohne Endmarke")
+    return "".join(aus)
+
 # Verzeichnisse, die gar nicht erst versioniert sind, aber im Arbeitsbaum
 # liegen — zur Sicherheit noch einmal ausdruecklich.
 NIEMALS = ("config/app.json", "config/users.json", "config/secret.key",
@@ -160,7 +199,19 @@ def main(ziel: pathlib.Path) -> int:
             continue
         zielweg = ziel / rel
         zielweg.parent.mkdir(parents=True, exist_ok=True)
-        zielweg.write_bytes(quelle.read_bytes())
+        inhalt = quelle.read_bytes()
+        if PRIVAT_ANFANG.encode() in inhalt or PRIVAT_ENDE.encode() in inhalt:
+            try:
+                inhalt = privat_entfernen(inhalt.decode("utf-8")).encode("utf-8")
+            except Unausgeglichen as e:
+                print(f"FEHLER: {rel}: {e}")
+                return 1
+            print(f"  gekuerzt     {rel}  (private Bloecke entfernt)")
+        zielweg.write_bytes(inhalt)
+        # Das Dateirecht mitnehmen. Ohne das kamen run.sh und die Skripte in
+        # install/ ohne Ausfuehrungsrecht im oeffentlichen Repository an —
+        # unter Linux hiess das "permission denied" beim ersten Start.
+        zielweg.chmod(quelle.stat().st_mode & 0o777)
         kopiert += 1
 
     print(f"\n{kopiert} Dateien uebernommen, {ausgelassen} ausgelassen.")
@@ -175,6 +226,13 @@ def main(ziel: pathlib.Path) -> int:
             if name in t:
                 tot.append(f"{p.relative_to(ziel)} verweist auf {name}")
     befunde = pruefen(ziel)
+    for p in sorted(ziel.rglob("*")):
+        if not p.is_file() or p.suffix in OHNE_INHALT:
+            continue
+        t = text_von(p)
+        for spur in PRIVAT_SPUREN:
+            if spur in t:
+                befunde.append(f"{p.relative_to(ziel)}: Spur der privaten Funktion ({spur})")
 
     if tot:
         print(f"\n{len(tot)} toter Verweis(e) auf ausgelassene Dokumente:")

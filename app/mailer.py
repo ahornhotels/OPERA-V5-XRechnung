@@ -181,9 +181,11 @@ STORNO_TEXT = ("Guten Tag,\n\nanbei erhalten Sie die Stornorechnung {bill_no}-S 
 
 
 def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
-           xml: bytes, xml_name: str, pdf: Path | None = None,
+           xml: bytes | None, xml_name: str, pdf: Path | None = None,
            city_ledger: bool = False, gutschrift: bool = False,
-           bezug: str = "", storno: bool = False) -> Versandergebnis:
+           bezug: str = "", storno: bool = False,
+           vorlage: tuple[str, str] | None = None,
+           werte_dazu: dict | None = None) -> Versandergebnis:
     """Verschickt eine Rechnung. Gibt die Message-ID zurueck, samt der
     Blindkopien, die der Server abgelehnt hat (Versandergebnis).
     Wirft MailFehler, wenn der Versand nicht moeglich ist."""
@@ -206,11 +208,17 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
              "empfaenger": an,
              # Nur bei Gutschriften gefuellt: " zur Rechnung 1234 vom 2026-10-29"
              # oder leer, wenn die berichtigte Rechnung nicht eindeutig ist.
-             "bezug": bezug}
+             "bezug": bezug,
+             # Weitere Platzhalter fuer eine eigene Vorlage.
+             **(werte_dazu or {})}
     # Eine Gutschrift bekommt eigene Vorlagen. Die Rechnungsvorlage sagte
     # "anbei erhalten Sie die Rechnung" — bei einer Gutschrift falsch, und der
     # Satz zu § 14c UStG ("keine zusaetzliche Forderung") passt dort nicht.
-    if storno:
+    # Eine eigene Vorlage (Betreff, Text) geht allem anderen vor — fuer
+    # Rechnungen, die nicht aus einem OPERA-Beleg stammen.
+    if vorlage is not None:
+        betreff, text = vorlage
+    elif storno:
         betreff, text = STORNO_BETREFF, STORNO_TEXT
     elif gutschrift:
         betreff = m.get("betreff_gutschrift") or GUTSCHRIFT_BETREFF
@@ -240,7 +248,9 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
     nachricht["Message-ID"] = make_msgid()
     nachricht.set_content(_text(text, werte))
 
-    nachricht.add_attachment(xml, maintype="application", subtype="xml", filename=xml_name)
+    # Ohne XML nur fuer Schreiben, die keine Rechnung sind (Zahlungsanforderung).
+    if xml is not None:
+        nachricht.add_attachment(xml, maintype="application", subtype="xml", filename=xml_name)
     if pdf and pdf.exists():
         nachricht.add_attachment(pdf.read_bytes(), maintype="application",
                                  subtype="pdf", filename=pdf.name)

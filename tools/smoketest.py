@@ -4250,9 +4250,22 @@ pruefe(all(q.startswith("SELECT * FROM (") and q.rstrip().endswith(") WHERE ROWN
 # WHERE 1 = 0 schob Oracle bei der UDF-Uebersicht unter ein Aggregat und zaehlte
 # doch ueber alle Profile (gemessen 1,1 s). ROWNUM < 1 kollidiert nur, wenn eine
 # Abfrage selbst ROWNUM benutzt — dann waere die Einpackung zu ueberdenken.
-pruefe(not [n for n in _alle_sql if "rownum" in "\n".join(z.split("--")[0] for z in
-            (BASE / "sql" / "opera" / n).read_text(encoding="utf-8").splitlines()).lower()],
-       "keine Abfrage benutzt selbst ROWNUM")
+# Erlaubt ist genau eine Form: eine eigene Unterabfrage, die AUSSEN mit
+# ") WHERE ROWNUM <= n" endet (erst sortieren, dann die ersten n Treffer). Darum noch einmal ROWNUM < 1 ist gueltiges Oracle und bricht
+# ebenso vor der ersten Zeile ab. Jede andere Stelle schlaegt weiter an.
+import re as _re_rn
+_rownum_falsch = []
+for _n in _alle_sql:
+    _t = "\n".join(z.split("--")[0] for z in
+                   (BASE / "sql" / "opera" / _n).read_text(encoding="utf-8").splitlines()).lower()
+    _ohne_ende = _re_rn.sub(r"\)\s*where\s+rownum\s*<=\s*\d+\s*$", ")", _t.strip())
+    if "rownum" in _ohne_ende:
+        _rownum_falsch.append(_n)
+pruefe(not _rownum_falsch,
+       f"keine Abfrage benutzt ROWNUM ausser als Grenze ganz aussen ({_rownum_falsch})")
+pruefe(_re_rn.sub(r"\)\s*where\s+rownum\s*<=\s*\d+\s*$", ")",
+                  "select * from (select 1 from dual where rownum < 5) where rownum <= 50")
+       .count("rownum") == 1, "und ROWNUM mitten in einer Abfrage faellt weiter auf")
 pruefe(all(set(b) == set(opera._bindnamen(q)) for q, b in _abgesetzt),
        "jede Bindvariable bekommt einen Wert, keine zu viel (sonst lehnt oracledb ab)")
 pruefe(not any("@SPALTE@" in q or "@SCHEMA@" in q for q, _ in _abgesetzt),
@@ -5595,6 +5608,157 @@ def _text_von(pfad):
         return pfad.read_text(encoding="utf-8")
     except (UnicodeDecodeError, OSError):
         return ""
+
+print("8z) Zahlungsanforderung fuer Anzahlungen (app/zahlungsanforderung.py)")
+from decimal import Decimal as _D
+from datetime import date as _date
+from app import zahlungsanforderung as _za
+pruefe([_za.betrag(x) for x in ("1.234,56", "1234,5", "1234.50", "", "9.876.543")]
+       == [_D("1234.56"), _D("1234.5"), _D("1234.50"), _D(0), _D("9876543")],
+       "Betraege mit Komma, Punkt und Tausenderpunkt werden gelesen")
+for _x in ("-5", "abc", "1,234", "NaN", "Infinity"):
+    try:
+        _za.betrag(_x)
+        pruefe(False, f"'{_x}' wird abgelehnt")
+    except _za.Eingabefehler:
+        pruefe(True, f"'{_x}' wird abgelehnt")
+pruefe(_za.euro(_D("1234.5")) == "1.234,50 EUR" and _za.datum("2031-05-04") == "04.05.2031",
+       "Betrag und Datum in deutscher Schreibweise")
+pruefe(_za._pdf_text("Łódź – „Grüße“ 5 € 北京") == 'Lódz - "Grüße" 5 EUR ??',
+       "Zeichen ausserhalb der PDF-Schrift werden vereinfacht, Latin-1 (ó, ü, ß) bleibt")
+
+_zcfg = json.loads(json.dumps(cfg))
+_zcfg["property"].update(ust_id="DE123456789", kontakt_telefon="+49 30 1",
+                         kontakt_email="buha@beispiel.de", iban="DE02120300000000202051",
+                         bic="BYLADEM1001", kontoinhaber="Musterhotel GmbH", zahlungsziel_tage=14)
+_zk = {"name_id": 77, "name": "Muster & Söhne AG", "legal_company": None, "address1": "Hauptstr. 1",
+       "address2": None, "zip_code": "10115", "city": "Berlin", "country": "DE",
+       "debitorennummer": "4711", "mails": [{"email": "rechnung@beispiel.de", "quelle": "Profil",
+                                              "primaer": "Y"}]}
+_zh = {"suppliername": "Musterhotel", "supplierregistrationname": "Musterhotel GmbH",
+       "supplierstreetname": "Allee 2", "suppliercityname": "Berlin", "supplierpostalzone": "10117",
+       "supplieridentificationcode": "DE", "suppliercontacttelephone": "030 0",
+       "suppliercontactelectronicmail": "info@beispiel.de", "documentcurrencycode": "EUR"}
+_heute = _date(2031, 5, 4)
+_ze = _za.eingabe_pruefen({"nummer": "ZA-31-001", "brutto_7": "1.234,56", "brutto_19": "1,03",
+                           "grund": "Tagung  Frühjahr\n2032", "faellig": "2031-05-18",
+                           "referenz": "PO 99", "von": "2031-06-01", "bis": "2031-06-02",
+                           "empfaenger": "rechnung@beispiel.de"}, heute=_heute)
+pruefe(_ze["grund"] == "Tagung Frühjahr 2032" and _ze["gesamt"] == _D("1235.59"),
+       "Grund auf einer Zeile, Gesamtbetrag ist die Summe der Eingaben")
+pruefe(_za.maengel(_zcfg, _zk, _zh) == [], "vollstaendige Stammdaten: kein Mangel")
+pruefe(_za.maengel(_zcfg, dict(_zk, city=None), _zh) and
+       _za.maengel(dict(_zcfg, property=dict(_zcfg["property"], iban="")), _zk, _zh),
+       "fehlender Ort am Profil oder fehlende IBAN werden gemeldet")
+_zp = _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute, komprimieren=False)
+pruefe(_zp.startswith(b"%PDF-") and _zp.rstrip().endswith(b"%%EOF"), "ein PDF entsteht")
+_zt = _zp.decode("latin-1")
+for _wort in ("Zahlungsanforderung", "ZA-31-001", "04.05.2031", "18.05.2031", "1.235,59 EUR",
+              "1.234,56 EUR", "1,03 EUR", "7 % Umsatzsteuer", "19 % Umsatzsteuer", "Dies ist keine Rechnung",
+              "DE02120300000000202051", "Zahlungsanforderung ZA-31-001, Kunde 4711", "PO 99",
+              "Tagung Frühjahr 2032", "01.06.2031 bis 02.06.2031", "USt-IdNr. DE123456789"):
+    pruefe(_wort in _zt, f"im PDF steht: {_wort}")
+pruefe("Rechnungsnummer" not in _zt and "Steuerbetrag" not in _zt,
+       "das PDF nennt sich nirgends Rechnung und weist keinen Steuerbetrag aus")
+for _bad, _wort in (({"nummer": "A B"}, "Nummer"), ({"nummer": "x/1"}, "Nummer"),
+                    ({"brutto_7": ""}, "kein Betrag"), ({"grund": " "}, "Grund"),
+                    ({"faellig": "2031-05-01"}, "Vergangenheit"), ({"von": "2031-06-01"}, "beide Daten")):
+    _eing = dict({"nummer": "ZA-9", "brutto_7": "10", "grund": "x", "faellig": "2031-05-18"}, **_bad)
+    try:
+        _za.eingabe_pruefen(_eing, heute=_heute)
+        pruefe(False, f"Eingabe {_bad} wird abgelehnt")
+    except _za.Eingabefehler as _e:
+        pruefe(_wort in str(_e), f"Eingabe {_bad} wird abgelehnt ({_wort})")
+
+
+def _db_za(sql, parameter=None):
+    if "profil_suche" in sql:
+        return [dict(_zk, name_type="COMPANY")]
+    if "profil_anschrift" in sql:
+        return [{k: v for k, v in _zk.items() if k != "mails"}]
+    if "profil_mails" in sql:
+        return _zk["mails"]
+    if "resort_stammdaten" in sql:
+        return [_zh]
+    return []
+
+
+_hcfg = json.loads(json.dumps(_zcfg))
+_hcfg["automatik"]["testlauf"] = False
+_hcfg["mail"].update(aktiv=True, erlaubte_empfaenger=[])
+_hcfg["ablage"]["archiv_ordner"] = str(_sandkasten / "data" / "archiv_za")
+_zablage = _sandkasten / "data" / "archiv_za" / "zahlungsanforderungen"
+_hgesendet = []
+_echt_h = (opera.db.abfrage, config.laden, _mailer.senden)
+opera.db.abfrage = _db_za
+config.laden = lambda: _hcfg
+_mailer.senden = lambda cfg, **k: (_hgesendet.append(k), "<za@test>")[1]
+_hform = {"name_id": "77", "nummer": "ZA-31-010", "brutto_7": "100", "brutto_19": "",
+          "grund": "Tagung", "faellig": "2099-01-31", "empfaenger": "rechnung@beispiel.de"}
+try:
+    with TestClient(app, client=("127.0.0.1", 50000)) as _ka:
+        _ka.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+        pruefe(_ka.get("/zahlungsanforderung").status_code == 200
+               and 'href="/zahlungsanforderung"' in _ka.get("/").text,
+               "/zahlungsanforderung laedt und steht im Menue")
+        _s = _ka.get("/zahlungsanforderung?suche=mu")
+        pruefe("Muster &amp; Söhne AG" in _s.text and "name_id=77" in _s.text,
+               "die Namenssuche zeigt Treffer")
+        _m = _ka.get("/zahlungsanforderung?name_id=77")
+        pruefe('value="rechnung@beispiel.de"' in _m.text and 'name="faellig" value="' in _m.text,
+               "nach der Auswahl: Empfaenger und Zahlungsziel vorbelegt")
+        _v = _ka.post("/zahlungsanforderung/pruefen", data=_hform)
+        pruefe("Ablegen und senden" in _v.text and "100,00 EUR" in _v.text
+               and "keine Rechnung" in _v.text, "Pruefen zeigt die Zusammenfassung mit Sendeknopf")
+        _x = _ka.post("/zahlungsanforderung/pdf", data=_hform)
+        pruefe(_x.status_code == 200 and _x.content.startswith(b"%PDF-")
+               and _x.headers["content-type"] == "application/pdf"
+               and not _za.satz_lesen("ZA-31-010"), "PDF ansehen vergibt keine Nummer")
+        _o = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"),
+                      follow_redirects=False)
+        _sa = _za.satz_lesen("ZA-31-010") or {}
+        pruefe(_o.status_code == 303 and _sa.get("status") == "gesendet" and len(_hgesendet) == 1
+               and _hgesendet[0]["xml"] is None and _hgesendet[0]["pdf"].name == "ZA-31-010.pdf"
+               and _hgesendet[0]["vorlage"][0] == _za.MAIL_BETREFF
+               and _hgesendet[0]["werte_dazu"]["betrag"] == "100,00 EUR"
+               and (_zablage / "ZA-31-010.pdf").is_file(),
+               "Senden: PDF abgelegt und als einziger Anhang verschickt, ohne XML")
+        _z = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="senden"))
+        pruefe("bereits vergeben" in _z.text and len(_hgesendet) == 1,
+               "dieselbe Nummer ein zweites Mal: abgelehnt, nichts versendet")
+        _z2 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="za-31-010", aktion="senden"))
+        pruefe("bereits vergeben" in _z2.text, "auch in anderer Schreibweise")
+        _mailer.senden = lambda cfg, **k: (_ for _ in ()).throw(_mailer.MailFehler("Server weg"))
+        _z4 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-011", aktion="senden"))
+        pruefe("Server weg" in _z4.text and not _za.satz_lesen("ZA-31-011")
+               and not (_zablage / "ZA-31-011.pdf").exists(),
+               "Versand scheitert: Nummer und Ablage wieder frei")
+        _z5 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-012", aktion="ablegen"),
+                       follow_redirects=False)
+        pruefe(_z5.status_code == 303 and (_za.satz_lesen("ZA-31-012") or {}).get("status") == "abgelegt",
+               "Nur ablegen: abgelegt, ohne Mail")
+        _l = _ka.get("/zahlungsanforderung")
+        pruefe("ZA-31-010" in _l.text and "/zahlungsanforderung/ablage/ZA-31-010.pdf" in _l.text
+               and _ka.get("/zahlungsanforderung/ablage/ZA-31-010.pdf").content.startswith(b"%PDF-"),
+               "die Liste zeigt die erstellten, das PDF ist abrufbar")
+        pruefe(_ka.get("/zahlungsanforderung/ablage/..%2Fapp.pdf").status_code == 404,
+               "die Ablage gibt nur eigene Nummern heraus")
+        _hcfg["automatik"]["testlauf"] = True
+        _z6 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-013", aktion="senden"),
+                       follow_redirects=False)
+        pruefe(_z6.status_code == 303 and not _za.satz_lesen("ZA-31-013"),
+               "Testlauf: nichts abgelegt, nichts versendet")
+        _hcfg["automatik"]["testlauf"] = False
+        auth.anlegen("seher", "Geheim!123", "ansehen")
+    with TestClient(app, client=("127.0.0.1", 50000)) as _kb:
+        _kb.post("/login", data={"benutzer": "seher", "passwort": "Geheim!123"})
+        _z7 = _kb.post("/zahlungsanforderung/senden", data=dict(_hform, nummer="ZA-31-014", aktion="senden"))
+        pruefe("Keine Berechtigung" in _z7.text and not _za.satz_lesen("ZA-31-014"),
+               "Versenden duerfen nur Verwalter")
+finally:
+    opera.db.abfrage, config.laden, _mailer.senden = _echt_h
+    with _za._verbindung() as con:
+        con.execute("DELETE FROM zahlungsanforderungen WHERE nummer LIKE 'ZA-31-%'")
 
 print()
 if fehler:

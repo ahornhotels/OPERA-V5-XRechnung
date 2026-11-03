@@ -1282,3 +1282,9 @@ def hilfe_installation(request: Request):
 def protokoll(request: Request):
     return seiten.TemplateResponse(request, "protokoll.html", _kontext(
         request, eintraege=store.protokoll_lesen(300)))
+
+
+# Zahlungsanforderung fuer Anzahlungen (app/zahlungsanforderung.py). Ganz am
+# Ende, weil die Seiten seiten, _kontext und _darf_verwalten von hier benutzen.
+from . import zahlungsanforderung_web  # noqa: E402
+app.include_router(zahlungsanforderung_web.router)
