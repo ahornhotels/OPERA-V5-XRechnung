@@ -179,24 +179,13 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
 
 {# ------------------------------------------------ bisherige #}
 <section class="karte">
-  <h2>Bisher erstellte Zahlungsanforderungen</h2>
+  <div class="kopfzeile">
+    <h2>Bisher erstellte Zahlungsanforderungen</h2>
+    <div class="knoepfe"><a class="knopf" href="/zahlungsanforderung/suche">Alle durchsuchen</a></div>
+  </div>
   {% if liste %}
-  <table>
-    <thead><tr><th>Nummer</th><th>Datum</th><th>Kunde</th><th>Grund</th><th>Betrag</th><th>Zahlbar bis</th><th>Status</th><th></th></tr></thead>
-    <tbody>
-    {% for a in liste %}
-      <tr>
-        <td>{{ a.nummer }}</td><td>{{ datum(a.datum) }}</td><td>{{ a.kunde }}</td><td>{{ a.grund }}</td>
-        <td>{{ euro(a.gesamt or 0) }}</td><td>{{ datum(a.faellig) }}</td>
-        <td>{% if a.status == 'gesendet' %}gesendet {{ (a.gesendet_am or '')[:16]|replace('T', ' ') }} an {{ a.empfaenger }}
-            {% elif a.status == 'abgelegt' %}abgelegt, nicht versendet
-            {% elif a.status == 'begonnen' %}<span class="fehler">Versand nicht bestätigt — bitte im Postausgang nachsehen</span>
-            {% else %}{{ a.status }}{% endif %}</td>
-        <td>{% if a.pdf_pfad %}<a href="/zahlungsanforderung/ablage/{{ a.nummer }}.pdf" target="_blank">PDF</a>{% endif %}</td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+    <p class="klein">Die neuesten 50. Ältere und gezielte Suche unter „Alle durchsuchen“.</p>
+    {% include "_za_liste.html" %}
   {% else %}<p class="leer">Noch keine.</p>{% endif %}
 </section>
 {% endblock %}

@@ -55,6 +55,12 @@ AUSGELASSEN = {
     "docs/praesentation/XRechnung_Vorstellung.pptx": "Vorstellung fuer das Haus",
     "docs/praesentation/vorstellung_erzeugen.py": "erzeugt ebendiese Vorstellung",
     "docs/praesentation/vorstellung_aufnahmen.py": "Bilder fuer ebendiese Vorstellung",
+    # Unterlagen fuer den Steuerberater: Belegnummern, Fallzahlen und
+    # Vorschlaege des Hauses. Ein Eintrag mit "/" am Ende gilt fuer den ganzen
+    # Ordner — auch fuer Dateien, die spaeter dazukommen. PDFs prueft die
+    # Inhaltssuche unten nicht (OHNE_INHALT), deshalb muss der Ordner hier
+    # stehen. Ausdruecklich nicht oeffentlich (03.11.2026).
+    "docs/steuerberatung/": "Unterlagen fuer die steuerliche Beratung",
 }
 
 # Bloecke in gemeinsamen Dateien, die nur privat sind: von der Zeile mit der
@@ -191,8 +197,10 @@ def main(ziel: pathlib.Path) -> int:
                              capture_output=True, text=True, check=True).stdout.split()
     kopiert = ausgelassen = 0
     for rel in dateien:
-        if rel in AUSGELASSEN:
-            print(f"  ausgelassen  {rel}  ({AUSGELASSEN[rel]})")
+        grund = AUSGELASSEN.get(rel) or next(
+            (g for k, g in AUSGELASSEN.items() if k.endswith("/") and rel.startswith(k)), None)
+        if grund:
+            print(f"  ausgelassen  {rel}  ({grund})")
             ausgelassen += 1
             continue
         if any(rel.startswith(n) for n in NIEMALS):
@@ -224,7 +232,9 @@ def main(ziel: pathlib.Path) -> int:
     # Tote Verweise: Ein Link auf ein ausgelassenes Dokument ist schlimmer
     # als kein Link — der Leser sucht eine Datei, die es nie geben wird.
     tot = []
-    namen = [pathlib.Path(a).name for a in AUSGELASSEN]
+    # Ein Ordner zaehlt mit seinem Pfad, nicht mit dem blossen Namen: Sonst
+    # gaelte jedes "steuerberatung" im Fliesstext als toter Verweis.
+    namen = [a if a.endswith("/") else pathlib.Path(a).name for a in AUSGELASSEN]
     for p in sorted(ziel.rglob("*.md")):
         t = p.read_text(encoding="utf-8")
         for name in namen:

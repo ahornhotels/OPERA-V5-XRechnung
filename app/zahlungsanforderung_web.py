@@ -4,7 +4,6 @@ Eingebunden am Ende von app/main.py. Ablauf: Kunde suchen, Angaben
 eintragen, pruefen, senden."""
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
@@ -61,6 +60,8 @@ def _seite(request: Request, *, suche: str = "", name_id: int | None = None,
     try:
         liste = za.liste(50)
         naechste = za.naechste_nummer(cfg)
+        for a in liste:
+            a["pdf_da"] = za.pdf_datei(cfg, a["nummer"], a) is not None
     except Exception:
         liste, naechste = [], ""
     return seiten.TemplateResponse(request, "zahlungsanforderung.html", _kontext(
@@ -131,13 +132,31 @@ async def senden(request: Request):
 
 @router.get("/zahlungsanforderung/ablage/{nummer}.pdf")
 def ablage(request: Request, nummer: str):
-    satz = za.satz_lesen(nummer) if za.NUMMER_MUSTER.match(nummer or "") else None
-    pfad = Path(satz["pdf_pfad"]) if satz and satz.get("pdf_pfad") else None
-    if not pfad or not pfad.is_file():
+    pfad = za.pdf_datei(config.laden(), nummer)
+    if not pfad:
         return Response("Nicht in der Ablage.", media_type="text/plain; charset=utf-8",
                         status_code=404)
     return Response(pfad.read_bytes(), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{pfad.name}"'})
+
+
+@router.get("/zahlungsanforderung/suche", response_class=HTMLResponse)
+def suche(request: Request, q: str = "", von: str = "", bis: str = "", status: str = ""):
+    """Alle abgelegten Zahlungsanforderungen durchsuchen. Liest nur die
+    eigene Ablage, nicht OPERA."""
+    treffer, mehr, fehler = [], False, ""
+    try:
+        treffer, mehr = za.suchen(q, von, bis, status)
+    except ValueError as e:
+        fehler = f"Die Suche ging nicht: {e}"
+    gesucht = bool(q.strip() or von or bis or status)
+    cfg = config.laden()
+    for t in treffer:
+        t["pdf_da"] = za.pdf_datei(cfg, t["nummer"], t) is not None
+    return seiten.TemplateResponse(request, "zahlungsanforderung_suche.html", _kontext(
+        request, q=q, von=von, bis=bis, status=status, status_wahl=za.STATUS_WAHL,
+        liste=treffer, mehr=mehr, hoechstens=za.SUCHE_HOECHSTENS, gesucht=gesucht,
+        fehler=fehler, euro=za.euro, datum=za.datum))
 
 
 # ------------------------------------------------------------------ Vorlage

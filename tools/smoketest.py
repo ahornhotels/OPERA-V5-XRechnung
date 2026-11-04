@@ -5855,7 +5855,8 @@ try:
                and not (_zablage / (_nr(3) + ".pdf")).exists()
                and _za.naechste_nummer(_hcfg) == _nr(3),
                "Versand scheitert: Nummer und Ablage wieder frei, keine Luecke im Kreis")
-        _z5 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="ablegen"),
+        _z5 = _ka.post("/zahlungsanforderung/senden", data=dict(_hform, aktion="ablegen",
+                                                                 referenz="PO-0815"),
                        follow_redirects=False)
         pruefe(_z5.status_code == 303 and (_za.satz_lesen(_nr(3)) or {}).get("status") == "abgelegt",
                "Nur ablegen: abgelegt, ohne Mail, mit der freigewordenen Nummer")
@@ -5865,6 +5866,50 @@ try:
                "die Liste zeigt die erstellten, das PDF ist abrufbar")
         pruefe(_ka.get("/zahlungsanforderung/ablage/..%2Fapp.pdf").status_code == 404,
                "die Ablage gibt nur eigene Nummern heraus")
+        # Suche in der Ablage (04.11.2026)
+        _q = lambda **p: _ka.get("/zahlungsanforderung/suche", params=p)
+        _alle = _q()
+        pruefe(_alle.status_code == 200 and all(_nr(i) in _alle.text for i in (1, 2, 3))
+               and f"/zahlungsanforderung/ablage/{_nr(3)}.pdf" in _alle.text
+               and 'href="/zahlungsanforderung/suche"' in _l.text,
+               "die Suche zeigt ohne Begriff alle mit PDF, die Maske verweist auf sie")
+        pruefe((_za.satz_lesen(_nr(3)) or {}).get("referenz") == "PO-0815",
+               "die Referenz wird mit abgelegt")
+        _t = _q(q="po-0815 TAGUNG").text
+        pruefe(_nr(3) in _t and _nr(1) not in _t and _nr(2) not in _t and "1 Treffer" in _t,
+               "Suchwoerter: alle muessen vorkommen, Gross- und Kleinschreibung egal")
+        pruefe(all(_nr(i) in _q(q="söhne").text for i in (1, 2, 3)),
+               "Umlaute: 'söhne' findet 'Söhne' (SQLite-LIKE faltet das nicht)")
+        pruefe(all(_nr(i) in _q(q="100,00").text for i in (1, 2, 3))
+               and _nr(1) not in _q(q="99,00").text, "ein Betrag findet den Gesamtbetrag")
+        pruefe(_nr(1) in _q(q="77").text, "die Kundennummer aus OPERA findet ihre Anforderungen")
+        _t = _q(status="abgelegt").text
+        pruefe(_nr(3) in _t and _nr(1) not in _t, "Filter nach Status")
+        from datetime import timedelta as _td
+        _morgen = (_dt.today() + _td(days=1)).isoformat()
+        _t = _q(von=_morgen).text
+        pruefe(_nr(1) not in _t and "Keine Zahlungsanforderung passt" in _t, "Filter nach Datum")
+        _t = _q(von="kaputt")
+        pruefe(_t.status_code == 200 and "Die Suche ging nicht" in _t.text,
+               "ein unbrauchbares Datum meldet sich, statt still nichts zu finden")
+        # Bestand umgezogen: gespeicherter Pfad stimmt nicht mehr, Datei liegt unter der Nummer
+        _za._setzen(_nr(1), pdf_pfad="/gibt/es/nicht/" + _nr(1) + ".pdf")
+        pruefe(_ka.get(f"/zahlungsanforderung/ablage/{_nr(1)}.pdf").content.startswith(b"%PDF-"),
+               "das PDF wird auch nach einem Umzug des Bestands unter seiner Nummer gefunden")
+        _weg = _zablage / (_nr(2) + ".pdf")
+        _weg.rename(_weg.with_suffix(".weg"))
+        try:
+            _t = _q(q=_nr(2)).text
+            pruefe("PDF fehlt in der Ablage" in _t
+                   and _ka.get(f"/zahlungsanforderung/ablage/{_nr(2)}.pdf").status_code == 404,
+                   "eine fehlende Datei wird gemeldet statt als toter Link gezeigt")
+        finally:
+            _weg.with_suffix(".weg").rename(_weg)
+        # Ein Bestand aus der ersten Fassung hat die Spalte noch nicht
+        with _za.store.verbindung() as _con:
+            _con.execute("ALTER TABLE zahlungsanforderungen DROP COLUMN referenz")
+        pruefe(_za.liste(5) and "referenz" in _za.liste(5)[0]
+               and _za.suchen("tagung")[0], "fehlende Spalte referenz wird nachgetragen")
         # Belegte Nummern werden uebersprungen, auch nach Zuruecksetzen
         _ka.post("/zahlungsanforderung/vorlage/nummer", data={"naechste": "2"})
         pruefe(_za.naechste_nummer(_hcfg) == _nr(4),

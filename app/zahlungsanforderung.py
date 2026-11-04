@@ -22,6 +22,7 @@ die Steuerbetraege nicht."""
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import sqlite3
 import unicodedata
@@ -701,14 +702,24 @@ CREATE TABLE IF NOT EXISTS zahlungsanforderungen (
     erstellt_von TEXT,
     erstellt_am  TEXT,
     gesendet_am  TEXT,
-    kennung      TEXT
+    kennung      TEXT,
+    referenz     TEXT
 )"""
+
+# Spalten, die nach der ersten Fassung dazugekommen sind. Ein bestehender
+# Bestand bekommt sie beim ersten Zugriff nachgetragen; alte Saetze bleiben
+# dort leer.
+NACHGETRAGEN = {"referenz": "TEXT"}
 
 
 def _verbindung() -> sqlite3.Connection:
     con = store.verbindung()
     con.execute(TABELLE)
     con.execute(KREIS_TABELLE)
+    da = {z[1] for z in con.execute("PRAGMA table_info(zahlungsanforderungen)")}
+    for spalte, typ in NACHGETRAGEN.items():
+        if spalte not in da:
+            con.execute(f"ALTER TABLE zahlungsanforderungen ADD COLUMN {spalte} {typ}")
     return con
 
 
@@ -722,6 +733,76 @@ def liste(limit: int = 100) -> list[dict]:
     with _verbindung() as con:
         return [dict(z) for z in con.execute(
             "SELECT * FROM zahlungsanforderungen ORDER BY erstellt_am DESC LIMIT ?", (limit,))]
+
+
+SUCHE_HOECHSTENS = 200
+# Worin der Suchbegriff gesucht wird, in dieser Reihenfolge angezeigt.
+SUCHFELDER = ("nummer", "kunde", "grund", "referenz", "empfaenger")
+STATUS_WAHL = {"gesendet": "gesendet", "abgelegt": "abgelegt, nicht versendet",
+               "begonnen": "Versand nicht bestätigt"}
+
+
+def suchen(begriff: str = "", von: str = "", bis: str = "", status: str = "",
+           hoechstens: int = SUCHE_HOECHSTENS) -> tuple[list[dict], bool]:
+    """Die abgelegten Zahlungsanforderungen, gefiltert. Gibt (Treffer, mehr)
+    zurueck; mehr = es gab mehr als hoechstens.
+
+    Der Begriff wird in Nummer, Kunde, Grund, Referenz und Empfaenger
+    gesucht, jedes Wort fuer sich (alle muessen vorkommen), ohne Ruecksicht
+    auf Gross- und Kleinschreibung. Das geschieht in Python und nicht per
+    LIKE: SQLite faltet nur ASCII, "müller" faende "Müller" nicht. Die
+    Tabelle ist klein (eine Zahlungsanforderung je Anfrage, nicht je Beleg).
+    Ein Begriff, der ein Betrag ist ("1.250,00"), trifft ausserdem den
+    Gesamtbetrag; die Kundennummer aus OPERA trifft genau."""
+    sql, werte = "SELECT * FROM zahlungsanforderungen WHERE 1 = 1", []
+    for spalte, wert, op in (("datum", von, ">="), ("datum", bis, "<=")):
+        if wert:
+            date.fromisoformat(wert)            # wirft bei Unsinn, statt still nichts zu finden
+            sql += f" AND {spalte} {op} ?"
+            werte.append(wert)
+    if status:
+        if status not in STATUS_WAHL:
+            raise ValueError(f"Unbekannter Status: {status}")
+        sql += " AND status = ?"
+        werte.append(status)
+    sql += " ORDER BY erstellt_am DESC"
+    with _verbindung() as con:
+        saetze = [dict(z) for z in con.execute(sql, werte)]
+    begriff = " ".join(str(begriff or "").split())
+    if begriff:
+        try:
+            als_betrag = betrag(begriff) if re.fullmatch(r"[\d.,\s]+", begriff) else None
+        except Eingabefehler:
+            als_betrag = None
+        woerter = begriff.casefold().split()
+
+        def trifft(s: dict) -> bool:
+            if als_betrag is not None and abs(Decimal(str(s.get("gesamt") or 0)) - als_betrag) < Decimal("0.005"):
+                return True
+            if begriff.isdigit() and str(s.get("name_id") or "") == begriff:
+                return True
+            text = " ".join(str(s.get(f) or "") for f in SUCHFELDER).casefold()
+            return all(w in text for w in woerter)
+        saetze = [s for s in saetze if trifft(s)]
+    return saetze[:hoechstens], len(saetze) > hoechstens
+
+
+def pdf_datei(cfg: dict, nummer: str, satz: dict | None = None):
+    """Die abgelegte Datei zu einer Nummer, oder None. Zuerst der gespeicherte
+    Pfad, sonst die Ablage nach heutiger Konfiguration: Zieht der Bestand um
+    (neuer Server, anderer Archivordner), stimmt der alte absolute Pfad nicht
+    mehr, die Datei liegt aber unter ihrer Nummer im neuen Ordner."""
+    if not NUMMER_MUSTER.match(nummer or ""):
+        return None
+    satz = satz or satz_lesen(nummer)
+    if not satz:
+        return None
+    if satz.get("pdf_pfad"):
+        p = pathlib.Path(satz["pdf_pfad"])
+        if p.is_file():
+            return p
+    p = ordner(cfg) / f"{satz['nummer']}.pdf"
+    return p if p.is_file() else None
 
 
 # ------------------------------------------------------------------ Nummernkreis
@@ -900,7 +981,8 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
                 "datum": date.today().isoformat(), "faellig": eingabe["faellig"],
                 "brutto_7": float(eingabe["brutto_7"]), "brutto_19": float(eingabe["brutto_19"]),
                 "gesamt": float(eingabe["gesamt"]), "grund": eingabe["grund"],
-                "empfaenger": an or None, "status": "begonnen", "erstellt_von": benutzer,
+                "empfaenger": an or None, "referenz": eingabe["referenz"] or None,
+                "status": "begonnen", "erstellt_von": benutzer,
                 "erstellt_am": store.jetzt()}
         nummer, kreis, zahl = nummer_ziehen(cfg, satz)
         eingabe["nummer"] = nummer

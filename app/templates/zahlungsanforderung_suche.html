@@ -1,0 +1,45 @@
+{% extends "basis.html" %}
+{% block titel %}Zahlungsanforderungen suchen – OPERA XRechnung{% endblock %}
+{% block inhalt %}
+<div class="kopfzeile">
+  <h1>Zahlungsanforderungen suchen</h1>
+  <div class="knoepfe">
+    <a class="knopf zurueck" href="/zahlungsanforderung">&#8592; Neue Zahlungsanforderung</a>
+  </div>
+</div>
+<p class="hinweis">Alle bisher erstellten Zahlungsanforderungen, mit dem PDF, wie es abgelegt
+und versendet wurde. Gesucht wird in Nummer, Kunde, Grund, Referenz und Empfänger; mehrere
+Wörter müssen alle vorkommen. Ein Betrag wie <em>1.250,00</em> findet auch den Gesamtbetrag,
+eine Zahl auch die Kundennummer aus OPERA.</p>
+
+{% if fehler %}<div class="karte fehler"><strong>{{ fehler }}</strong></div>{% endif %}
+
+<section class="karte">
+  <form method="get" action="/zahlungsanforderung/suche" class="suche">
+    <label for="q">Suchbegriff</label>
+    <input id="q" name="q" value="{{ q }}" autofocus placeholder="Nummer, Kunde, Grund, Referenz, Mailadresse, Betrag">
+    <label for="von">Erstellt von</label>
+    <input id="von" name="von" type="date" value="{{ von }}">
+    <label for="bis">bis</label>
+    <input id="bis" name="bis" type="date" value="{{ bis }}">
+    <label for="status">Status</label>
+    <select id="status" name="status">
+      <option value="">alle</option>
+      {% for wert, text in status_wahl.items() %}
+      <option value="{{ wert }}" {% if status == wert %}selected{% endif %}>{{ text }}</option>
+      {% endfor %}
+    </select>
+    <button class="haupt">Suchen</button>
+    {% if gesucht %}<a class="knopf" href="/zahlungsanforderung/suche">Zurücksetzen</a>{% endif %}
+  </form>
+</section>
+
+<section class="karte">
+  <h2>{% if gesucht %}{{ liste|length }}{% if mehr %}+{% endif %} Treffer{% else %}Alle Zahlungsanforderungen{% endif %}</h2>
+  {% if mehr %}<p class="klein">Angezeigt werden die neuesten {{ hoechstens }}. Bitte die Suche eingrenzen.</p>{% endif %}
+  {% if liste %}
+    {% include "_za_liste.html" %}
+  {% elif gesucht %}<p class="leer">Keine Zahlungsanforderung passt zu dieser Suche.</p>
+  {% else %}<p class="leer">Noch keine.</p>{% endif %}
+</section>
+{% endblock %}
