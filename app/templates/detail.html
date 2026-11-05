@@ -16,17 +16,24 @@
   {% endif %}
   <div class="knoepfe">
     {% if satz.status == 'gesendet' %}
-    {# Versendete Rechnung: kein beilaeufiges Neuerzeugen. Die abgelegte Datei
-       ist der Beleg dafuer, was der Kunde bekommen hat. #}
+    {# Versendete Rechnung: kein beilaeufiges Neuerzeugen. Die Archivfassung
+       ist der Beleg dafuer, was der Kunde bekommen hat, und bleibt immer.
+       Bis 05.11.2026 hiess der Knopf "Trotzdem neu erzeugen", und "XML
+       ansehen" zeigte danach weiter die Archivfassung — wer nach einer
+       Korrektur in OPERA neu erzeugte, sah den alten Inhalt und hielt die
+       Korrektur fuer wirkungslos. Jetzt sind die beiden Fassungen getrennt
+       benannt. #}
+    <a class="knopf" href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">Versendete Fassung ansehen</a>
+    <a class="knopf" href="/rechnung/{{ satz.bill_no }}/xml.xml?fassung=aktuell" target="_blank">Heutigen Stand aus OPERA ansehen</a>
     <form method="post" action="/rechnung/{{ satz.bill_no }}/xml"
-          onsubmit="return confirm('Diese Rechnung ist versendet. Die abgelegte Datei ist der Beleg dafür, was der Kunde bekommen hat. Wirklich ersetzen?')">
+          onsubmit="return confirm('Diese Rechnung ist versendet. Es wird eine neue Datei aus dem heutigen Stand in OPERA abgelegt. Sie geht NICHT an den Kunden; die versendete Fassung bleibt im Archiv unverändert. Fortfahren?')">
       <input type="hidden" name="ersetzen" value="1">
-      <button class="warnung">Trotzdem neu erzeugen</button>
+      <button class="warnung">Heutigen Stand ablegen (nicht versenden)</button>
     </form>
     {% else %}
     <form method="post" action="/rechnung/{{ satz.bill_no }}/xml"><button>XML erzeugen</button></form>
-    {% endif %}
     <a class="knopf" href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">XML ansehen</a>
+    {% endif %}
     {% if verwalten %}
     {% if satz.status in ('pruefung', 'fehler') %}
     {# Eine gewaehlte Adresse gibt nichts frei; das tut nur dieser Knopf. #}
@@ -358,7 +365,9 @@
   <p class="pruefhinweis"><strong>Versendet{% if satz.gesendet_am %} am {{ satz.gesendet_am[:10] }}{% endif %}.</strong>
      Die Tabelle unten ist neu gerechnet und kann anders aussehen als die Rechnung,
      die der Kunde bekommen hat. Maßgeblich ist die abgelegte Fassung
-     (<a href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">XML ansehen</a>{% if satz.xrechnung_version %}, erzeugt als XRechnung {{ satz.xrechnung_version }}{% endif %}).</p>
+     (<a href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">versendete Fassung ansehen</a>{% if satz.xrechnung_version %}, erzeugt als XRechnung {{ satz.xrechnung_version }}{% endif %}).
+     Eine Änderung in OPERA erreicht den Kunden nicht mehr von selbst — dafür braucht
+     es eine Korrektur.</p>
   {% endif %}
   {# Die Wahl steht direkt ueber der Tabelle, die sie veraendert. #}
   <form method="post" action="/rechnung/{{ satz.bill_no }}/positionen">

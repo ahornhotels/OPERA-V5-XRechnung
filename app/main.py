@@ -677,11 +677,15 @@ def xml_bauen(request: Request, bill_no: int, ersetzen: str = Form("")):
         gesendet = (satz.get("gesendet_am") or "")[:10]
         return RedirectResponse(
             f"/rechnung/{bill_no}?meldung=Diese Rechnung ist am {gesendet} versendet worden. "
-            "Die versendete Fassung bleibt liegen — zum Ersetzen den Knopf "
-            "'Trotzdem neu erzeugen' verwenden.", status_code=303)
+            "Die versendete Fassung bleibt liegen — für den heutigen Stand den Knopf "
+            "'Heutigen Stand ablegen' verwenden.", status_code=303)
     try:
         _, pfad, hinweise = ablauf.xml_erzeugen(cfg, bill_no, ersetzen=bool(ersetzen))
         meldung = f"XML erzeugt: {pfad.name}" + (f" — Hinweise: {'; '.join(hinweise)}" if hinweise else "")
+        if ersetzen and satz.get("status") == "gesendet":
+            # Sonst glaubt man, der Kunde habe jetzt die neue Fassung.
+            meldung += (" — NICHT versendet. Der Kunde hat weiter die versendete Fassung; "
+                        "den neuen Inhalt zeigt 'Heutigen Stand aus OPERA ansehen'.")
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/rechnung/{bill_no}?meldung={meldung}", status_code=303)
@@ -717,11 +721,16 @@ def storno_senden(request: Request, bill_no: int):
 
 
 @app.get("/rechnung/{bill_no}/xml.xml")
-def xml_anzeigen(request: Request, bill_no: int):
+def xml_anzeigen(request: Request, bill_no: int, fassung: str = ""):
+    """Ohne Angabe: bei einer versendeten Rechnung die Archivfassung, sonst der
+    heutige Stand. fassung=aktuell baut immer aus dem heutigen Stand in OPERA —
+    bei einer versendeten Rechnung der einzige Weg, eine Korrektur in OPERA zu
+    sehen."""
     cfg = config.laden()
     try:
         # Ansehen schreibt nichts: keine Datei, kein Befund, kein Protokoll.
-        xml, _, _ = ablauf.xml_erzeugen(cfg, bill_no, ablegen=False)
+        xml, _, _ = ablauf.xml_erzeugen(cfg, bill_no, ablegen=False,
+                                        ersetzen=(fassung == "aktuell"))
     except Exception as e:
         from xml.sax.saxutils import escape
         return Response(f"<fehler>{escape(str(e))}</fehler>", media_type="application/xml",

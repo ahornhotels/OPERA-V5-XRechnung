@@ -783,9 +783,17 @@ beiläufigen Klick etwas anderes in der Ablage als beim Kunden — und niemand
 könnte es sehen. Genau in dem Moment, in dem der Kunde nachfragt, sähe man die
 falsche Datei.
 
-Wer eine versendete Rechnung wirklich neu erzeugen will, findet dafür den
-Knopf **„Trotzdem neu erzeugen"** mit einer Rückfrage. Er ersetzt die Datei in
-der Ablage; die versendete Fassung bleibt im Archiv.
+Eine versendete Rechnung hat auf der Detailseite deshalb zwei Ansichten:
+
+- **„Versendete Fassung ansehen"** zeigt, was der Kunde bekommen hat.
+- **„Heutigen Stand aus OPERA ansehen"** baut die Rechnung neu aus dem, was
+  heute in OPERA steht, etwa nach einer nachgetragenen Referenz. Abgelegt oder
+  versendet wird dabei nichts.
+
+Der Knopf **„Heutigen Stand ablegen (nicht versenden)"** legt diesen Stand mit
+einer Rückfrage als Datei ab. Auch er schickt nichts an den Kunden, und die
+versendete Fassung bleibt im Archiv. Soll der Kunde den neuen Inhalt bekommen,
+braucht es eine Korrektur.
 
 ## Aufgaben nach dem Versand
 

@@ -2006,15 +2006,27 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
         _antwort = klient.post("/rechnung/980001/xml", follow_redirects=False)
         # Der Ort ist URL-kodiert, die Leerzeichen also nicht als solche da.
         _ort = _antwort.headers.get("location", "")
-        pruefe("versendet" in _ort and "Trotzdem" in _ort,
+        pruefe("versendet" in _ort and "Heutigen" in _ort,
                f"der Knopf sagt es, statt stillschweigend zu ersetzen ({_ort[:80]})")
         pruefe(_pfad1.read_bytes() == _xml1, "auch nach dem Knopfdruck")
         # Wer es ausdruecklich will, kann es trotzdem.
         klient.post("/rechnung/980001/xml", data={"ersetzen": "1"}, follow_redirects=False)
         pruefe(_pfad1.exists(), "mit ausdruecklicher Bestaetigung wird neu erzeugt")
         _seite = klient.get("/rechnung/980001")
-        pruefe("Trotzdem neu erzeugen" in _seite.text,
-               "und die Detailseite bietet genau diesen Weg an")
+        pruefe("Heutigen Stand ablegen (nicht versenden)" in _seite.text,
+               "und die Detailseite bietet genau diesen Weg an, ohne Versand zu versprechen")
+        pruefe("Trotzdem neu erzeugen" not in _seite.text,
+               "der alte, irrefuehrende Knopftext ist weg")
+        pruefe("Versendete Fassung ansehen" in _seite.text and "xml.xml?fassung=aktuell" in _seite.text,
+               "die Seite trennt die versendete Fassung vom heutigen Stand")
+        # Die Ansicht: ohne Angabe die Archivfassung, mit fassung=aktuell neu gebaut.
+        pruefe(klient.get("/rechnung/980001/xml.xml").content == b"<Invoice>so ging sie raus</Invoice>",
+               "'Versendete Fassung ansehen' zeigt das Archiv")
+        _aktuell = klient.get("/rechnung/980001/xml.xml?fassung=aktuell").content
+        pruefe(_aktuell != b"<Invoice>so ging sie raus</Invoice>" and b"Invoice" in _aktuell,
+               "'Heutigen Stand ansehen' baut neu statt das Archiv zu zeigen")
+        pruefe((_archiv / "980001.xml").read_bytes() == b"<Invoice>so ging sie raus</Invoice>",
+               "und das Archiv bleibt dabei unberuehrt")
     finally:
         ablauf.rechnungsdaten = _echt_rd2
         with store.verbindung() as con:
