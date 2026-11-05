@@ -463,7 +463,10 @@ def detail(request: Request, bill_no: int, meldung: str = "",
     buchung: dict = {}
     try:
         profil = opera.profil(cfg, bill_no)
-        adressen = opera.empfaenger(bill_no)
+        # Mit Mailfeldern auch diese und die Adressen des Gastes — wer von Hand
+        # waehlt, soll alles sehen, was es an Profil und Reservierung gibt.
+        adressen = ablauf.adressen_zur_auswahl(cfg, bill_no,
+                                               satz.get("name_id") or profil.get("name_id"))
         pruefung = opera.pruefung(cfg, bill_no)
         # ueber ablauf, damit die Seite genau das sieht, was auch erzeugt
         # wird — sonst sperrt sie den Versand wegen eines Befunds, den die
@@ -986,6 +989,20 @@ async def konfiguration_speichern(request: Request):
                              "erlaubt sind UDFC01 bis UDFC40")
         else:
             cfg["property"]["udf_leitweg"] = udf
+
+    # Die Mailfelder: dieselben Regeln wie beim Leitweg-Feld.
+    for schluessel, name in (("udf_mail_profil", "Mailfeld am Profil"),
+                             ("udf_mail_reservierung", "Mailfeld an der Reservierung")):
+        if f"property.{schluessel}" in formular:
+            udf = str(formular[f"property.{schluessel}"]).strip().upper()
+            if udf and udf not in opera.UDF_SPALTEN:
+                ungueltig.append(f"{name}: „{udf}“ ist kein gültiges Feld — erlaubt sind "
+                                 "UDFC01 bis UDFC40")
+            else:
+                cfg["property"][schluessel] = udf
+    if (cfg["property"].get("udf_mail_profil") and
+            cfg["property"].get("udf_mail_profil") == cfg["property"].get("udf_leitweg")):
+        ungueltig.append("Mailfeld am Profil und Leitweg-Feld dürfen nicht dasselbe Feld sein")
 
     if ungueltig:
         return RedirectResponse("/konfiguration?meldung=NICHT GESPEICHERT — " + "; ".join(ungueltig),

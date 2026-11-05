@@ -302,7 +302,16 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
             adressen = empfaenger_kandidaten(satz["bill_no"])
             if adressen is not None:
                 store.setzen(satz["bill_no"], adresse_fehlt=0 if adressen else 1)
-            if adressen and a.get("empfaenger_automatisch"):
+            if mailfelder_aktiv(cfg):
+                # Die Mailfelder entscheiden — nicht die automatische Auswahl.
+                adresse, grund = versandadresse(cfg, satz["bill_no"], satz.get("name_id"))
+                if adresse:
+                    store.setzen(satz["bill_no"], empfaenger=adresse, adresse_fehlt=0)
+                elif grund:
+                    zur_pruefung(satz["bill_no"], grund)
+                    store.protokoll("pruefung", grund, bill_no=satz["bill_no"])
+                    zahlen["pruefung"] += 0 if in_pruefung else 1
+            elif adressen and a.get("empfaenger_automatisch"):
                 store.setzen(satz["bill_no"], empfaenger=adressen[0]["email"])
             elif adressen == []:
                 # Es gibt Firmenprofile ganz ohne Mailadresse — gesehen an
@@ -319,7 +328,7 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
             zahlen["bekannt"] += 1
             if tse_im_haus and str(r.get("fiscal_bill_no") or "").strip():
                 _tse_hinweis_aufheben(satz["bill_no"])
-            _auffrischen(satz, a, s, zahlen)
+            _auffrischen(satz, a, s, zahlen, cfg)
     zahlen["neu"] = neu
     store.protokoll("einlesen", bericht(zahlen))
     # Die Obergrenze gehoert HIER gemeldet, nicht nur auf der Seite des
@@ -333,7 +342,7 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
     return zahlen
 
 
-def _auffrischen(satz: dict, a: dict, s: dict, zahlen: dict) -> None:
+def _auffrischen(satz: dict, a: dict, s: dict, zahlen: dict, cfg: dict | None = None) -> None:
     """Einen BEKANNTEN Beleg mit neuen Erkenntnissen versorgen.
 
     rechnung_anlegen() legt nur an, was noch nicht da ist — das ist richtig,
@@ -356,7 +365,28 @@ def _auffrischen(satz: dict, a: dict, s: dict, zahlen: dict) -> None:
     if satz.get("name_id") and not bekannt.get("name_id"):
         aenderungen["name_id"] = satz["name_id"]
 
-    if not (bekannt.get("empfaenger") or "").strip():
+    if cfg is not None and not (bekannt.get("empfaenger") or "").strip() and mailfelder_aktiv(cfg):
+        # Mit Mailfeldern: Ist inzwischen eines gefuellt, geht die Rechnung
+        # dorthin; der Hinweis faellt weg und, ist er der einzige Grund, die
+        # Sichtpruefung auch. Sonst steht der passende Hinweis da.
+        adresse, grund = versandadresse(cfg, satz["bill_no"], satz.get("name_id")
+                                        or bekannt.get("name_id"))
+        alt = bekannt.get("fehler") or ""
+        ohne = alt
+        for h in (HINWEIS_MAILFELD_LEER, HINWEIS_MAILFELD_UNGUELTIG):
+            ohne = TRENNER.join(t for t in (ohne or "").split(TRENNER) if t and not t.startswith(h))
+        if adresse:
+            aenderungen.update(empfaenger=adresse, adresse_fehlt=0)
+            if ohne != alt:
+                aenderungen["fehler"] = ohne or None
+                if bekannt.get("status") == "pruefung" and not ohne:
+                    aenderungen["status"] = "neu"
+        elif grund and grund not in alt:
+            aenderungen["fehler"] = hinweis_dazu(ohne or None, grund)
+            if bekannt.get("status") != "pruefung":
+                aenderungen["status"] = "pruefung"
+                zahlen["pruefung"] += 1
+    elif not (bekannt.get("empfaenger") or "").strip():
         adressen = empfaenger_kandidaten(satz["bill_no"])
         if adressen is not None:
             fehlt = 0 if adressen else 1
@@ -466,7 +496,13 @@ def aufnehmen(cfg: dict, bill_no: int) -> str:
     adressen = empfaenger_kandidaten(satz["bill_no"])
     if adressen is not None:
         store.setzen(satz["bill_no"], adresse_fehlt=0 if adressen else 1)
-    if adressen and a.get("empfaenger_automatisch"):
+    if mailfelder_aktiv(cfg):
+        adresse, grund = versandadresse(cfg, satz["bill_no"], satz.get("name_id"))
+        if adresse:
+            store.setzen(satz["bill_no"], empfaenger=adresse, adresse_fehlt=0)
+        elif grund:
+            gruende.append(grund)
+    elif adressen and a.get("empfaenger_automatisch"):
         store.setzen(satz["bill_no"], empfaenger=adressen[0]["email"])
     elif adressen:
         # Der Schalter steht auf "Empfaenger von Hand waehlen". Dann darf auch
@@ -506,6 +542,83 @@ def bericht(z: dict) -> str:
         if z.get(schluessel):
             teile.append(f"{z[schluessel]} {text}")
     return ", ".join(teile)
+
+
+# ------------------------------------------------------------ Mailfelder
+# Zwei benutzerdefinierte Felder bestimmen die Versandadresse, wenn sie
+# eingerichtet sind (property.udf_mail_profil, property.udf_mail_reservierung):
+# erst das Feld am Profil des Rechnungsempfaengers, dann das an der
+# Reservierung. Ist keines gefuellt, waehlt die Anwendung NICHT selbst, sondern
+# legt die Rechnung zur Sichtpruefung vor, mit allen Adressen zur Auswahl
+# (Entscheidung des Hauses, 03.11.2026). Ohne eingerichtete Felder gilt die
+# bisherige Auswahl unveraendert.
+HINWEIS_MAILFELD_LEER = ("In den Mailfeldern (Profil, Reservierung) steht keine Versandadresse "
+                         "— Empfänger bitte wählen")
+HINWEIS_MAILFELD_UNGUELTIG = "Im Mailfeld steht keine einzelne gültige Adresse"
+
+
+def mailfelder(cfg: dict) -> tuple[str, str]:
+    p = cfg.get("property") or {}
+    return (str(p.get("udf_mail_profil") or "").strip().upper(),
+            str(p.get("udf_mail_reservierung") or "").strip().upper())
+
+
+def mailfelder_aktiv(cfg: dict) -> bool:
+    return any(mailfelder(cfg))
+
+
+def versandadresse(cfg: dict, bill_no: int, name_id) -> tuple[str | None, str | None]:
+    """Die Versandadresse aus den Mailfeldern: (adresse, Herkunft) — oder
+    (None, Hinweis fuer die Sichtpruefung) — oder (None, None), wenn sich die
+    Felder nicht lesen liessen. Den letzten Fall nicht als 'leer' behandeln:
+    Ein Datenbankaussetzer legte sonst den halben Tagesbestand vor."""
+    feld_profil, feld_resv = mailfelder(cfg)
+    try:
+        werte = [("am Profil", opera.profil_udf_streng(name_id, feld_profil) if feld_profil else ""),
+                 ("an der Reservierung", opera.reservierung_udf(bill_no, feld_resv) if feld_resv else "")]
+    except Exception:
+        log.exception("Mailfelder nicht lesbar (%s)", bill_no)
+        return None, None
+    for herkunft, wert in werte:
+        wert = (wert or "").strip()
+        if not wert:
+            continue
+        if mailer.adresse_gueltig(wert):
+            return wert, f"Mailfeld {herkunft}"
+        # Ein gefuelltes, aber unbrauchbares Feld ist eine Aussage des Hauses —
+        # es wird nicht still uebergangen zugunsten des naechsten.
+        return None, f"{HINWEIS_MAILFELD_UNGUELTIG} ({herkunft}: „{wert[:60]}“)"
+    return None, HINWEIS_MAILFELD_LEER
+
+
+def adressen_zur_auswahl(cfg: dict, bill_no: int, name_id) -> list[dict]:
+    """Alle Adressen fuer die Auswahl von Hand: die Mailfelder zuerst, dann die
+    bisherigen Kandidaten, zuletzt die des Gastes an der Reservierung. Doppelte
+    nur einmal, an der ersten Stelle."""
+    liste: list[dict] = []
+    feld_profil, feld_resv = mailfelder(cfg)
+    try:
+        if feld_profil and name_id:
+            liste.append({"email": opera.profil_udf_streng(name_id, feld_profil),
+                          "quelle": "Mailfeld", "rolle": "Profil", "primaer": "Y"})
+        if feld_resv:
+            liste.append({"email": opera.reservierung_udf(bill_no, feld_resv),
+                          "quelle": "Mailfeld", "rolle": "Reservierung", "primaer": "Y"})
+    except Exception:
+        log.exception("Mailfelder nicht lesbar (%s)", bill_no)
+    liste += opera.empfaenger(bill_no)
+    if mailfelder_aktiv(cfg):
+        try:
+            liste += opera.gast_mails(bill_no)
+        except Exception:
+            log.exception("Adressen des Gastes nicht lesbar (%s)", bill_no)
+    aus, gesehen = [], set()
+    for a in liste:
+        adresse = str(a.get("email") or "").strip()
+        if adresse and adresse.lower() not in gesehen:
+            gesehen.add(adresse.lower())
+            aus.append({**a, "email": adresse})
+    return aus
 
 
 def adresshinweis(bill_no: int) -> str:
@@ -653,7 +766,7 @@ def buyerreference_vorschlaege(kopf: dict) -> list[dict]:
     felder = (("leitweg_id_vorhanden", "Leitweg-ID der Behörde"),
               ("buyer_reference1", "Buyer Reference1 an der Reservierung"),
               ("externe_referenz", "External Reference an der Reservierung"),
-              ("kundenreferenz", "Kundenreferenz aus der Buchung (oft Portalnummer)"),
+              ("kundenreferenz", "Custom Ref. an der Reservierung (manchmal Portalnummer)"),
               ("reservierungsnummer", "Reservierungsnummer — unsere Nummer, nicht seine"))
     aus, gesehen = [], set()
     for feld, beschreibung in felder:

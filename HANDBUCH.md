@@ -414,13 +414,12 @@ Zwei Hinweise dazu:
   stillschweigend.
 - Zeilenumbrüche werden zu Leerzeichen.
 
-Die **Kundenreferenz aus der Buchung** (`CUSTOM_REFERENCE`) wird bewusst
-**nicht** verwendet. Sie ist zwar gut gefüllt, enthält aber überwiegend
-Buchungsnummern aus dem Channel Manager: Ausgezählt waren rund drei Viertel der
-Werte reine Ziffernfolgen aus dem Portal. Eine solche Nummer in BT-10 ist schlechter
-als ein Ersatzwert — sie sieht nach einer echten Bestellnummer aus, und die
-Gegenseite sucht sie vergeblich. Wer das Feld im Haus diszipliniert pflegt,
-kann es in der Konfiguration einschalten.
+Ist das Feld „XRechnung" leer, nimmt die Anwendung das Feld **„Custom Ref."**
+der Reservierung (`CUSTOM_REFERENCE`), und zwar ohne Prüfung des Inhalts. Dort
+steht oft die Referenz des Kunden, manchmal aber auch eine Buchungsnummer aus
+einem Portal. Steht dort eine Portalnummer, ersetzen Sie sie auf der
+Detailseite durch die richtige Referenz. Erst wenn auch „Custom Ref." leer ist,
+greift der Ersatzwert.
 
 Die Detailseite zeigt, welcher Wert eingesetzt wurde **und woher er stammt**.
 Steht dort „Ersatzwert", ist das für einen Firmenkunden in Ordnung — **für eine
@@ -705,6 +704,32 @@ dem Kunden mitteilen.
 
 Sind die Positionen negativ **und** ist zugleich eine Anzahlung angerechnet,
 lässt sich das nicht sauber abbilden; die Vorprüfung hält den Beleg an.
+
+## Versandadresse aus OPERA-Feldern
+
+Welche Adresse eine Rechnung bekommt, lässt sich in OPERA festlegen, mit je einem
+benutzerdefinierten Feld (`UDFC…`) an der **Profilkartei** und in der
+**Reservierungsmaske**. Eingestellt werden die beiden Feldnamen unter
+**Konfiguration → „Versandadresse aus OPERA-Feldern“**.
+
+Ist mindestens eines der Felder eingestellt, gilt:
+
+1. **Mailfeld am Profil** des Rechnungsempfängers, bei einer Firmenrechnung also
+   an der Firmenkartei. Steht dort eine Adresse, geht die Rechnung dorthin.
+2. Sonst das **Mailfeld an der Reservierung**.
+3. **Sind beide leer, wählt die Anwendung nicht selbst.** Die Rechnung geht zur
+   Sichtprüfung („In den Mailfeldern steht keine Versandadresse“). Auf der
+   Detailseite stehen dann alle Adressen zur Auswahl: die Mailfelder, die Adressen
+   an Profil, Rechnungsanschrift und Debitorenkonto, und die des Gastes an der
+   Reservierung, gekennzeichnet als „Gast“.
+
+Ein Feld mit mehreren Adressen oder einem Tippfehler zählt nicht als leer. Die
+Rechnung geht dann zur Sichtprüfung mit dem Hinweis, was im Feld steht. Wird ein
+Feld später gefüllt, holt das nächste Einlesen die Rechnung aus der Sichtprüfung,
+sofern kein anderer Grund sie dort hält.
+
+Sind keine Felder eingestellt, bleibt es bei der automatischen Auswahl wie bisher:
+Debitorenkonto, dann die primäre Adresse des Zahlers.
 
 ## Profile ohne E-Mail-Adresse
 

@@ -66,6 +66,41 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
      Painter bleibt auf ihrer Unterseite — hier steht der Konfigurationspunkt. #}
   <section class="karte">
     <h2>Leitweg-ID und Käuferreferenz (BT-10)</h2>
+    {# Der Weg, den BT-10 nimmt — in der Reihenfolge von sql/opera/invoice_header.sql,
+       app/opera.py (kaeuferreferenz) und app/ablauf.py (Eintrag von Hand).
+       Die erste gefuellte Stufe gewinnt. Bei einer Aenderung der Kette hier
+       mitziehen; der Selbsttest prueft, dass die Liste zur Abfrage passt. #}
+    {% set p = cfg.property %}
+    <div class="hinweis bt10-weg">
+      <strong>So wird BT-10 gefüllt</strong> — die erste Stufe mit einem Wert gewinnt:
+      <ol>
+        <li><strong>Von Hand</strong> auf der Detailseite der Rechnung eingetragen
+          <span class="klein">— schlägt alles, auch die Leitweg-ID</span></li>
+        <li><strong>Leitweg-ID</strong>: Mitgliedschaft vom Typ
+          <code>{{ p.mitgliedschaftstyp_leitweg or '–' }}</code> am Profil des Zahlers,
+          sonst das Feld
+          {% if p.udf_leitweg %}<code>{{ p.udf_leitweg }}</code>{% else %}<em>(nicht eingestellt, Stufe aus)</em>{% endif %}
+          der Firmenkartei</li>
+        <li><strong>Vereinbarte Referenz</strong>: Mitgliedschaft vom Typ
+          <code>{{ p.mitgliedschaftstyp_erechnung or '–' }}</code> am Profil des Zahlers</li>
+        <li><strong>„XRechnung“</strong> in der Reservierung unter More Fields
+          (<code>FOLIO_TEXT1</code>) <span class="klein">— das Feld für die Bestellnummer
+          des Kunden</span></li>
+        <li><strong>„CRS No.“</strong> der Reservierung (<code>EXTERNAL_REFERENCE</code>)</li>
+        <li><strong>„Custom Ref.“</strong> der Reservierung (<code>CUSTOM_REFERENCE</code>)
+          <span class="klein">— ohne Prüfung des Inhalts; dort stehen auch
+          Buchungsnummern aus Portalen</span></li>
+        <li><strong>Ersatzwert</strong>:
+          {% if p.buyerreference_vorlage %}die Vorlage
+          <code>{{ p.buyerreference_vorlage }}</code>, und wenn ihr ein Wert fehlt,{% endif %}
+          die {{ {'reservierungsnummer': 'Reservierungsnummer', 'rechnungsnummer': 'Rechnungsnummer',
+                  'debitorennummer': 'Debitorennummer', 'kundenname': 'Kundenname'}.get(
+                  p.buyerreference_ersatz or 'reservierungsnummer', p.buyerreference_ersatz) }}
+          <span class="klein">— die Detailseite weist ihn als Ersatzwert aus</span></li>
+      </ol>
+      <span class="klein">Werte länger als 80 Zeichen werden gekürzt und vermerkt.
+      Die Detailseite jeder Rechnung zeigt, welche Stufe gegriffen hat.</span>
+    </div>
     <label class="hervor">Feld der Firmenkartei mit der Leitweg-ID
       {{ tipp('property.udf_leitweg') }}<input name="property.udf_leitweg" value="{{ cfg.property.udf_leitweg or '' }}"
              placeholder="z. B. UDFC05" title="UDFC01 bis UDFC40, oder leer lassen">
@@ -91,9 +126,27 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
         <option value="{{ w }}" {{ 'selected' if cfg.property.buyerreference_ersatz == w }}>{{ b }}</option>
         {% endfor %}
       </select>
-      <span class="klein">Pflichtfeld ohne Leitweg-ID: Vorrang haben immer eine
-      hinterlegte Leitweg-ID, eine vereinbarte Referenz am Profil und die
-      Kundenreferenz aus der Buchung.</span></label>
+      <span class="klein">Letzte Stufe oben (7), wenn keine Vorlage eingestellt ist
+      oder ihr ein Wert fehlt.</span></label>
+  </section>
+
+  {# Versandadresse aus zwei benutzerdefinierten Feldern (seit 03.11.2026). #}
+  <section class="karte">
+    <h2>Versandadresse aus OPERA-Feldern</h2>
+    <label>Mailfeld am Profil des Rechnungsempfängers
+      {{ tipp('property.udf_mail_profil') }}<input name="property.udf_mail_profil" value="{{ cfg.property.udf_mail_profil or '' }}"
+             placeholder="z. B. UDFC06" title="UDFC01 bis UDFC40, oder leer lassen"></label>
+    <label>Mailfeld an der Reservierung
+      {{ tipp('property.udf_mail_reservierung') }}<input name="property.udf_mail_reservierung" value="{{ cfg.property.udf_mail_reservierung or '' }}"
+             placeholder="z. B. UDFC10" title="UDFC01 bis UDFC40, oder leer lassen"></label>
+    {% if cfg.property.udf_mail_profil or cfg.property.udf_mail_reservierung %}
+    <p class="hinweis">Versendet wird an das Mailfeld am Profil, sonst an das an der
+      Reservierung. <strong>Ist keines gefüllt, geht die Rechnung zur Sichtprüfung</strong>
+      — mit allen Adressen an Profil und Reservierung zur Auswahl.</p>
+    {% else %}
+    <p class="klein">Kein Feld eingestellt: Die Anwendung wählt die Adresse wie bisher
+      selbst (Debitorenkonto, dann die primäre Adresse des Zahlers).</p>
+    {% endif %}
   </section>
 
   <section class="karte">

@@ -308,10 +308,18 @@ def abfragen_pruefen(cfg: dict) -> list[str]:
         name = datei.name
         sql = _sql(name, cfg)
         if "@SPALTE@" in sql:
-            spalte = (p.get("udf_leitweg") or "").strip().upper()
-            if spalte not in UDF_SPALTEN:
-                continue   # kein Feld eingerichtet — die Abfrage laeuft nie
-            sql = sql.replace("@SPALTE@", spalte)
+            # Welches Feld die Abfrage liest, haengt an der Datei: Die Kartei
+            # traegt Leitweg-ID und Mailadresse, die Reservierung nur die
+            # Mailadresse. Ist keines eingerichtet, laeuft die Abfrage nie.
+            if name == "reservierung_udf.sql":
+                spalten = [p.get("udf_mail_reservierung")]
+            else:
+                spalten = [p.get("udf_leitweg"), p.get("udf_mail_profil")]
+            spalten = [str(x or "").strip().upper() for x in spalten]
+            spalten = [x for x in spalten if x in UDF_SPALTEN]
+            if not spalten:
+                continue
+            sql = sql.replace("@SPALTE@", spalten[0])
         if name == "invoice_list.sql":
             sql = _mit_anzahlungscodes(_mit_firmenprofilen(
                 _mit_udf(sql, p.get("udf_erechnung", "")), cfg), cfg)
@@ -447,6 +455,38 @@ def udf_feld(name_id, spalte: str) -> str:
         log.exception("Benutzerdefiniertes Feld %s nicht lesbar (%s)", spalte, name_id)
         return ""
     return (zeilen[0].get("wert") or "").strip() if zeilen else ""
+
+
+def reservierung_udf(bill_no: int, spalte: str) -> str:
+    """Ein benutzerdefiniertes Feld der Reservierung zum Beleg. Leer, wenn
+    nichts da ist. Wirft bei einem Lesefehler — der Aufrufer muss 'leer' von
+    'nicht lesbar' unterscheiden koennen (siehe ablauf.versandadresse)."""
+    spalte = (spalte or "").strip().upper()
+    if not spalte:
+        return ""
+    if spalte not in UDF_SPALTEN:
+        raise ValueError(f"Unzulässiges Feld der Reservierung: {spalte}")
+    zeilen = db.abfrage(_sql("reservierung_udf.sql").replace("@SPALTE@", spalte),
+                        {"bill_no": bill_no, "resort": _resort(), "folio_no": folio(None, bill_no)})
+    return (zeilen[0].get("wert") or "").strip() if zeilen else ""
+
+
+def profil_udf_streng(name_id, spalte: str) -> str:
+    """Wie udf_feld, wirft aber bei einem Lesefehler statt leer zu liefern."""
+    spalte = (spalte or "").strip().upper()
+    if not spalte or not name_id:
+        return ""
+    if spalte not in UDF_SPALTEN:
+        raise ValueError(f"Unzulässiges Feld der Kartei: {spalte}")
+    zeilen = db.abfrage(_sql("profil_udf.sql").replace("@SPALTE@", spalte),
+                        {"name_id": int(name_id)})
+    return (zeilen[0].get("wert") or "").strip() if zeilen else ""
+
+
+def gast_mails(bill_no: int) -> list[dict]:
+    """Mailadressen des Gastes an der Reservierung — nur zur Auswahl von Hand."""
+    return db.abfrage(_sql("reservierung_gast_mails.sql"),
+                      {"bill_no": bill_no, "resort": _resort(), "folio_no": folio(None, bill_no)})
 
 
 def udf_uebersicht() -> list[dict]:
@@ -1025,7 +1065,7 @@ def kaeuferreferenz(kopf: dict, p: dict, bill_no: int) -> dict:
         elif gleich("externe_referenz"):
             kopf["buyerreference_quelle"] = "externe Referenz der Reservierung"
         elif gleich("kundenreferenz"):
-            kopf["buyerreference_quelle"] = "Kundenreferenz aus der Buchung"
+            kopf["buyerreference_quelle"] = "Custom Ref. der Reservierung"
         else:
             kopf["buyerreference_quelle"] = "am Profil hinterlegte Referenz"
     else:
@@ -1100,6 +1140,39 @@ def steuer_aus_zeilen(zeilen: list[dict]) -> list[dict]:
         e["taxamount"] = round(e["taxamount"] + _zahl(z.get("lineextensionamount"))
                                - _zahl(z.get("lineextensionamountnet")), 2)
     return list(je.values())
+
+
+def stornos_aufheben(anzahlungen: list[dict]) -> list[dict]:
+    """Ein Storno eines Anzahlungsbelegs ist in OPERA kein VOID, sondern ein
+    NEGATIVER DEPOSIT-Beleg am selben Folio (gemessen 03.11.2026: 317 im Jahr).
+    Zieht die Schlussrechnung beide einzeln ab, entsteht ein negativer Abzug
+    mit Verweis auf den Stornobeleg.
+
+    Gepaart wird 1:1: Jeder Storno hebt genau EINEN positiven Beleg gleichen
+    Betrags auf, und zwar den letzten DAVOR. An 21 Folios im Jahr steht ein
+    Storno gegen zwei oder drei gleich hohe Anzahlungen; nur eine davon ist
+    storniert. Die Reihenfolge kommt aus der Belegnummer, nicht aus dem
+    Belegdatum — das ist nur tagesgenau und verdrehte bei der Messung die
+    Richtung. Empfaenger und DOCUMENT_TYPE zaehlen nicht: Beide weichen am
+    Stornobeleg vom Original ab.
+
+    Ein Storno ohne passenden Beleg davor bleibt stehen — dann stimmt die
+    Summe nicht, und die Vorpruefung haelt die Rechnung an. Ein Storno mit
+    Neuausgabe laesst genau den neuen Beleg uebrig."""
+    def nr(a):
+        try:
+            return int(a.get("billingreferenceid"))
+        except (TypeError, ValueError):
+            return 0
+    positive = [a for a in anzahlungen if _zahl(a.get("total_gross")) > 0]
+    weg: set[int] = set()
+    for n in sorted((a for a in anzahlungen if _zahl(a.get("total_gross")) < 0), key=nr):
+        betrag = -_zahl(n.get("total_gross"))
+        davor = [p for p in positive if id(p) not in weg and nr(p) < nr(n)
+                 and abs(_zahl(p.get("total_gross")) - betrag) <= 0.02]
+        if davor:
+            weg.update({id(max(davor, key=nr)), id(n)})
+    return [a for a in anzahlungen if id(a) not in weg]
 
 
 def anzahlung_zuordnen(anzahlungen: list[dict], zeilen_brutto: float,
@@ -1244,9 +1317,6 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
         "folio_no": folio_no,
         "leitweg_typ": p["mitgliedschaftstyp_leitweg"],
         "erechnung_typ": p.get("mitgliedschaftstyp_erechnung") or "-",
-        # CUSTOM_REFERENCE traegt ueberwiegend Portal-Buchungsnummern, siehe
-        # invoice_header.sql. Nur nach ausdruecklicher Freigabe.
-        "kundenreferenz_nutzen": "J" if p.get("kundenreferenz_als_buyerreference") else "N",
         "resort": p["resort"],
     })
     if not kopf_rows:
@@ -1327,7 +1397,7 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     # Umbuchung auf das Debitorenkonto, die Rechnung steht dort offen.
     zeilen_brutto = sum(_zahl(z.get("lineextensionamount")) for z in zeilen)
     anzahlungen, anzahlung_befund = anzahlung_zuordnen(
-        anzahlungen, zeilen_brutto, _zahl(kopf.get("invoicegross")))
+        stornos_aufheben(anzahlungen), zeilen_brutto, _zahl(kopf.get("invoicegross")))
     # Die verrechneten Anzahlungen werden mit ihrer Steuer abgesetzt (Abzug je
     # Steuersatz, siehe anzahlung_abzuege), nicht mehr als BT-113 gefuehrt.
     abzuege: list[dict] = []

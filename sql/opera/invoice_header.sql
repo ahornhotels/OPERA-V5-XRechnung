@@ -25,7 +25,11 @@ SELECT f.bill_no                                              AS id,
        --      Hauses vom 09.09.2026: "wenn Leitweg existiert dann das
        --      nutzen, sonst Buyer Reference 1, sonst bisherige ResNr."
        --   4. EXTERNAL_REFERENCE an der Reservierung
-       --   5. CUSTOM_REFERENCE — NUR wenn die Konfiguration es erlaubt
+       --   5. CUSTOM_REFERENCE („Custom Ref.“ in der Reservierungsmaske) —
+       --      immer, ohne Filter auf den Inhalt. Entscheidung des Hauses vom
+       --      05.11.2026: Dort tragen die Kollegen die Referenz des Kunden
+       --      tatsaechlich ein (an einer Firmenrechnung nachgesehen), auch wenn daneben
+       --      Portalnummern stehen. Vorletzte Stufe vor dem Ersatzwert.
        --   6. NICHTS MEHR aus der Datenbank. Hier stand CONFIRMATION_NO, die
        --      Reservierungsnummer — ausnahmslos gefuellt. Genau deshalb erreichte
        --      die Kette in app/opera.py nie die Vorlage des Hauses
@@ -41,19 +45,11 @@ SELECT f.bill_no                                              AS id,
        -- Bleibt alles leer, setzt die Anwendung einen Ersatzwert (siehe
        -- app/opera.py) und vermerkt, dass es einer ist.
        --
-       -- WARUM CUSTOM_REFERENCE ABGESCHALTET IST: Das Feld ist gut gefuellt
-       -- (320 von 620 Firmenbelegen in 30 Tagen), aber es enthaelt ueberwiegend
-       -- nicht die Nummer des Kunden. Ausgezaehlt: 242 von 320 Werten sind
-       -- reine neun- bis zehnstellige Ziffernfolgen, also Buchungsnummern aus
-       -- dem Channel Manager. Bei Firmenprofilen ohne Debitorenkonto sind es
-       -- 80 %, mit Debitorenkonto 29 %.
-       --
-       -- Eine Portal-Buchungsnummer in BT-10 ist SCHLECHTER als ein
-       -- Ersatzwert: Der Kundenname ist erkennbar ein Platzhalter, eine
-       -- zehnstellige Zahl sieht nach einer echten Bestellnummer aus, und die
-       -- Buchhaltung der Gegenseite sucht sie vergeblich. Der Wert wird
-       -- deshalb weiterhin gelesen und in der Oberflaeche angezeigt, geht aber
-       -- nur nach ausdruecklicher Freigabe in die Rechnung.
+       -- CUSTOM_REFERENCE WAR BIS 05.11.2026 ABGESCHALTET (Schalter
+       -- kundenreferenz_als_buyerreference): 242 von 320 Werten waren reine
+       -- neun- bis zehnstellige Buchungsnummern aus dem Channel Manager. Das
+       -- Haus hat entschieden, das Feld trotzdem zu nehmen — die Detailseite
+       -- nennt die Herkunft, ein Portalwert laesst sich dort ersetzen.
        --
        -- EXTERNAL_REFERENCE ist im ganzen Bestand leer und wird von niemandem
        -- benutzt. Genau deshalb taugt es: Traegt der Empfang dort die
@@ -74,7 +70,7 @@ SELECT f.bill_no                                              AS id,
              AND (m.expiration_date IS NULL OR m.expiration_date > SYSDATE)),
          resv.folio_text1,
          resv.external_reference,
-         CASE WHEN :kundenreferenz_nutzen = 'J' THEN resv.custom_reference END
+         resv.custom_reference
        )                                                      AS buyerreference,
        resv.custom_reference                                  AS kundenreferenz,
        resv.external_reference                                AS externe_referenz,

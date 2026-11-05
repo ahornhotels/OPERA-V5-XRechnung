@@ -530,7 +530,7 @@ for ersatz, fehlt in (("debitorennummer", "debitorennummer"), ("kundenname", "cu
 for kopf, erwartet in (
         ({"buyerreference": "991-33333TEST-33", "leitweg_id_vorhanden": 1}, "Leitweg-ID"),
         ({"buyerreference": "BST-4711", "kundenreferenz": "BST-4711"},
-         "Kundenreferenz aus der Buchung"),
+         "Custom Ref. der Reservierung"),
         ({"buyerreference": "PO-2026-88", "buyer_reference1": "PO-2026-88"},
          "Buyer Reference aus der Reservierung"),
         ({"buyerreference": "0815ABC", "reservierungsnummer": "0815ABC"},
@@ -552,7 +552,7 @@ pruefe(_stellen == sorted(_stellen), "BT-10: Leitweg-ID vor Buyer Reference1")
 # nie. Sie ist der Rueckfall der Vorlage in app/opera.py.
 pruefe("confirmation_no" not in _ohne_kommentar_kette,
        "die Reservierungsnummer steht nicht mehr in der Kette — sonst greift die Vorlage nie")
-pruefe(_kette.index("resv.folio_text1") < _kette.index(":kundenreferenz_nutzen"),
+pruefe(_kette.index("resv.folio_text1") < _kette.index("resv.custom_reference"),
        "und Buyer Reference1 vor der Kundenreferenz")
 
 # BT-10 ist FREITEXT, nicht numerisch — die Norm verlangt nur, dass das Feld
@@ -602,47 +602,29 @@ _zeilen = opera.kaeuferreferenz(
 pruefe("\n" not in _zeilen and _zeilen == "PO 4711 Abteilung Einkauf",
        f"Zeilenumbrueche werden zu Leerzeichen ({_zeilen!r})")
 
-# CUSTOM_REFERENCE traegt ueberwiegend Portal-Buchungsnummern (242 von 320
-# Werten sind reine 9- bis 10-stellige Ziffernfolgen). Sie darf deshalb nur
-# nach ausdruecklicher Freigabe in BT-10 landen. Geprueft wird, was die
-# Abfrage bekommt — der Schalter wirkt in der SQL, nicht in Python.
-_gestellt = {}
-
-
-def _abfrage_stub(sql, parameter=None):
-    _gestellt[sql.splitlines()[0][:40]] = dict(parameter or {})
-    return [{}]
-
-
-_echt_abfrage = opera.db.abfrage
-opera.db.abfrage = _abfrage_stub
-try:
-    for _wert, _erwartet in ((None, "N"), (False, "N"), (True, "J")):
-        _gestellt.clear()
-        _cfg = json.loads(json.dumps(cfg))
-        if _wert is None:
-            _cfg["property"].pop("kundenreferenz_als_buyerreference", None)
-        else:
-            _cfg["property"]["kundenreferenz_als_buyerreference"] = _wert
-        try:
-            opera.rechnung(_cfg, 1400003)
-        except Exception:
-            pass  # ohne echte Daten bricht es spaeter ab, der Parameter ist gestellt
-        # Gezielt die Kopfabfrage: Vor ihr laeuft inzwischen invoice_folio.sql.
-        _param = next((v for k, v in _gestellt.items() if "invoice_header" in k), {})
-        pruefe(_param.get("kundenreferenz_nutzen") == _erwartet,
-               f"Kundenreferenz-Schalter {_wert} ergibt '{_erwartet}' "
-               f"(ist '{_param.get('kundenreferenz_nutzen')}')")
-finally:
-    opera.db.abfrage = _echt_abfrage
+# CUSTOM_REFERENCE („Custom Ref.“) ist seit 05.11.2026 die VORLETZTE Stufe:
+# immer, ohne Schalter und ohne Filter auf den Inhalt, nach EXTERNAL_REFERENCE
+# und vor dem Ersatzwert (Entscheidung des Hauses).
 _kopf_sql = (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8")
-pruefe("CASE WHEN :kundenreferenz_nutzen = 'J' THEN resv.custom_reference END" in _kopf_sql,
-       "die Abfrage nimmt CUSTOM_REFERENCE nur bei Freigabe")
-pruefe(_kopf_sql.index("resv.external_reference") < _kopf_sql.index("CASE WHEN :kundenreferenz_nutzen"),
-       "EXTERNAL_REFERENCE steht in der Kette VOR der Kundenreferenz")
-pruefe(json.loads((BASE / "config" / "app.example.json").read_text(
-           encoding="utf-8"))["property"]["kundenreferenz_als_buyerreference"] is False,
-       "die Vorlage laesst die Kundenreferenz ausgeschaltet")
+_kette_ck = "\n".join(z.split("--")[0] for z in
+                      _kopf_sql[_kopf_sql.index("COALESCE("):_kopf_sql.index("AS buyerreference")].splitlines())
+pruefe("resv.custom_reference" in _kette_ck and "CASE" not in _kette_ck,
+       "die Abfrage nimmt CUSTOM_REFERENCE ohne Bedingung")
+pruefe(_kette_ck.index("resv.external_reference") < _kette_ck.index("resv.custom_reference"),
+       "EXTERNAL_REFERENCE steht in der Kette VOR der Custom Ref.")
+pruefe(_kette_ck.rstrip().rstrip(")").rstrip().endswith("resv.custom_reference"),
+       "die Custom Ref. ist die letzte Stufe der Abfrage, danach kommt nur der Ersatzwert")
+pruefe(":kundenreferenz_nutzen" not in _kopf_sql,
+       "der alte Schalter ist aus der Abfrage verschwunden")
+pruefe("kundenreferenz_als_buyerreference" not in (BASE / "config" / "app.example.json").read_text(
+           encoding="utf-8"), "die Vorlage kennt den alten Schalter nicht mehr")
+# Ein Portalwert geht jetzt hinaus — und wird als Custom Ref. ausgewiesen,
+# nicht als Ersatzwert und nicht als Referenz am Profil.
+_k = opera.kaeuferreferenz({"buyerreference": "4711081599", "kundenreferenz": "4711081599",
+                            "reservierungsnummer": "3050411"},
+                           {"buyerreference_vorlage": "{haus} ReservNr.: {reservierungsnummer}"}, 1)
+pruefe(_k["buyerreference"] == "4711081599" and _k["buyerreference_quelle"] == "Custom Ref. der Reservierung",
+       f"eine Custom Ref. schlaegt die Vorlage des Hauses ({_k['buyerreference']!r}, {_k['buyerreference_quelle']!r})")
 
 # --- Wer war im Haus? BT-22 und BT-70 ---------------------------------------
 # Eine Firmenrechnung nennt sonst nur den Zahler. Der Gast haengt an der
@@ -1773,6 +1755,25 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
            "die Tooltips sind schlichter Text, ohne Markdown")
     pruefe("Blindkopie bei jeder verschickten Rechnung" in _kseite,
            "der Text steht tatsaechlich auf der Seite")
+    # Der Weg von BT-10 steht auf der Seite, in DERSELBEN Reihenfolge wie in
+    # der Abfrage. Aendert sich die Kette, faellt die Liste hier auf.
+    _weg = _kseite[_kseite.index("So wird BT-10 gefüllt"):]
+    _weg = _weg[:_weg.index("</ol>")]
+    _stufen = ["Von Hand", "Leitweg-ID", "Vereinbarte Referenz", "FOLIO_TEXT1",
+               "EXTERNAL_REFERENCE", "CUSTOM_REFERENCE", "Ersatzwert"]
+    pruefe(all(s in _weg for s in _stufen)
+           and [_weg.index(s) for s in _stufen] == sorted(_weg.index(s) for s in _stufen),
+           "die Konfiguration zeigt den Weg von BT-10 in der Reihenfolge der Kette")
+    _ksql = (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8")
+    _ksql = "\n".join(z.split("--")[0] for z in
+                      _ksql[_ksql.index("COALESCE("):_ksql.index("AS buyerreference")].splitlines())
+    _sqlstufen = [":leitweg_typ", ":erechnung_typ", "resv.folio_text1",
+                  "resv.external_reference", "resv.custom_reference"]
+    pruefe([_ksql.index(s) for s in _sqlstufen] == sorted(_ksql.index(s) for s in _sqlstufen),
+           "und die Abfrage geht dieselben Stufen in derselben Reihenfolge")
+    pruefe(_kseite.count("<li>", _kseite.index("So wird BT-10 gefüllt"),
+                         _kseite.index("</ol>", _kseite.index("So wird BT-10 gefüllt"))) == 7,
+           "es sind genau sieben Stufen — keine stille achte")
     pruefe(_einst.erklaerungen(_sandkasten / "gibt-es-nicht.md") == {},
            "fehlt das Dokument, gibt es keine Tooltips — aber keinen Absturz")
 
@@ -4238,7 +4239,7 @@ _echt_abf_pr = opera.db.abfrage
 opera.db.abfrage = _db_ohne_doctype
 try:
     _pcfg = json.loads(json.dumps(cfg))
-    _pcfg["property"].update(udf_leitweg="UDFC05")
+    _pcfg["property"].update(udf_leitweg="UDFC05", udf_mail_reservierung="UDFC10")
     _befunde = opera.abfragen_pruefen(_pcfg)
 finally:
     opera.db.abfrage = _echt_abf_pr
@@ -6024,6 +6025,125 @@ finally:
     with _za._verbindung() as con:
         con.execute("DELETE FROM zahlungsanforderungen")
         con.execute("DELETE FROM za_nummernkreis")
+
+print("8x) Storno eines Anzahlungsbelegs: negativer DEPOSIT-Beleg am selben Folio")
+_dep = lambda nr, betrag, tag: {"billingreferenceid": nr, "total_gross": betrag,
+                                "billingreferenceissuedate": f"2031-01-{tag:02d}"}
+_s1 = opera.stornos_aufheben([_dep(1, 100.0, 1), _dep(2, -100.0, 2)])
+pruefe(_s1 == [], "Anzahlung und ihr Storno heben sich auf")
+_s2 = opera.stornos_aufheben([_dep(1, 100.0, 1), _dep(2, -100.0, 2), _dep(3, 100.0, 3)])
+pruefe([a["billingreferenceid"] for a in _s2] == [3],
+       "Storno und Neuausgabe (etwa auf die Firma): nur der neue Beleg bleibt")
+_s3 = opera.stornos_aufheben([_dep(1, 100.0, 1), _dep(2, 50.0, 2), _dep(3, -50.0, 3)])
+pruefe([a["billingreferenceid"] for a in _s3] == [1], "nur der betragsgleiche wird aufgehoben")
+_s4 = opera.stornos_aufheben([_dep(1, 100.0, 1), _dep(2, -30.0, 2)])
+pruefe([a["billingreferenceid"] for a in _s4] == [1, 2],
+       "ein Storno ohne Gegenstueck bleibt stehen — die Vorpruefung haelt die Rechnung dann an")
+_s5 = opera.stornos_aufheben([_dep(1, 853.02, 1), _dep(2, 853.02, 1), _dep(3, -853.02, 1)])
+pruefe([a["billingreferenceid"] for a in _s5] == [1],
+       "1:1: ein Storno gegen zwei gleich hohe hebt nur EINEN auf, den letzten davor")
+_s6 = opera.stornos_aufheben([_dep(5, -100.0, 1), _dep(7, 100.0, 1)])
+pruefe([a["billingreferenceid"] for a in _s6] == [5, 7],
+       "ein Beleg NACH dem Storno wird nicht aufgehoben, gleiches Datum hin oder her")
+pruefe(opera.anzahlung_zuordnen(opera.stornos_aufheben(
+           [_dep(1, 100.0, 1), _dep(2, -100.0, 2), _dep(3, 100.0, 3)]), 300.0, 200.0)
+       == ([_dep(3, 100.0, 3)], ""),
+       "zugeordnet wird nur, was nach dem Storno bleibt, ohne Befund")
+
+print("8y) Versandadresse aus den Mailfeldern (Profil, Reservierung)")
+from app import ablauf as _ab
+_mcfg = json.loads(json.dumps(cfg))
+_mcfg["property"].update(udf_mail_profil="UDFC06", udf_mail_reservierung="UDFC10")
+_werte = {"profil": "", "resv": "", "fehler": False}
+
+
+def _p_udf(name_id, spalte):
+    if _werte["fehler"]:
+        raise RuntimeError("ORA-12170")
+    return _werte["profil"] if spalte == "UDFC06" else "X"
+
+
+def _r_udf(bill_no, spalte):
+    return _werte["resv"]
+
+
+_echt_m = (opera.profil_udf_streng, opera.reservierung_udf, opera.empfaenger, opera.gast_mails)
+opera.profil_udf_streng, opera.reservierung_udf = _p_udf, _r_udf
+try:
+    pruefe(not _ab.mailfelder_aktiv(cfg) and _ab.mailfelder_aktiv(_mcfg),
+           "ohne eingestellte Felder bleibt die bisherige Auswahl")
+    _werte.update(profil="rechnung@firma.example", resv="empfang@firma.example")
+    pruefe(_ab.versandadresse(_mcfg, 1, 7) == ("rechnung@firma.example", "Mailfeld am Profil"),
+           "das Mailfeld am Profil geht vor")
+    _werte.update(profil="")
+    pruefe(_ab.versandadresse(_mcfg, 1, 7) == ("empfang@firma.example", "Mailfeld an der Reservierung"),
+           "ist es leer, gilt das an der Reservierung")
+    _werte.update(resv="")
+    pruefe(_ab.versandadresse(_mcfg, 1, 7) == (None, _ab.HINWEIS_MAILFELD_LEER),
+           "sind beide leer: Sichtpruefung, keine eigene Wahl")
+    _werte.update(profil="a@firma.example; b@firma.example", resv="empfang@firma.example")
+    _adr, _grund = _ab.versandadresse(_mcfg, 1, 7)
+    pruefe(_adr is None and _grund.startswith(_ab.HINWEIS_MAILFELD_UNGUELTIG) and "am Profil" in _grund,
+           "ein gefuelltes, unbrauchbares Profilfeld wird nicht still uebergangen")
+    _werte.update(fehler=True)
+    pruefe(_ab.versandadresse(_mcfg, 1, 7) == (None, None),
+           "nicht lesbar ist nicht leer: keine Sichtpruefung wegen eines Aussetzers")
+    _werte.update(fehler=False, profil="Rechnung@Firma.example", resv="empfang@firma.example")
+    opera.empfaenger = lambda bill_no: [{"email": "rechnung@firma.example", "quelle": "Profil", "rolle": "Zahler"},
+                                        {"email": "ap@firma.example", "quelle": "Profil", "rolle": "Zahler"}]
+    opera.gast_mails = lambda bill_no: [{"email": "gast@privat.example", "quelle": "Gast an der Reservierung",
+                                         "rolle": "Gast"}]
+    _liste = [x["email"].lower() for x in _ab.adressen_zur_auswahl(_mcfg, 1, 7)]
+    pruefe(_liste == ["rechnung@firma.example", "empfang@firma.example", "ap@firma.example",
+                      "gast@privat.example"],
+           f"zur Auswahl: Mailfelder zuerst, dann die bisherigen, zuletzt der Gast, ohne Doppelte ({_liste})")
+    pruefe("gast@privat.example" not in [x["email"] for x in _ab.adressen_zur_auswahl(cfg, 1, 7)],
+           "ohne Mailfelder bleibt der Gast aus der Auswahl wie bisher")
+    # Auffrischen: Feld nachtraeglich gefuellt -> raus aus der Sichtpruefung
+    store.rechnung_anlegen({"bill_no": 960200, "resort": "IHRHAUS", "kunde": "M", "total_gross": 50.0}, 0)
+    store.setzen(960200, status="pruefung", fehler=_ab.HINWEIS_MAILFELD_LEER, name_id=7)
+    _werte.update(profil="", resv="")
+    _z = {"pruefung": 0}
+    _ab._auffrischen({"bill_no": 960200, "name_id": 7}, cfg["automatik"], cfg["auswahl"], _z, _mcfg)
+    pruefe(store.rechnung(960200)["status"] == "pruefung" and not store.rechnung(960200)["empfaenger"],
+           "leer bleibt leer: weiter in der Sichtpruefung")
+    _werte.update(resv="empfang@firma.example")
+    _ab._auffrischen({"bill_no": 960200, "name_id": 7}, cfg["automatik"], cfg["auswahl"], _z, _mcfg)
+    _r = store.rechnung(960200)
+    pruefe(_r["empfaenger"] == "empfang@firma.example" and _r["status"] == "neu" and not _r["fehler"],
+           "nachtraeglich gefuellt: Empfaenger gesetzt, Hinweis weg, zurueck aus der Sichtpruefung")
+    store.setzen(960200, empfaenger=None, status="pruefung",
+                 fehler=_ab.hinweis_dazu("Firma hängt an der Reservierung", _ab.HINWEIS_MAILFELD_LEER))
+    _ab._auffrischen({"bill_no": 960200, "name_id": 7}, cfg["automatik"], cfg["auswahl"], _z, _mcfg)
+    _r = store.rechnung(960200)
+    pruefe(_r["empfaenger"] == "empfang@firma.example" and _r["status"] == "pruefung"
+           and _r["fehler"] == "Firma hängt an der Reservierung",
+           "steht ein anderer Grund daneben, bleibt die Sichtpruefung")
+finally:
+    opera.profil_udf_streng, opera.reservierung_udf, opera.empfaenger, opera.gast_mails = _echt_m
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no = 960200")
+# Konfiguration: nur gueltige Felder, nicht das Leitweg-Feld
+with TestClient(app, client=("127.0.0.1", 50000)) as _km:
+    _km.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+    _seite_k = _km.get("/konfiguration").text
+    pruefe('name="property.udf_mail_profil"' in _seite_k and 'name="property.udf_mail_reservierung"' in _seite_k,
+           "die Konfigurationsseite hat beide Mailfelder")
+    _km.post("/konfiguration", data={"property.udf_mail_profil": "udfc06",
+                                     "property.udf_mail_reservierung": "UDFC10"}, follow_redirects=False)
+    _p = config.laden()["property"]
+    pruefe(_p.get("udf_mail_profil") == "UDFC06" and _p.get("udf_mail_reservierung") == "UDFC10",
+           "gueltige Felder werden gespeichert, gross geschrieben")
+    _a = _km.post("/konfiguration", data={"property.udf_mail_profil": "UDFC99"}, follow_redirects=False)
+    pruefe("NICHT GESPEICHERT" in _uq(_a.headers.get("location", ""))
+           and config.laden()["property"]["udf_mail_profil"] == "UDFC06",
+           "ein unzulaessiges Feld wird abgelehnt")
+    _a = _km.post("/konfiguration", data={"property.udf_mail_profil": "UDFC05",
+                                          "property.udf_leitweg": "UDFC05"}, follow_redirects=False)
+    pruefe("NICHT GESPEICHERT" in _uq(_a.headers.get("location", "")),
+           "Mailfeld und Leitweg-Feld duerfen nicht dasselbe sein")
+    _km.post("/konfiguration", data={"property.udf_mail_profil": "", "property.udf_mail_reservierung": "",
+                                     "property.udf_leitweg": ""}, follow_redirects=False)
 
 print()
 if fehler:
