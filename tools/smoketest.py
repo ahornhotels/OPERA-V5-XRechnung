@@ -375,6 +375,21 @@ rechnung = {
 }
 hinweise = xml_build.pruefsummen(rechnung)
 pruefe(not hinweise, f"Vorpruefung sauber ({hinweise})")
+# Aeltere OPERA: Positionen ohne Umsatzsteuer (dort die City Tax) zaehlen
+# nicht in TOTAL_NET, nur in TOTAL_GROSS. Die Klammer geht dann nur auf, wenn
+# die Abweichung GENAU die 0-%-Positionen sind UND das Brutto stimmt.
+_alt_opera = json.loads(json.dumps(rechnung))
+_alt_opera["kontrolle"]["kopf_netto"] = 3450.44 - 243.00 + 0.00329  # ungerundet wie dort
+pruefe(not [h for h in xml_build.pruefsummen(_alt_opera) if "Folio-Klammer" in h],
+       "aeltere OPERA: Kopf ohne die 0-%-Positionen, Brutto stimmt — keine Klammer-Meldung")
+_alt_falsch = json.loads(json.dumps(_alt_opera))
+_alt_falsch["kontrolle"]["kopf_brutto"] = 3688.57 - 243.00
+pruefe(any("Folio-Klammer" in h for h in xml_build.pruefsummen(_alt_falsch)),
+       "stimmt dabei das Brutto nicht, bleibt die Meldung")
+_alt_falsch = json.loads(json.dumps(rechnung))
+_alt_falsch["kontrolle"]["kopf_netto"] = 3450.44 - 200.00
+pruefe(any("Folio-Klammer" in h for h in xml_build.pruefsummen(_alt_falsch)),
+       "ist die Abweichung nicht genau die 0-%-Summe, bleibt die Meldung")
 xml = xml_build.bauen(rechnung)
 text = xml.decode()
 # Eine Textdatei endet mit einem Zeilenumbruch; Jinja liess ihn weg.

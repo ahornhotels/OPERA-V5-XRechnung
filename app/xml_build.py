@@ -450,6 +450,33 @@ def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
     return fehler
 
 
+def _klammer_ohne_null(rechnung: dict, roh: dict, k: dict, differenz: Decimal) -> bool:
+    """Geht die Folio-Klammer auf, wenn man die Positionen ohne Umsatzsteuer
+    (0 %) herausnimmt — und stimmt dabei der Bruttobetrag mit OPERA?
+
+    Gesehen in einem Haus mit aelterer OPERA-Version: Die City Tax steht dort
+    als Buchung mit 0 % auf der Rechnung, OPERA rechnet sie aber nicht in
+    TOTAL_NET, sondern nur in TOTAL_GROSS — wie eine Steuer. Die Positionen
+    ergaben 77,09, der Kopf 73,64; der Unterschied war genau die City Tax
+    (3,45). In der Rechnung selbst ist nichts falsch: Die City Tax ist eine
+    Position ohne Umsatzsteuer, und so steht sie auch im XML.
+
+    Zugelassen wird das nur, wenn ZWEI unabhaengige Bedingungen gelten:
+    1. Die Abweichung entspricht der Summe der 0-%-Positionen (± 2 Cent).
+    2. Die Bruttosumme der Positionen stimmt mit TOTAL_GROSS (± 2 Cent).
+    Sonst bleibt es ein Befund. Nur ohne Anzahlung und ohne Abschlag: Dort
+    mischen sich weitere Betraege in die Klammer, und geraten wird nicht."""
+    if rechnung.get("allowances") or _dez(k.get("anzahlung_netto")) or roh.get("anzahlung_abzuege"):
+        return False
+    zeilen = rechnung.get("lines") or []
+    null_netto = sum(_dez(z.get("lineextensionamountnet")) for z in zeilen
+                     if _dez(z.get("classifiedtaxcategorypercent")) == 0)
+    if not null_netto or abs(differenz - null_netto) > Decimal("0.02"):
+        return False
+    brutto_zeilen = sum(_dez(z.get("lineextensionamount")) for z in roh.get("lines") or [])
+    return abs(brutto_zeilen - _dez(k.get("kopf_brutto"))) <= Decimal("0.02")
+
+
 def pruefsummen(rechnung: dict) -> list[str]:
     """Rechnerische Vorpruefung. Leere Liste heisst: sauber.
     Faengt die Regeln ab, an denen KoSIT sonst scheitert.
@@ -477,7 +504,8 @@ def pruefsummen(rechnung: dict) -> list[str]:
         # sie ein Abschlag. Ohne das Zurueckrechnen meldet die Klammer bei
         # jeder Gutschrift eine Abweichung, die es nicht gibt.
         soll = _dez(k.get("kopf_netto")) + _dez(k.get("anzahlung_netto"))
-        if abs((summe_zeilen - abzug) - soll) > Decimal("0.02"):
+        if abs((summe_zeilen - abzug) - soll) > Decimal("0.02") and not _klammer_ohne_null(
+                rechnung, roh, k, summe_zeilen - abzug - soll):
             fehler.append(
                 f"Folio-Klammer: Positionen {summe_zeilen - abzug} != Kopf {_dez(k.get('kopf_netto'))} "
                 f"+ Anzahlungen {_dez(k.get('anzahlung_netto'))}. Rechnung nicht automatisch verarbeiten.")
