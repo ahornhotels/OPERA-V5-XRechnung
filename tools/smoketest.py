@@ -598,17 +598,24 @@ pruefe(json.loads((BASE / "config" / "app.example.json").read_text(
            encoding="utf-8"))["property"]["buyerreference_vorlage"]
        == "{hotel} ReservNr.: {reservierungsnummer}",
        "die Vorlage steht so in der Konfigurationsvorlage")
-# {hotel} ist der Name aus OPERA, wie er auf dem Beleg steht (suppliername);
-# fehlt er, gilt der Name aus der Konfiguration.
-_hp = {"haus": "Name aus der Konfig", "buyerreference_vorlage": "{hotel} ReservNr.: {reservierungsnummer}"}
-pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}",
-                              {"suppliername": "Hotel aus OPERA", "reservierungsnummer": "3000001"}, _hp, 1)
-       == "Hotel aus OPERA ReservNr.: 3000001",
-       "{hotel} nimmt den Hotelnamen aus OPERA")
-pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}",
-                              {"reservierungsnummer": "3000001"}, _hp, 1)
+# EIN Name des Hauses: eingetragen (property.haus), sonst aus OPERA
+# (suppliername), sonst das Resortkuerzel. {hotel} und {haus} sind derselbe.
+_hp = {"haus": "Name aus der Konfig", "resort": "IHRHAUS",
+       "buyerreference_vorlage": "{hotel} ReservNr.: {reservierungsnummer}"}
+_mit_opera = {"suppliername": "Hotel aus OPERA", "reservierungsnummer": "3000001"}
+pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}", _mit_opera, _hp, 1)
        == "Name aus der Konfig ReservNr.: 3000001",
-       "ohne Namen aus OPERA gilt der aus der Konfiguration")
+       "ist ein Name eingetragen, gilt er — auch gegen OPERA")
+_hp_leer = dict(_hp, haus="")
+pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}", _mit_opera, _hp_leer, 1)
+       == "Hotel aus OPERA ReservNr.: 3000001",
+       "ist das Feld leer, gilt der Hotelname aus OPERA")
+pruefe(opera._vorlage_fuellen("{haus} ReservNr.: {reservierungsnummer}", _mit_opera, _hp_leer, 1)
+       == opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}", _mit_opera, _hp_leer, 1),
+       "{haus} und {hotel} sind derselbe Name")
+pruefe(opera.hausname(_hp_leer, "") == "IHRHAUS", "ohne beides bleibt das Resortkuerzel")
+pruefe(json.loads((BASE / "config" / "app.example.json").read_text(encoding="utf-8"))["property"]["haus"] == "",
+       "die Vorlage laesst den Namen leer, er folgt also OPERA")
 pruefe(opera._vorlage_fuellen("{hotel}", {"suppliername": "Hotel aus OPERA"}, _hp, 1) == "",
        "eine Vorlage aus nur dem Hotelnamen wird nicht verwendet")
 for _v, _gut in (("{hotel} ReservNr.: {reservierungsnummer}", True), ("", True),
@@ -2042,6 +2049,45 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     _leer = klient.get("/")
     pruefe("ohne Adresse" not in _leer.text,
            "ist nichts zu pflegen, steht der Knopf auch nicht da")
+
+    # Anzeige "letzte N Tage": filtert nur die ANSICHT. Eingelesenes bleibt,
+    # die Suche geht ueber alles, die Reiter zaehlen dasselbe Fenster.
+    from datetime import date as _d_anz, timedelta as _td_anz
+    _heute = _d_anz.today()
+    for _nr, _alter in ((960001, 2), (960002, 20), (960003, 60)):
+        store.rechnung_anlegen({"bill_no": _nr, "resort": "IHRHAUS", "invoice_no": f"A{_nr}",
+                                "issuedate": (_heute - _td_anz(days=_alter)).isoformat(),
+                                "total_net": 10.0, "total_gross": 11.9, "kunde": f"Fenster {_alter} GmbH",
+                                "city_ledger": 0.0, "firmenbezug": "EMPFAENGER"}, 0)
+    try:
+        _s7 = klient.get("/?tage=7").text
+        pruefe("Fenster 2 GmbH" in _s7 and "Fenster 20 GmbH" not in _s7 and "Fenster 60 GmbH" not in _s7,
+               "die Liste zeigt nur die Rechnungen der letzten 7 Tage")
+        _s30 = klient.get("/?tage=30").text
+        pruefe("Fenster 20 GmbH" in _s30 and "Fenster 60 GmbH" not in _s30,
+               "mit 30 Tagen auch die aeltere, aber nicht die von vor 60 Tagen")
+        _sa = klient.get("/?tage=0").text
+        pruefe("Fenster 60 GmbH" in _sa, "0 zeigt alle — nichts wurde durch das Fenster entfernt")
+        pruefe(store.rechnung(960003) is not None, "die ausgeblendete Rechnung bleibt in der Arbeitsliste")
+        _ss = klient.get("/?tage=7&suche=Fenster 60").text
+        pruefe("Fenster 60 GmbH" in _ss, "die Suche findet auch, was ausserhalb des Fensters liegt")
+        pruefe('name="tage"' in _s7 and 'href="/?status=neu&tage=7"' in _s7.replace("&amp;", "&"),
+               "das Fenster bleibt beim Wechsel des Reiters erhalten")
+        _vor = config.laden()["auswahl"].get("anzeige_tage")
+        klient.post("/konfiguration", data={"auswahl.anzeige_tage": "7"}, follow_redirects=False)
+        _sv = klient.get("/").text
+        pruefe(config.laden()["auswahl"].get("anzeige_tage") == 7
+               and "Fenster 2 GmbH" in _sv and "Fenster 20 GmbH" not in _sv,
+               "die Vorgabe aus der Konfiguration gilt, wenn auf der Liste nichts gewaehlt ist")
+        pruefe("Fenster 20 GmbH" in klient.get("/?tage=").text,
+               "ein geleertes Feld auf der Liste zeigt alle, auch gegen die Vorgabe")
+        klient.post("/konfiguration", data={"auswahl.anzeige_tage": str(_vor if _vor is not None else 0)},
+                    follow_redirects=False)
+        from app.main import _anzeige_tage as _at
+        pruefe(_at("abc") == 0 and _at("-3") == 0 and _at(" 14 ") == 14, "Unsinn im Feld heisst: alle")
+    finally:
+        with store.verbindung() as con:
+            con.execute("DELETE FROM rechnungen WHERE bill_no BETWEEN 960001 AND 960003")
 
     # Eine VERSENDETE Rechnung darf nicht beilaeufig neu erzeugt werden. Vorher
     # schrieb jeder Aufruf die Datei neu — auch das blosse ANSEHEN des XML,

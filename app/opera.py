@@ -987,14 +987,26 @@ def kuerzen(wert) -> tuple[str, int]:
     return roh[:BT10_LAENGE].strip(), len(roh) if len(roh) > BT10_LAENGE else 0
 
 
+def hausname(p: dict, aus_opera: str = "") -> str:
+    """DER Name des Hauses fuer Oberflaeche und BT-10-Vorlage: der in der
+    Konfiguration eingetragene (property.haus), sonst der aus OPERA, sonst das
+    Resortkuerzel.
+
+    Vorher gab es zwei Namen nebeneinander — {haus} aus der Konfiguration und
+    {hotel} aus OPERA —, und welcher wo stand, war nicht zu sehen. Jetzt ist es
+    einer: Bleibt das Feld leer, folgt er OPERA; wer einen anderen will,
+    traegt ihn ein. Der Verkaeufer in der Rechnung (BT-27/28) kommt davon
+    unberuehrt immer aus OPERA."""
+    return ((p.get("haus") or "").strip() or (aus_opera or "").strip()
+            or (p.get("resort") or "").strip())
+
+
 # Platzhalter der BT-10-Vorlage, mit Beschreibung fuer die Konfigurationsseite.
-# {hotel} ist der Name aus OPERA, so wie er auf dem Beleg steht
-# (NVL(FOLIO$_TAX.HOTEL_NAME, RESORT.NAME), invoice_header.sql) — derselbe, der
-# als Verkaeufer in der Rechnung steht. {haus} ist der Name aus der
-# Konfiguration (property.haus), der auch in der Kopfzeile der Oberflaeche steht.
+# {hotel} und {haus} sind derselbe Name, siehe hausname(); {haus} bleibt, damit
+# bestehende Vorlagen weiter gelten.
 VORLAGE_PLATZHALTER = {
-    "hotel": "Hotelname aus OPERA, wie auf dem Beleg",
-    "haus": "Name des Hauses aus dieser Konfiguration",
+    "hotel": "Name des Hauses (eingetragen, sonst aus OPERA)",
+    "haus": "dasselbe wie {hotel}",
     "reservierungsnummer": "Reservierungsnummer (Confirmation No.)",
     "rechnungsnummer": "Rechnungsnummer",
     "debitor": "Debitorennummer",
@@ -1034,13 +1046,13 @@ def _vorlage_fuellen(vorlage: str, kopf: dict, p: dict, bill_no: int) -> str:
 
     Fehlt einer der benutzten Werte, wird die Vorlage NICHT genommen — sonst
     stuende auf der Rechnung "… ReservNr.:" ohne Nummer, und das sieht aus wie
-    ein Wert. Die Namen des Hauses zaehlen dabei nicht als Wert (_NUR_RAHMEN).
-    Fehlt der Hotelname aus OPERA, gilt der aus der Konfiguration."""
+    ein Wert. Der Name des Hauses zaehlt dabei nicht als Wert (_NUR_RAHMEN);
+    welcher Name es ist, sagt hausname()."""
     if not vorlage:
         return ""
-    haus = (p.get("haus") or p.get("resort") or "").strip()
+    haus = hausname(p, str(kopf.get("suppliername") or ""))
     werte = {
-        "hotel": str(kopf.get("suppliername") or "").strip() or haus,
+        "hotel": haus,
         "haus": haus,
         "reservierungsnummer": str(kopf.get("reservierungsnummer") or "").strip(),
         "rechnungsnummer": str(bill_no or "").strip(),

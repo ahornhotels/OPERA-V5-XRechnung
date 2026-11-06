@@ -33,7 +33,7 @@ zweiten Haus anders sein wird als hier.
 | Einstellung | Bedeutung |
 |---|---|
 | `resort` | **Das Resortkürzel.** In einer Datenbank liegen oft mehrere Properties; Reservierungszentrale und Demo-Mandanten müssen draußen bleiben |
-| `haus` | Name für die Kopfzeile der Oberfläche |
+| `haus` | Name des Hauses für die Kopfzeile der Oberfläche und den Platzhalter {hotel} der BT-10-Vorlage. Leer lassen: Es gilt der Hotelname aus OPERA. Der Verkäufer in der Rechnung kommt immer aus OPERA |
 | `ust_id` | **USt-IdNr. des Hauses (BT-31).** OPERA führt sie nicht — weder `RESORT.VAT_ID` noch `PROPERTY_TAX_NO` sind gefüllt |
 | `kontakt_name`, `kontakt_telefon`, `kontakt_email` | BT-41/42/43. **Telefon und E-Mail sind Pflicht** (BR-DE-6/7); fehlen sie, lehnt der Validator ab |
 | `iban`, `bic`, `kontoinhaber` | Bankverbindung für BG-17 |
@@ -42,7 +42,7 @@ zweiten Haus anders sein wird als hier.
 | `positionen` | Wie die Positionen stehen: `automatisch`, `A` (jede Buchung einzeln), `B` (zusammengefasst), `C` (je Gast). Siehe [14_POSITIONEN.md](14_POSITIONEN.md) |
 | `positionsbemerkung` | **Welche Felder der Buchung als Bemerkung an der Position stehen (BT-127).** Vorgabe `remark` — das ist das Feld, das OPERA in der Buchungsmaske „Supplement" nennt. `reference` **nicht** einschalten: Systemprotokoll mit fremden Gastnamen und Rufnummern |
 | `gastzuordnung_bestaetigt` | Solange `false`, verschickt die Automatik keine Rechnung in der Darstellung je Gast. Der Rückweg, falls `sql/discovery/06_positionen_gast.sql` im eigenen Haus ein anderes Bild zeigt |
-| `buyerreference_vorlage` | BT-10 ist Pflicht (BR-DE-15), aber nur Behörden haben eine Leitweg-ID. Diese Vorlage greift, wenn nichts anderes etwas hergibt. Platzhalter: {hotel} (Hotelname aus OPERA, wie auf dem Beleg), {haus} (Name aus dieser Konfiguration), {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Mindestens eine Nummer oder der Kunde muss darin vorkommen |
+| `buyerreference_vorlage` | BT-10 ist Pflicht (BR-DE-15), aber nur Behörden haben eine Leitweg-ID. Diese Vorlage greift, wenn nichts anderes etwas hergibt. Platzhalter: {hotel} (Name des Hauses, siehe `haus`; {haus} ist dasselbe), {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Mindestens eine Nummer oder der Kunde muss darin vorkommen |
 | `buyerreference_ersatz` | Letzter Rückfall: `reservierungsnummer`, `rechnungsnummer`, `debitornummer` oder `kundenname` |
 | `mitgliedschaftstyp_leitweg` | **Mitgliedschaftstyp am Profil, der die Leitweg-ID trägt** |
 | `mitgliedschaftstyp_erechnung` | Kennzeichnet übrige Firmenkunden, die eine E-Rechnung bekommen sollen |
@@ -78,6 +78,7 @@ zweiten Haus anders sein wird als hier.
 | Einstellung | Bedeutung |
 |---|---|
 | `zeitraum_tage` | Wie weit zurück eingelesen wird |
+| `anzeige_tage` | Wie weit zurück die Rechnungsliste **anzeigt**, nach Rechnungsdatum. `0` zeigt alle. Nur die Vorgabe: Auf der Liste lässt sich der Zeitraum für die Ansicht ändern. Eingelesenes bleibt in der Arbeitsliste, auch wenn es aus dem Fenster fällt; die Suche geht immer über alles |
 | `hoechstens` | Obergrenze je Lauf, wirkt auf die Belege **mit** Firmenbezug |
 | `firmenprofile` | **Welche Profiltypen als Firma gelten** (`COMPANY`, `TRAVEL_AGENT`, …). In jedem Haus anders benannt |
 | `reservierungsfirma_aufnehmen` | Rechnungen aufnehmen, bei denen die Firma nur an der Reservierung hängt |

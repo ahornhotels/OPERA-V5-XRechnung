@@ -23,8 +23,8 @@
   },
   "property": {
     "resort": "IHRHAUS",
-    "_haus_hinweis": "Name des Hauses fuer die Kopfzeile der Oberflaeche. Leer lassen zeigt das Resortkuerzel.",
-    "haus": "Musterhotel Berlin",
+    "_haus_hinweis": "Name des Hauses fuer die Kopfzeile der Oberflaeche und den Platzhalter {hotel} der BT-10-Vorlage. Leer lassen: Es gilt der Hotelname aus OPERA (RESORT.NAME bzw. der Name auf dem Beleg). Der Verkaeufer in der Rechnung kommt davon unberuehrt immer aus OPERA.",
+    "haus": "",
     "ust_id": "",
     "kontakt_name": "Buchhaltung",
     "kontakt_telefon": "",
@@ -35,7 +35,7 @@
     "zahlungsziel_tage": 14,
     "_kennzeichen_hinweis": "Zwei Mitgliedschaftstypen am Kundenprofil: LEITWEG traegt die Leitweg-ID (Behoerden, BT-10 Pflicht), ERECHNUNG kennzeichnet uebrige Firmenkunden, die eine E-Rechnung bekommen sollen - dort darf die Nummer leer bleiben oder eine Kundenreferenz tragen. Wer weder das eine noch das andere hat, bekommt keine XRechnung.",
     "_bt10_hinweis": "BT-10 ist nach BR-DE-15 Pflicht. Die erste gefuellte Stufe gewinnt: 1. von Hand auf der Detailseite, 2. Leitweg-ID (Mitgliedschaft mitgliedschaftstyp_leitweg, sonst Feld udf_leitweg der Firmenkartei), 3. Mitgliedschaft mitgliedschaftstyp_erechnung, 4. 'XRechnung' der Reservierung (FOLIO_TEXT1), 5. 'CRS No.' (EXTERNAL_REFERENCE), 6. 'Custom Ref.' (CUSTOM_REFERENCE, ohne Inhaltspruefung), 7. Ersatzwert: buyerreference_vorlage, sonst buyerreference_ersatz. Die Konfigurationsseite zeigt den Weg mit den eingestellten Werten.",
-    "_buyerreference_vorlage_hinweis": "BT-10 ist FREITEXT, nicht numerisch — die Norm verlangt nur, dass das Feld gefuellt ist (BR-DE-15). Diese Vorlage wird benutzt, wenn keine der Stufen 1 bis 6 (siehe _bt10_hinweis) etwas hergibt. Platzhalter: {hotel} (Hotelname aus OPERA, wie auf dem Beleg), {haus} (Name aus dieser Konfiguration), {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Fehlt einer der benutzten Werte, wird die Vorlage NICHT genommen und buyerreference_ersatz gilt. Leer lassen schaltet sie ab. Zu bedenken: BT-10 ist die Referenz des KAEUFERS, und der Name des Hauses steht ohnehin in BT-27 — fuer Rueckfragen ist die Reservierungsnummer aber das, wonach der Kunde hier sucht.",
+    "_buyerreference_vorlage_hinweis": "BT-10 ist FREITEXT, nicht numerisch — die Norm verlangt nur, dass das Feld gefuellt ist (BR-DE-15). Diese Vorlage wird benutzt, wenn keine der Stufen 1 bis 6 (siehe _bt10_hinweis) etwas hergibt. Platzhalter: {hotel} (Name des Hauses: property.haus, leer = aus OPERA; {haus} ist dasselbe), {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Fehlt einer der benutzten Werte, wird die Vorlage NICHT genommen und buyerreference_ersatz gilt. Leer lassen schaltet sie ab. Zu bedenken: BT-10 ist die Referenz des KAEUFERS, und der Name des Hauses steht ohnehin in BT-27 — fuer Rueckfragen ist die Reservierungsnummer aber das, wonach der Kunde hier sucht.",
     "buyerreference_vorlage": "{hotel} ReservNr.: {reservierungsnummer}",
     "buyerreference_ersatz": "reservierungsnummer",
     "_gastzeile_hinweis": "BT-22: die Zeile, die sagt, wer im Haus war. Ohne sie nennt eine Firmenrechnung nur den Zahler, und die Buchhaltung des Kunden kann sie keiner Reise zuordnen. Platzhalter: {gast}, {zimmer}, {anreise}, {abreise}. Leer lassen schaltet die Zeile ab. Ist kein Gast bekannt (bei Gruppen), faellt sie ohnehin weg.",
@@ -89,6 +89,8 @@
   "auswahl": {
     "_hinweis": "Firma als Empfaenger laeuft automatisch; Firma nur an der Reservierung kommt in die Pruefung, weil dort erfahrungsgemaess in rund jedem zehnten Fall eine Privatperson zahlt.",
     "zeitraum_tage": 30,
+    "_anzeige_tage_hinweis": "Wie weit zurueck die Rechnungsliste ANZEIGT (nach Rechnungsdatum), nicht wie weit eingelesen wird. 0 zeigt alle. Auf der Liste laesst sich der Zeitraum fuer die Ansicht aendern; die Suche geht immer ueber den ganzen Bestand.",
+    "anzeige_tage": 0,
     "_hoechstens_hinweis": "Obergrenze je Lauf. Sie wirkt auf die Belege MIT Firmenbezug, nicht auf alle Rechnungen des Hauses — bei einem mittelgrossen Stadthotel sind das Groessenordnungen weniger. Seit auch Voraus-, Zwischen- und Anzahlungsrechnungen eingelesen werden, sind es rund doppelt so viele wie vorher; 2000 reichten im gemessenen Haus nur noch fuer drei Wochen. Wird die Grenze erreicht, sagt die Meldung es; dann entweder den Zeitraum verkleinern oder die Grenze anheben.",
     "hoechstens": 10000,
     "firmenprofile": [

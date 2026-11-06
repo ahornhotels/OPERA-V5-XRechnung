@@ -70,18 +70,38 @@
    stehen — "pruefung" ohne Umlaut. Beides ist jetzt anders: Reiter statt
    Verweise, mit Anzahl, und die Beschriftung kommt aus store.STATUS_NAMEN. #}
 <nav class="filter" aria-label="Nach Status filtern">
-  <a href="/{% if suche %}?suche={{ suche }}{% endif %}"
+  <a href="/?{% if suche %}suche={{ suche }}&{% endif %}{% if tage_gesetzt %}tage={{ anzeige_tage }}{% endif %}"
      class="{{ 'aktiv' if not status }}">Alle
     <span class="anzahl">{{ zaehler.get('', 0) }}</span></a>
   {% for s in status_reihe %}
-  <a href="/?status={{ s }}{% if suche %}&suche={{ suche }}{% endif %}"
+  <a href="/?status={{ s }}{% if suche %}&suche={{ suche }}{% endif %}{% if tage_gesetzt %}&tage={{ anzeige_tage }}{% endif %}"
      class="reiter-{{ s }} {{ 'aktiv' if status == s }}">{{ status_namen[s] }}
     <span class="anzahl">{{ zaehler.get(s, 0) }}</span></a>
   {% endfor %}
 </nav>
 
+{# Wie weit zurueck die Liste ANZEIGT. Das ist nicht der Zeitraum beim
+   Einlesen oben: Eingelesenes bleibt in der Arbeitsliste, auch wenn es aus
+   dem Anzeigefenster faellt. #}
+<form class="suche anzeige" method="get" action="/">
+  {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  {% if sortieren %}<input type="hidden" name="sortieren" value="{{ sortieren }}">
+  <input type="hidden" name="richtung" value="{{ richtung }}">{% endif %}
+  <label for="anzeigetage">Anzeigen: Rechnungen der letzten</label>
+  <input id="anzeigetage" name="tage" value="{{ anzeige_tage or '' }}" size="4"
+         placeholder="alle" title="Leer oder 0: alle Rechnungen der Arbeitsliste"> Tage
+  <button>Anzeigen</button>
+  {% if anzeige_tage %}<a class="knopf" href="/?tage=0{% if status %}&status={{ status }}{% endif %}">Alle zeigen</a>{% endif %}
+  <span class="klein">
+    {% if anzeige_ab %}ab {{ anzeige_ab }} · {{ zaehler.get('', 0) }} von {{ gesamt }} Rechnungen der Arbeitsliste
+    {% else %}alle {{ gesamt }} Rechnungen der Arbeitsliste{% endif %}
+    {% if rechnungen|length >= anzeige_hoechstens %} · <strong>gezeigt werden höchstens {{ anzeige_hoechstens }}</strong>{% endif %}
+  </span>
+</form>
+
 <form class="suche" method="get" action="/" role="search">
   {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+  {% if tage_gesetzt %}<input type="hidden" name="tage" value="{{ anzeige_tage }}">{% endif %}
   <label for="suchfeld">Rechnung suchen</label>
   <input id="suchfeld" name="suche" value="{{ suche or '' }}" size="26"
          placeholder="Rechnungsnummer, Kunde oder Empfänger"
@@ -92,7 +112,8 @@
 
 {% if suche %}
 <p class="hinweis">
-  {{ rechnungen|length }} Treffer in der Arbeitsliste für „{{ suche }}“.
+  {{ rechnungen|length }} Treffer in der Arbeitsliste für „{{ suche }}“ — gesucht wird
+  im ganzen Bestand, unabhängig vom Anzeigezeitraum.
 </p>
 {% endif %}
 

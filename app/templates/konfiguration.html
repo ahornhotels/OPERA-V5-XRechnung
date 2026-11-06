@@ -49,6 +49,12 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Haus</h2>
     <label>Resort{{ tipp('property.resort') }}<input name="property.resort" value="{{ cfg.property.resort }}"></label>
+    <label>Name des Hauses{{ tipp('property.haus') }}<input name="property.haus" value="{{ cfg.property.haus or '' }}"
+             placeholder="{{ hotel_opera or 'leer = Name aus OPERA' }}">
+      <span class="klein">Leer lassen: Es gilt der Name aus OPERA
+        ({% if hotel_opera %}<strong>{{ hotel_opera }}</strong>{% else %}<em>gerade nicht erreichbar</em>{% endif %}).
+        Steht für <code>{hotel}</code> in der BT-10-Vorlage und in der Kopfzeile dieser Seite.
+        Der Verkäufer in der Rechnung kommt immer aus OPERA.</span></label>
     <label>USt-IdNr. (BT-31){{ tipp('property.ust_id') }}<input name="property.ust_id" value="{{ cfg.property.ust_id }}"></label>
     <label>Kontakt (BR-DE-5){{ tipp('property.kontakt_name') }}<input name="property.kontakt_name" value="{{ cfg.property.kontakt_name }}"></label>
     <label>Telefon (geht vor OPERA){{ tipp('property.kontakt_telefon') }}<input name="property.kontakt_telefon" value="{{ cfg.property.kontakt_telefon }}"></label>
@@ -202,6 +208,8 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
     <h2>Auswahl — welche Rechnungen aufgenommen werden</h2>
     <label>Zeitraum beim Einlesen (Tage)
       {{ tipp('auswahl.zeitraum_tage') }}<input name="auswahl.zeitraum_tage" value="{{ cfg.auswahl.zeitraum_tage }}"></label>
+    <label>Liste zeigt die Rechnungen der letzten … Tage (0 = alle)
+      {{ tipp('auswahl.anzeige_tage') }}<input name="auswahl.anzeige_tage" value="{{ cfg.auswahl.anzeige_tage if cfg.auswahl.anzeige_tage is not none else 0 }}"></label>
     <label>Höchstens je Lauf einlesen
       {{ tipp('auswahl.hoechstens') }}<input name="auswahl.hoechstens" value="{{ cfg.auswahl.hoechstens }}"></label>
     <label>Profiltypen, die als Firma gelten (Komma)

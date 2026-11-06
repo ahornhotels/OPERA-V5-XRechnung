@@ -123,11 +123,11 @@ def _darf_verwalten(request: Request) -> bool:
     return getattr(request.state, "rolle", "") == "verwalten"
 
 
-def _ansicht(status: str, suche: str, sortieren: str, richtung: str) -> str:
+def _ansicht(status: str, suche: str, sortieren: str, richtung: str, tage: str = "") -> str:
     """Die aktuelle Ansicht der Liste als Adresse — Filter, Suche, Sortierung."""
     teile = [(name, wert) for name, wert in
              (("status", status), ("suche", suche),
-              ("sortieren", sortieren), ("richtung", richtung)) if wert]
+              ("sortieren", sortieren), ("richtung", richtung), ("tage", tage)) if wert]
     return "/" + ("?" + urlencode(teile) if teile else "")
 
 
@@ -158,7 +158,11 @@ def _hausname() -> str:
         p = config.laden().get("property") or {}
     except Exception:
         return ""
-    return (p.get("haus") or "").strip() or (p.get("resort") or "").strip()
+    # Kein Datenbankzugriff hier: Die Kopfzeile steht auf JEDER Seite, auch auf
+    # der Anmeldung. Der Name aus OPERA kommt aus dem Merker, den die
+    # Konfigurationsseite fuellt; bis dahin steht das Resortkuerzel da.
+    gemerkt = next((w[1] for w in _hotel_gemerkt.values() if w[1]), "")
+    return opera.hausname(p, gemerkt)
 
 
 def _kontext(request: Request, **extra) -> dict:
@@ -210,12 +214,38 @@ def health():
 
 
 # ------------------------------------------------------------------ Uebersicht
+# Mehr Zeilen zeigt die Liste nicht. Vorher waren es stillschweigend 300 —
+# wer 30 Tage einlas, sah bei mehr Rechnungen nicht alle und erfuhr es nicht.
+ANZEIGE_HOECHSTENS = 2000
+
+
+def _anzeige_tage(wert) -> int:
+    """'30' -> 30; leer, 0, Unsinn oder negativ -> 0 (= alle)."""
+    try:
+        return max(0, int(str(wert).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
 @app.get("/", response_class=HTMLResponse)
 def uebersicht(request: Request, status: str = "", meldung: str = "",
-                     sortieren: str = "", richtung: str = "", suche: str = ""):
+                     sortieren: str = "", richtung: str = "", suche: str = "",
+                     tage: str | None = None):
     cfg = config.laden()
     suche = (suche or "").strip()
-    alle = store.liste(status or None, sortieren=sortieren, richtung=richtung, suche=suche)
+    # Wie weit zurueck die Liste ANZEIGT (nicht: einliest). Ohne Angabe gilt
+    # die Vorgabe der Konfiguration; "0" oder leer im Feld heisst: alle.
+    # Eine Suche geht immer ueber den ganzen Bestand — wer eine Nummer hat,
+    # soll sie finden, auch wenn sie aelter ist als das Anzeigefenster.
+    if tage is None:
+        tage_wert = _anzeige_tage((cfg.get("auswahl") or {}).get("anzeige_tage"))
+    else:
+        tage_wert = _anzeige_tage(tage)
+    from datetime import date as _date, timedelta as _td
+    ab_datum = ((_date.today() - _td(days=tage_wert)).isoformat()
+                if tage_wert and not suche else "")
+    alle = store.liste(status or None, sortieren=sortieren, richtung=richtung, suche=suche,
+                       ab_datum=ab_datum, limit=ANZEIGE_HOECHSTENS)
 
     # Die Suche geht ueber die Arbeitsliste UND ueber OPERA. Sonst waere eine
     # Rechnung, die nie eingelesen wurde, in dieser Anwendung unauffindbar —
@@ -227,8 +257,11 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
     bekannt = {int(r["bill_no"]) for r in bestand}
     # Anzahl je Status fuer die Reiter. Ohne sie muss man jeden einzeln
     # anklicken, um zu sehen, ob dort etwas liegt.
-    zaehler = {"": len(bestand)}
-    for r in bestand:
+    # Die Zahlen an den Reitern gelten fuer dasselbe Fenster wie die Liste —
+    # sonst stuende "Neu 40" ueber einer Liste mit drei Zeilen.
+    im_fenster = [r for r in bestand if not ab_datum or (r.get("issuedate") or "") >= ab_datum]
+    zaehler = {"": len(im_fenster)}
+    for r in im_fenster:
         zaehler[r.get("status") or ""] = zaehler.get(r.get("status") or "", 0) + 1
     if suche and any(z.isdigit() for z in suche):
         try:
@@ -247,7 +280,10 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
     return seiten.TemplateResponse(request, "liste.html", _kontext(
         request, rechnungen=alle, status=status, meldung=meldung,
         suche=suche, in_opera=in_opera, opera_fehler=opera_fehler, zaehler=zaehler,
-        zurueck_ziel=_ansicht(status, suche, sortieren, richtung),
+        zurueck_ziel=_ansicht(status, suche, sortieren, richtung,
+                              "" if tage is None else str(tage_wert)),
+        anzeige_tage=tage_wert, anzeige_ab=ab_datum, anzeige_hoechstens=ANZEIGE_HOECHSTENS,
+        tage_gesetzt=tage is not None, gesamt=len(bestand),
         status_namen=store.STATUS_NAMEN, status_reihe=store.STATUS_REIHE,
         sortieren=sortieren if sortieren in store.SORTIERBAR else "",
         richtung=("auf" if (richtung or "").lower() == "auf" else "ab"),
