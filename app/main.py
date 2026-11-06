@@ -860,7 +860,31 @@ def update_anwenden(request: Request):
     if not _darf_verwalten(request):
         return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
     meldung = updater.anwenden(config.laden(), benutzer=request.state.benutzer)
-    return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+    if not updater.neustart_noetig(meldung):
+        return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+    # Nach dem Einspielen SOFORT neu starten. Vorher stand nur "Der Dienst muss
+    # neu starten" in der Meldung — und die Weiterleitung auf /konfiguration
+    # endete mit "Internal Server Error": Der laufende Prozess hatte noch den
+    # alten Code im Speicher, las aber Vorlagen (und nachgeladene Module) schon
+    # aus dem neuen Stand. Die neue Seite erwartete Werte, die der alte Code
+    # nicht lieferte. Erst ein Neustart von Hand auf dem Server half — und an
+    # den Knopf "Neustart" kam man nicht mehr, weil die Seite selbst ausfiel.
+    #
+    # Deshalb hier keine Vorlage: Diese Antwort kommt noch vom alten Prozess.
+    # Die Seite laedt sich selbst neu, bis der neue Prozess antwortet.
+    store.protokoll("neustart", "nach Aktualisierung automatisch ausgelöst",
+                    benutzer=request.state.benutzer)
+    from threading import Timer
+    from html import escape
+    Timer(1.0, updater.neustart).start()
+    return HTMLResponse(
+        "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content='8;url=/konfiguration'>"
+        "<title>Neustart</title><body style='font-family:sans-serif;max-width:40rem;margin:3rem auto'>"
+        f"<h1>Aktualisierung eingespielt</h1><p>{escape(meldung)}</p>"
+        "<p><strong>Der Dienst startet jetzt neu.</strong> Diese Seite lädt in einigen Sekunden "
+        "die Konfiguration. Läuft gerade ein Automatiklauf, wartet der Neustart, bis er fertig "
+        "ist (höchstens zwei Minuten) — bis dahin kann die Seite noch einen Fehler zeigen; dann "
+        "einfach erneut laden.</p><p><a href='/konfiguration'>Zur Konfiguration</a></p>")
 
 
 @app.post("/neustart")

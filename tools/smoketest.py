@@ -1843,6 +1843,33 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
            "ein Windows-Pfad mit Backslashes wird so gespeichert, dass die Datei ladbar bleibt")
     klient.post("/konfiguration", data={"datenbank.oracle_client_pfad": _vorher_pfad},
                 follow_redirects=False)
+    # Nach dem Einspielen startet der Dienst selbst neu. Vorher endete die
+    # Weiterleitung mit "Internal Server Error" (alter Code, neue Vorlagen),
+    # bis jemand den Dienst auf dem Server von Hand neu startete.
+    import time as _time_up
+    _echt_anw, _echt_ns = updater.anwenden, updater.neustart
+    _ns_gerufen = []
+    try:
+        updater.neustart = lambda *a, **k: _ns_gerufen.append(1)
+        updater.anwenden = lambda *a, **k: "Stand abc1234 eingespielt (3 Bereiche). Der Dienst muss neu starten."
+        _a = klient.post("/update/anwenden", follow_redirects=False)
+        _time_up.sleep(1.5)
+        pruefe(_a.status_code == 200 and "startet jetzt neu" in _a.text and "refresh" in _a.text,
+               "nach dem Einspielen kommt eine eigene Seite, keine Weiterleitung auf die neue Vorlage")
+        pruefe(_ns_gerufen == [1], "und der Dienst startet von selbst neu")
+        _ns_gerufen.clear()
+        updater.anwenden = lambda *a, **k: ("Stand abc1234 eingespielt. ACHTUNG: requirements.txt "
+                                            "hat sich geändert (neu).")
+        _a = klient.post("/update/anwenden", follow_redirects=False)
+        _time_up.sleep(1.5)
+        pruefe(_a.status_code == 303 and not _ns_gerufen,
+               "fehlen neue Abhaengigkeiten, startet er NICHT neu — erst lesen, was zu tun ist")
+        updater.anwenden = lambda *a, **k: "Keine Aktualisierung möglich."
+        _a = klient.post("/update/anwenden", follow_redirects=False)
+        _time_up.sleep(1.5)
+        pruefe(_a.status_code == 303 and not _ns_gerufen, "ohne eingespielten Stand kein Neustart")
+    finally:
+        updater.anwenden, updater.neustart = _echt_anw, _echt_ns
     # Die BT-10-Vorlage ist auf der Seite editierbar; eine fehlerhafte wird
     # abgelehnt, statt still nie zu greifen.
     _kseite_v = klient.get("/konfiguration").text

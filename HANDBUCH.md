@@ -895,7 +895,13 @@ genügt die Berechtigung *Contents: Read* — schreiben muss die Anwendung nie.
   unangetastet. Vor dem Austausch entstehen zwei Sicherungen: der bisherige
   Programmstand unter `data/sicherung-<Datum>` und eine datierte Kopie der
   Konfiguration in `config/`
-- **„Dienst neu starten"** übernimmt den neuen Stand
+- Danach **startet der Dienst von selbst neu** und übernimmt den neuen Stand.
+  Die Seite lädt sich nach einigen Sekunden selbst wieder. Läuft gerade ein
+  Automatiklauf, wartet der Neustart, bis er fertig ist (höchstens zwei
+  Minuten). Nur wenn die neue Fassung zusätzliche Python-Pakete braucht,
+  startet er nicht von selbst — dann steht in der Meldung, was vorher auf dem
+  Server zu tun ist, und danach „Dienst neu starten"
+- **„Dienst neu starten"** gibt es weiterhin als eigenen Knopf
 
 Läuft die Anwendung als Dienst, startet sie von selbst wieder — unter Windows
 über NSSM, unter Linux über systemd. Im Vordergrundbetrieb (`run.cmd` bzw.

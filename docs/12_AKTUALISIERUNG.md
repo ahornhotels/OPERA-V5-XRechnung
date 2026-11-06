@@ -411,10 +411,19 @@ falsche Ort. Das gehört in den Selbsttest, wie der Vorrang der Unit.
 Zwischen beidem lief der Dienst weiter: alte Prozess-ID, alter Code, neue
 Freigabe bereits an Ort und Stelle. Erst der Neustart übernimmt sie.
 
-Das Fenster ist damit **beliebig lang und ungefährlich** — man kann in Ruhe
-entscheiden, wann neu gestartet wird. Im alten Verfahren war das nicht so:
-Dort war die Installation ab dem ersten Löschen in einem Zustand, der keinen
-Aufschub duldete.
+Gedacht war das Fenster als **beliebig lang und ungefährlich**. Im Betrieb war
+es das nicht (06.11.2026): Nach dem Einspielen zeigte die Oberfläche nur noch
+„Internal Server Error“, bis jemand den Dienst auf dem Server von Hand neu
+startete. Der alte Prozess hatte den alten Code im Speicher, las Vorlagen und
+erst später geladene Module aber schon aus dem neuen Stand — die neue
+Konfigurationsseite erwartete Werte, die der alte Code nicht lieferte. An den
+Knopf „Neustart“ kam man nicht mehr, weil genau diese Seite ausfiel.
+
+Seitdem **startet der Dienst nach dem Einspielen sofort von selbst neu**
+(`updater.neustart_noetig`, Route `/update/anwenden`). Die Antwort darauf ist
+eine eigene kleine Seite ohne Vorlage, die sich nach einigen Sekunden selbst
+neu lädt. Ausgenommen sind Stände mit neuen Abhängigkeiten: Dort startet er
+nicht, weil der Dienst sonst mit einem ImportError stehen bliebe.
 
 ## Eine Frage, die sich bei jeder Kontrolle lohnt
 

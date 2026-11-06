@@ -763,6 +763,18 @@ def anwenden(cfg: dict, benutzer: str = "system") -> str:
     return meldung
 
 
+def neustart_noetig(meldung: str) -> bool:
+    """Soll nach dieser Meldung von anwenden() sofort neu gestartet werden?
+
+    Ja, wenn ein Stand eingespielt wurde. Nein, wenn nichts eingespielt wurde
+    (Fehler, schon aktuell) — und auch nein, wenn requirements.txt neue
+    Abhaengigkeiten verlangt, die noch fehlen: Dann startete der Dienst mit
+    einem ImportError nicht mehr, und der Hinweis, was zu tun ist, muss
+    zuerst gelesen werden."""
+    m = meldung or ""
+    return "eingespielt" in m and "ACHTUNG" not in m
+
+
 def zuruecksetzen(name: str = "", benutzer: str = "system") -> str:
     """Auf eine frühere Freigabe zurückgehen. Ohne Namen: auf die, die
     unmittelbar VOR der steht, auf die 'aktuell' zeigt.
