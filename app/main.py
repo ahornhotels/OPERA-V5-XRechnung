@@ -517,6 +517,11 @@ def detail(request: Request, bill_no: int, meldung: str = "",
     except Exception as e:
         fehler = str(e)
     hinweise = xml_build.pruefsummen(daten) if daten else []
+    # Findet die Vorpruefung heute nichts mehr, verschwinden alte Befunde aus
+    # Liste und Sichtpruefung — nur wenn die Daten wirklich geladen wurden.
+    if daten and not fehler and satz.get("status") and ablauf.vorpruefung_bereinigen(
+            bill_no, hinweise, benutzer=getattr(request.state, "benutzer", "system")):
+        satz = store.rechnung(bill_no) or satz
     # Die Positionen so, wie sie im XML stehen — gerundet, Abschlaege getrennt.
     aufbereitet = xml_build.aufbereiten(daten) if daten else {}
     erlaubt = mailer.empfaenger_erlaubt(cfg, satz.get("empfaenger") or "")

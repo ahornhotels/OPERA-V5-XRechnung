@@ -32,6 +32,47 @@ def hinweis_dazu(vorher: str | None, hinweis: str) -> str:
     return TRENNER.join(teile)
 
 
+# Vermerk am Beleg, wenn die Vorpruefung den Versand angehalten hat.
+VORPRUEFUNG_FEHLGESCHLAGEN = "Vorprüfung fehlgeschlagen — Befund auf der Detailseite"
+
+
+def vorpruefung_bereinigen(bill_no: int, hinweise: list[str], benutzer: str = "system") -> bool:
+    """Alte Befunde wegraeumen, wenn die Vorpruefung HEUTE nichts mehr findet.
+
+    Ein Beleg, den die Vorpruefung einmal angehalten hat, stand auf 'fehler'
+    mit dem Vermerk oben — und blieb dort, auch nachdem die Ursache behoben
+    war (etwa eine Pruefung, die eine Eigenart aelterer OPERA-Versionen nicht
+    kannte). Die Detailseite zeigte die Positionen sauber und den Versand
+    moeglich, Liste und Sichtpruefung aber weiter rot. Die Automatik nimmt
+    'fehler' nie wieder auf.
+
+    Weggeraeumt wird NUR, was von der Vorpruefung stammt: der Vermerk und der
+    gespeicherte Pruefbefund. Steht daneben etwas anderes — vor allem 'Versand
+    begonnen, Ergebnis nicht bestaetigt' —, bleibt der Beleg auf 'fehler';
+    sonst ginge eine vielleicht schon versendete Rechnung ein zweites Mal.
+    Bleibt nichts uebrig, geht er zurueck auf 'neu'."""
+    if hinweise:
+        return False
+    satz = store.rechnung(bill_no) or {}
+    if not satz or satz.get("status") in ("gesendet", "ignoriert"):
+        return False
+    aenderung: dict = {}
+    if satz.get("pruefbefund"):
+        aenderung["pruefbefund"] = None
+    if satz.get("status") == "fehler" and VORPRUEFUNG_FEHLGESCHLAGEN in (satz.get("fehler") or ""):
+        rest = hinweis_weg(satz.get("fehler"), VORPRUEFUNG_FEHLGESCHLAGEN)
+        aenderung["fehler"] = rest
+        if not rest:
+            aenderung["status"] = "neu"
+    if not aenderung:
+        return False
+    store.setzen(bill_no, **aenderung)
+    store.protokoll("pruefung", "Vorprüfung jetzt ohne Befund — alter Befund entfernt"
+                    + (", Status wieder neu" if aenderung.get("status") == "neu" else ""),
+                    bill_no=bill_no, benutzer=benutzer)
+    return True
+
+
 def hinweis_weg(vorher: str | None, hinweis: str) -> str | None:
     """Einen Hinweis herausnehmen und die anderen stehen lassen.
 
@@ -879,6 +920,7 @@ def xml_erzeugen(cfg: dict, bill_no: int, ersetzen: bool = False,
     # Gruende fuer die Sichtpruefung, und die ueberschrieb jedes Erzeugen.
     store.setzen(bill_no, xml_pfad=str(pfad), xrechnung_version=version,
                  pruefbefund="; ".join(hinweise) if hinweise else None)
+    vorpruefung_bereinigen(bill_no, hinweise)
     if not hinweise:
         store.protokoll("geprueft",
                         f"XRechnung {version}: Rechenprüfung ohne Befund, "
@@ -958,7 +1000,7 @@ def _versenden(cfg: dict, bill_no: int, benutzer: str) -> str:
     xml, pfad, hinweise = xml_erzeugen(cfg, bill_no, daten=daten)
     if hinweise:
         store.setzen(bill_no, status="fehler", fehler=hinweis_dazu(
-            satz.get("fehler"), "Vorprüfung fehlgeschlagen — Befund auf der Detailseite"))
+            satz.get("fehler"), VORPRUEFUNG_FEHLGESCHLAGEN))
         store.protokoll("pruefung", "; ".join(hinweise), bill_no=bill_no,
                         benutzer=benutzer, erfolg=False)
         raise ValueError("Vorprüfung fehlgeschlagen: " + "; ".join(hinweise))

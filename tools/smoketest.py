@@ -2080,6 +2080,33 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     pruefe("ohne Adresse" not in _leer.text,
            "ist nichts zu pflegen, steht der Knopf auch nicht da")
 
+    # Alte Befunde der Vorpruefung verschwinden, wenn sie heute nichts findet —
+    # aber nie ein offener Versandvermerk.
+    for _nr in (961001, 961002, 961003):
+        store.rechnung_anlegen({"bill_no": _nr, "resort": "IHRHAUS", "invoice_no": "B",
+                                "issuedate": "2026-11-01", "total_net": 1.0, "total_gross": 1.19,
+                                "kunde": "Befund GmbH", "city_ledger": 0.0, "firmenbezug": "EMPFAENGER"}, 0)
+    try:
+        store.setzen(961001, status="fehler", fehler=ablauf.VORPRUEFUNG_FEHLGESCHLAGEN,
+                     pruefbefund="Folio-Klammer: alt")
+        pruefe(ablauf.vorpruefung_bereinigen(961001, []) and store.rechnung(961001)["status"] == "neu"
+               and not store.rechnung(961001)["fehler"] and not store.rechnung(961001)["pruefbefund"],
+               "ohne heutigen Befund: alter Befund weg, Status wieder neu")
+        store.setzen(961002, status="fehler",
+                     fehler=ablauf.hinweis_dazu(ablauf.VORPRUEFUNG_FEHLGESCHLAGEN, ablauf.VERSAND_OFFEN))
+        ablauf.vorpruefung_bereinigen(961002, [])
+        pruefe(store.rechnung(961002)["status"] == "fehler"
+               and ablauf.VERSAND_OFFEN in store.rechnung(961002)["fehler"]
+               and ablauf.VORPRUEFUNG_FEHLGESCHLAGEN not in store.rechnung(961002)["fehler"],
+               "ein offener Versandvermerk bleibt — und mit ihm der Status fehler")
+        store.setzen(961003, status="fehler", fehler=ablauf.VORPRUEFUNG_FEHLGESCHLAGEN)
+        pruefe(not ablauf.vorpruefung_bereinigen(961003, ["Folio-Klammer: neu"])
+               and store.rechnung(961003)["status"] == "fehler",
+               "findet die Vorpruefung heute noch etwas, bleibt alles stehen")
+    finally:
+        with store.verbindung() as con:
+            con.execute("DELETE FROM rechnungen WHERE bill_no BETWEEN 961001 AND 961003")
+
     # Anzeige "letzte N Tage": filtert nur die ANSICHT. Eingelesenes bleibt,
     # die Suche geht ueber alles, die Reiter zaehlen dasselbe Fenster.
     from datetime import date as _d_anz, timedelta as _td_anz
