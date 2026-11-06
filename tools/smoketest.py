@@ -390,6 +390,33 @@ _alt_falsch = json.loads(json.dumps(rechnung))
 _alt_falsch["kontrolle"]["kopf_netto"] = 3450.44 - 200.00
 pruefe(any("Folio-Klammer" in h for h in xml_build.pruefsummen(_alt_falsch)),
        "ist die Abweichung nicht genau die 0-%-Summe, bleibt die Meldung")
+# Mit Anzahlung (dasselbe Haus): Positionen 535,51, Kopf 475,31 — der
+# Unterschied ist die City Tax (Gruppe MI) mit 60,20. Die Steuerumbuchung der
+# Anzahlung steht ebenfalls in MI, einmal plus, einmal minus.
+_roh_mi = {"anzahlung_abzuege": [{"netto": 2420.55, "steuer": 459.90}],
+           "lines": [{"tc_group": "MI", "lineextensionamountnet": 60.20},
+                     {"tc_group": "MI", "lineextensionamountnet": 459.90},
+                     {"tc_group": "MI", "lineextensionamountnet": -459.90},
+                     {"tc_group": "PAIDOUTS", "lineextensionamountnet": 34.85}]}
+_r_mi = {"allowances": [{"amount": 2880.45}], "lines": []}
+_k_mi = {"kopf_brutto": 350.00, "anzahlung_brutto": 0.0}
+from decimal import Decimal as _D
+pruefe(xml_build._klammer_ohne_null(_r_mi, _roh_mi, _k_mi, _D("60.197"), _D("350.00")),
+       "aeltere OPERA mit Anzahlung: Abweichung = City Tax (MI), Brutto stimmt — keine Meldung")
+pruefe(not xml_build._klammer_ohne_null(_r_mi, _roh_mi, _k_mi, _D("60.197"), _D("351.00")),
+       "stimmt das Brutto nicht, bleibt die Meldung")
+pruefe(not xml_build._klammer_ohne_null(_r_mi, _roh_mi, _k_mi, _D("95.05"), _D("350.00")),
+       "ist die Abweichung etwas anderes als die City Tax, bleibt die Meldung")
+# Paid Out steht nicht in den Steuertoepfen des Kopfs, wohl aber als 0-%-Position.
+_roh_po = dict(_roh_mi, tax_kopf=[
+    {"satz_fehlt": "N", "taxcategorypercent": 0, "taxableamount": 146.60, "taxamount": 0},
+    {"satz_fehlt": "J", "taxcategorypercent": None, "taxableamount": -2420.55, "taxamount": -459.90}],
+    tax_breakdown=[{"taxcategoryid": "Z", "taxcategorypercent": 0, "taxableamount": 181.45, "taxamount": 0}])
+pruefe(not [h for h in xml_build._kopf_gegenprobe_anzahlung(_roh_po) if h.startswith("Steuersatz")],
+       "0 %: Abweichung = Paid Out — keine Meldung")
+_roh_po2 = dict(_roh_po, lines=[z for z in _roh_po["lines"] if z["tc_group"] != "PAIDOUTS"])
+pruefe([h for h in xml_build._kopf_gegenprobe_anzahlung(_roh_po2) if h.startswith("Steuersatz 0")],
+       "ohne Paid Out bleibt die Abweichung ein Befund")
 xml = xml_build.bauen(rechnung)
 text = xml.decode()
 # Eine Textdatei endet mit einem Zeilenumbruch; Jinja liess ihn weg.

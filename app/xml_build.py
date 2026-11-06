@@ -439,9 +439,18 @@ def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
         s = positionen.setdefault(satz, [Decimal(0), Decimal(0)])
         s[0] += _dez(b.get("taxableamount"))
         s[1] += _dez(b.get("taxamount"))
+    # Durchlaufende Posten (Paid Out) fuehrt OPERA nicht in den Steuertoepfen
+    # des Kopfs, sie stehen aber als 0-%-Position auf der Rechnung. Gesehen im
+    # Haus mit aelterer OPERA: 0 % Positionen 181,45, Kopf 146,60 — der
+    # Unterschied war genau ein Paid Out ueber 34,85. Ob neuere Versionen sie im
+    # Topf fuehren, ist nicht belegt; deshalb gilt beides.
+    durchlauf = _netto_der_gruppen(roh, DURCHLAUF_GRUPPEN)
     for satz in sorted(set(mit_satz) | set(positionen)):
         p = positionen.get(satz, [Decimal(0), Decimal(0)])
         k = mit_satz.get(satz, [Decimal(0), Decimal(0)])
+        if satz == 0 and durchlauf and abs(p[0] - durchlauf - k[0]) <= Decimal("0.02") \
+                and abs(p[1] - k[1]) <= Decimal("0.02"):
+            continue
         if abs(p[0] - k[0]) > Decimal("0.02") or abs(p[1] - k[1]) > Decimal("0.02"):
             fehler.append(
                 f"Steuersatz {satz} %: Die Positionen ergeben netto {_rund(p[0])} / Steuer "
@@ -450,31 +459,51 @@ def _kopf_gegenprobe_anzahlung(roh: dict) -> list[str]:
     return fehler
 
 
-def _klammer_ohne_null(rechnung: dict, roh: dict, k: dict, differenz: Decimal) -> bool:
-    """Geht die Folio-Klammer auf, wenn man die Positionen ohne Umsatzsteuer
-    (0 %) herausnimmt — und stimmt dabei der Bruttobetrag mit OPERA?
+# Buchungsgruppen, die aeltere OPERA-Versionen wie eine Steuer behandeln: Sie
+# stehen als Buchung auf der Rechnung, zaehlen aber nicht in TOTAL_NET. 'MI'
+# (Miscellaneous) traegt dort die City Tax neben den Steuerbuchungen selbst —
+# an zwei Rechnungen des Hauses belegt (06.11.2026).
+WIE_STEUER_GRUPPEN = {"MI"}
+# Durchlaufende Posten (Paid Out, Trinkgeld): ohne Umsatzsteuer und in den
+# Steuertoepfen des Rechnungskopfs nicht enthalten, wohl aber in TOTAL_NET.
+DURCHLAUF_GRUPPEN = {"PAIDOUTS", "PO"}
+
+
+def _netto_der_gruppen(roh: dict, gruppen: set[str]) -> Decimal:
+    return sum((_dez(z.get("lineextensionamountnet")) for z in roh.get("lines") or []
+                if str(z.get("tc_group") or "").strip().upper() in gruppen), Decimal(0))
+
+
+def _klammer_ohne_null(rechnung: dict, roh: dict, k: dict, differenz: Decimal,
+                       brutto: Decimal) -> bool:
+    """Geht die Folio-Klammer auf, wenn man die Buchungen herausnimmt, die
+    aeltere OPERA-Versionen nicht in TOTAL_NET zaehlen — und stimmt dabei der
+    Gesamtbetrag mit OPERA?
 
     Gesehen in einem Haus mit aelterer OPERA-Version: Die City Tax steht dort
-    als Buchung mit 0 % auf der Rechnung, OPERA rechnet sie aber nicht in
-    TOTAL_NET, sondern nur in TOTAL_GROSS — wie eine Steuer. Die Positionen
-    ergaben 77,09, der Kopf 73,64; der Unterschied war genau die City Tax
-    (3,45). In der Rechnung selbst ist nichts falsch: Die City Tax ist eine
-    Position ohne Umsatzsteuer, und so steht sie auch im XML.
+    als Buchung mit 0 % auf der Rechnung (Gruppe MI), OPERA rechnet sie aber
+    nicht in TOTAL_NET, nur in TOTAL_GROSS — wie eine Steuer. Einmal ergaben die
+    Positionen 77,09 und der Kopf 73,64 (City Tax 3,45), einmal mit Anzahlung
+    535,51 gegen 475,31 (City Tax 60,20). In der Rechnung selbst ist nichts
+    falsch: Die City Tax ist eine Position ohne Umsatzsteuer.
 
     Zugelassen wird das nur, wenn ZWEI unabhaengige Bedingungen gelten:
-    1. Die Abweichung entspricht der Summe der 0-%-Positionen (± 2 Cent).
-    2. Die Bruttosumme der Positionen stimmt mit TOTAL_GROSS (± 2 Cent).
-    Sonst bleibt es ein Befund. Nur ohne Anzahlung und ohne Abschlag: Dort
-    mischen sich weitere Betraege in die Klammer, und geraten wird nicht."""
-    if rechnung.get("allowances") or _dez(k.get("anzahlung_netto")) or roh.get("anzahlung_abzuege"):
+    1. Die Abweichung ist genau die Summe dieser Buchungen (± 2 Cent) — der
+       Gruppe MI, oder, wo die Gruppe fehlt, der 0-%-Positionen ohne
+       durchlaufende Posten.
+    2. Der Gesamtbetrag der Rechnung stimmt mit OPERA (± 2 Cent).
+    Sonst bleibt es ein Befund."""
+    kandidaten = [_netto_der_gruppen(roh, WIE_STEUER_GRUPPEN)]
+    if not (rechnung.get("allowances") or roh.get("anzahlung_abzuege")):
+        kandidaten.append(sum((_dez(z.get("lineextensionamountnet"))
+                               for z in rechnung.get("lines") or []
+                               if _dez(z.get("classifiedtaxcategorypercent")) == 0
+                               and str(z.get("tc_group") or "").upper() not in DURCHLAUF_GRUPPEN),
+                              Decimal(0)))
+    if not any(c and abs(differenz - c) <= Decimal("0.02") for c in kandidaten):
         return False
-    zeilen = rechnung.get("lines") or []
-    null_netto = sum(_dez(z.get("lineextensionamountnet")) for z in zeilen
-                     if _dez(z.get("classifiedtaxcategorypercent")) == 0)
-    if not null_netto or abs(differenz - null_netto) > Decimal("0.02"):
-        return False
-    brutto_zeilen = sum(_dez(z.get("lineextensionamount")) for z in roh.get("lines") or [])
-    return abs(brutto_zeilen - _dez(k.get("kopf_brutto"))) <= Decimal("0.02")
+    soll_brutto = _dez(k.get("kopf_brutto")) + _dez(k.get("anzahlung_brutto"))
+    return abs(brutto + ausgleich_vorab(rechnung) - soll_brutto) <= Decimal("0.02")
 
 
 def pruefsummen(rechnung: dict) -> list[str]:
@@ -505,10 +534,10 @@ def pruefsummen(rechnung: dict) -> list[str]:
         # jeder Gutschrift eine Abweichung, die es nicht gibt.
         soll = _dez(k.get("kopf_netto")) + _dez(k.get("anzahlung_netto"))
         if abs((summe_zeilen - abzug) - soll) > Decimal("0.02") and not _klammer_ohne_null(
-                rechnung, roh, k, summe_zeilen - abzug - soll):
+                rechnung, roh, k, summe_zeilen - abzug - soll, brutto):
             fehler.append(
-                f"Folio-Klammer: Positionen {summe_zeilen - abzug} != Kopf {_dez(k.get('kopf_netto'))} "
-                f"+ Anzahlungen {_dez(k.get('anzahlung_netto'))}. Rechnung nicht automatisch verarbeiten.")
+                f"Folio-Klammer: Positionen {summe_zeilen - abzug} != Kopf {_rund(k.get('kopf_netto'))} "
+                f"+ Anzahlungen {_rund(k.get('anzahlung_netto'))}. Rechnung nicht automatisch verarbeiten.")
     steuer_summe = sum(_dez(b.get("taxamount")) for b in rechnung.get("tax_breakdown") or [])
     if abs((netto - abzug + steuer_summe) - brutto) > Decimal("0.02"):
         fehler.append(f"BR-CO-15: Netto {netto} - Abschläge {abzug} + Steuer "

@@ -135,7 +135,7 @@
      die hier gestellt wird: Ist meine Anzahlung drin, und mit welchem Betrag? #}
   {% if daten and daten.deposits %}
   <p class="hinweis">{{ daten.deposits|length }} Anzahlungsbeleg(e) desselben Folios —
-     als Rechnungsbezug (BG-3) und Anzahlungsbetrag (BT-113) ausgewiesen:</p>
+     als Rechnungsbezug (BG-3) und als Abzug je Steuersatz mit Netto und Steuer ausgewiesen:</p>
   <table class="anzahlungen">
     <tr><th>Beleg</th><th>Datum</th><th class="zahl">Brutto</th></tr>
     {% for a in daten.deposits %}
@@ -438,7 +438,7 @@
     <tr class="betont"><td>{{ 'Gutschrift gesamt' if gs else 'Gesamtbetrag' }} (BT-112)</td>
         <td class="zahl">{{ '%.2f'|format(vz * t.invoicegross|float) }}</td></tr>
     {% if (t.prepaidamount|default(0)|float) != 0 %}
-    <tr><td>Anzahlung (BT-113)</td>
+    <tr><td>Bereits gezahlt (BT-113)</td>
         <td class="zahl">{{ '%.2f'|format(-vz * t.prepaidamount|float) }}</td></tr>
     {% endif %}
     {% if (t.roundingamount|default(0)|float) != 0 %}
