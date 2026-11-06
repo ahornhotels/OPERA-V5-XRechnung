@@ -333,6 +333,14 @@ def erste_aktion(aktion: str) -> str | None:
     return z[0] if z and z[0] else None
 
 
+def erste_aktion_ab(aktion: str, ab: str) -> str | None:
+    """Zeitpunkt des aeltesten Eintrags dieser Aktion ab einem Zeitpunkt."""
+    with verbindung() as con:
+        z = con.execute("SELECT MIN(zeit) FROM protokoll WHERE aktion = ? AND zeit >= ?",
+                        (aktion, ab)).fetchone()
+    return z[0] if z and z[0] else None
+
+
 def letzte_aktion(aktion: str) -> str | None:
     """Zeitpunkt des juengsten Protokolleintrags dieser Aktion, oder None."""
     with verbindung() as con:

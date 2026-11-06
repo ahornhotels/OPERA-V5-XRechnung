@@ -140,6 +140,37 @@ def _neue_belegart(r: dict) -> bool:
     return ("beleg_status" in r and status != "OK") or ("document_type" in r and art != "INVOICE")
 
 
+def vor_umstellung_aufraeumen(umstellung: str) -> int:
+    """Den Hinweis "vor der Umstellung" dort entfernen, wo er nie hingehoerte:
+    an Belegen vom Tag der Umstellung, die erst NACH dem ersten Lauf erstmals
+    gesehen wurden. Die bekamen ihn bis 06.11.2026 faelschlich (siehe
+    einlesen). Was der erste Lauf vorfand, ist Altbestand und behaelt ihn.
+    Ohne anderen Grund gehen sie aus der Sichtpruefung zurueck auf 'neu'.
+    Gibt die Anzahl zurueck."""
+    tag = umstellung[:10]
+    # Das Ende des ersten Laufs: sein Abschlussvermerk. Fehlt er (der erste
+    # Lauf laeuft gerade), wird nichts angefasst.
+    ende_erstlauf = store.erste_aktion_ab("einlesen", umstellung)
+    if not ende_erstlauf:
+        return 0
+    zahl = 0
+    for r in store.liste("pruefung", limit=100000):
+        if HINWEIS_VOR_UMSTELLUNG not in (r.get("fehler") or ""):
+            continue
+        if not ((r.get("zuerst_gesehen") or "") > ende_erstlauf
+                and str(r.get("issuedate") or "")[:10] >= tag):
+            continue
+        rest = hinweis_weg(r.get("fehler"), HINWEIS_VOR_UMSTELLUNG)
+        felder: dict = {"fehler": rest}
+        if not rest:
+            felder["status"] = "neu"
+        store.setzen(r["bill_no"], **felder)
+        store.protokoll("pruefung", "Hinweis 'vor der Umstellung' entfernt — der Beleg ist neuer",
+                        bill_no=r["bill_no"])
+        zahl += 1
+    return zahl
+
+
 def _tse_hinweis_aufheben(bill_no: int) -> None:
     """Die TSE-Nummer ist inzwischen da: Der Hinweis faellt weg, und ohne
     anderen Grund geht der Beleg aus der Sichtpruefung zurueck. OPERA traegt
@@ -203,12 +234,14 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
     tse_im_haus = any(str(r.get("fiscal_bill_no") or "").strip() for r in gelesen)
     _tse_im_haus = tse_im_haus
     umstellung = store.erste_aktion(UMSTELLUNG_BELEGARTEN)
-    if not umstellung:
+    erstlauf = not umstellung
+    if erstlauf:
         store.protokoll(UMSTELLUNG_BELEGARTEN, "Ab jetzt wird jeder gültige Beleg eingelesen, "
                         "nicht nur die Endrechnung. Ältere Voraus-, Zwischen- und "
                         "Anzahlungsrechnungen gehen zur Sichtprüfung.")
         umstellung = store.jetzt()
     umstellungstag = umstellung[:10]
+    vor_umstellung_aufraeumen(umstellung)
     for r in gelesen:
         bezug = r.get("firmenbezug") or "-"
 
@@ -287,7 +320,15 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
                 store.protokoll("pruefung", "kein Land am Profil", bill_no=satz["bill_no"])
                 in_pruefung = True
             gruende = belegart_gruende(cfg, r, tse_im_haus)
-            if _neue_belegart(r) and str(satz.get("issuedate") or "")[:10] <= umstellungstag:
+            # "Vor der Umstellung" heisst: VOR dem Tag der Umstellung, oder am
+            # Tag selbst, aber nur im ersten Lauf — da ist alles Vorhandene
+            # Altbestand. Vorher galt "<=" fuer jeden Lauf: Jeder Beleg vom Tag
+            # der Umstellung bekam den Hinweis, auch die danach entstandenen.
+            # In einem Haus mit aelterer OPERA ohne DOCUMENT_TYPE gilt jeder
+            # Beleg als "neue Belegart" — dort traf es ALLE frischen Rechnungen
+            # des Tages, auch ganz gewoehnliche.
+            tag = str(satz.get("issuedate") or "")[:10]
+            if _neue_belegart(r) and (tag < umstellungstag or (erstlauf and tag == umstellungstag)):
                 gruende.append(HINWEIS_VOR_UMSTELLUNG)
             for grund in gruende:
                 zur_pruefung(satz["bill_no"], grund)

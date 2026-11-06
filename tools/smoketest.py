@@ -2087,6 +2087,11 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                                 "issuedate": "2026-11-01", "total_net": 1.0, "total_gross": 1.19,
                                 "kunde": "Befund GmbH", "city_ledger": 0.0, "firmenbezug": "EMPFAENGER"}, 0)
     try:
+        store.setzen(961003, status="pruefung", fehler="Firma hängt an der Reservierung — bitte prüfen")
+        _sl = klient.get("/?tage=0").text
+        _stelle = _sl[_sl.index("Firma hängt an der Reservierung — bitte prüfen") - 40:][:60]
+        pruefe('class="klein grund"' in _stelle and 'class="klein fehler"' not in _stelle,
+               "der Grund der Sichtpruefung steht in der Liste gelb, nicht rot")
         store.setzen(961001, status="fehler", fehler=ablauf.VORPRUEFUNG_FEHLGESCHLAGEN,
                      pruefbefund="Folio-Klammer: alt")
         pruefe(ablauf.vorpruefung_bereinigen(961001, []) and store.rechnung(961001)["status"] == "neu"
@@ -5086,6 +5091,49 @@ finally:
     opera.kandidaten, opera.empfaenger = _echt_k9, _echt_e9
     with store.verbindung() as con:
         con.execute("DELETE FROM rechnungen WHERE bill_no IN (960030, 960031, 960032, 960033)")
+
+# Aeltere OPERA ohne DOCUMENT_TYPE: Dort gilt jeder Beleg als "neue Belegart".
+# Eine frische Rechnung von HEUTE, eingelesen nach dem ersten Lauf, ist kein
+# Altbestand — vorher bekam sie den Hinweis "vor der Umstellung", wenn heute
+# auch der Tag der Umstellung war.
+_heute9 = _d9.today().isoformat()
+_kand9[:] = [{"bill_no": 960034, "issuedate": _heute9, "total_net": 10.0, "total_gross": 11.9,
+              "beleg_status": "OK", "document_type": None, "fiscal_bill_no": "900005",
+              "company_name": "Frisch GmbH", "name_id": 5, "empfaenger_typ": "COMPANY",
+              "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"}]
+opera.kandidaten = lambda cfg, tage=None: [dict(k) for k in _kand9]
+opera.empfaenger = lambda bill_no: [{"email": "rechnung@firma.example"}]
+_umst_vorher = store.erste_aktion(ablauf.UMSTELLUNG_BELEGARTEN)
+try:
+    # Den Tag der Umstellung auf heute legen, als waere der erste Lauf heute frueh gewesen.
+    with store.verbindung() as con:
+        con.execute("UPDATE protokoll SET zeit = ? WHERE aktion = ?",
+                    (_heute9 + "T00:00:01", ablauf.UMSTELLUNG_BELEGARTEN))
+    store.protokoll("einlesen", "erster Lauf (Test)")
+    ablauf.einlesen(_bcfg)
+    _fr = store.rechnung(960034)
+    pruefe(_fr and "Umstellung" not in (_fr["fehler"] or ""),
+           f"aeltere OPERA: eine frische Rechnung vom Tag der Umstellung ist kein Altbestand ({_fr and _fr['fehler']})")
+    # Und was der Fehler schon markiert hat, wird beim naechsten Einlesen aufgeraeumt.
+    store.setzen(960034, status="pruefung", fehler=ablauf.HINWEIS_VOR_UMSTELLUNG)
+    ablauf.einlesen(_bcfg)
+    _fr = store.rechnung(960034)
+    pruefe(_fr["status"] == "neu" and "Umstellung" not in (_fr["fehler"] or ""),
+           f"falsch markierte frische Rechnungen gehen zurueck auf neu ({_fr['status']}: {_fr['fehler']})")
+    # Altbestand des ersten Laufs behaelt den Hinweis.
+    store.setzen(960034, status="pruefung", fehler=ablauf.HINWEIS_VOR_UMSTELLUNG,
+                 zuerst_gesehen=_heute9 + "T00:00:02")
+    ablauf.vor_umstellung_aufraeumen(_heute9 + "T00:00:01")
+    pruefe(store.rechnung(960034)["status"] == "pruefung",
+           "was der erste Lauf vorfand, behaelt den Hinweis")
+finally:
+    opera.kandidaten, opera.empfaenger = _echt_k9, _echt_e9
+    if _umst_vorher:
+        with store.verbindung() as con:
+            con.execute("UPDATE protokoll SET zeit = ? WHERE aktion = ?",
+                        (_umst_vorher, ablauf.UMSTELLUNG_BELEGARTEN))
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no = 960034")
 
 # --- Leistungszeitraum eines PM-Kontos ----------------------------------------
 _pm = {"startdate": "2026-01-01", "enddate": "2026-12-31", "pseudozimmer": "Y"}

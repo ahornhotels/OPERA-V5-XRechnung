@@ -130,6 +130,8 @@ label.hervor{border-left:3px solid var(--akzent);padding-left:.6rem}
 .meldung{margin:1rem 1.2rem 0;padding:.6rem .9rem;background:#f4efe4;
          border-left:3px solid var(--akzent);border-radius:4px}
 .fehler{color:var(--fehler)}
+/* Grund der Sichtpruefung in der Liste: gelb wie auf der Detailseite, nicht rot */
+.grund{color:var(--warn)}
 .hinweis{color:var(--gedaempft);font-size:.88rem}
 .status{font-size:.78rem;padding:.1rem .5rem;border-radius:3px;background:#eee}
 .status.gesendet{background:#e3f0e8;color:var(--ok)}

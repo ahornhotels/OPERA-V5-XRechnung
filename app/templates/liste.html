@@ -200,7 +200,11 @@
     <td class="zahl">{{ '%.2f'|format(r.total_gross or 0) }}</td>
     <td class="klein">{{ r.empfaenger or '—' }}</td>
     <td><span class="status {{ r.status }}">{{ status_namen.get(r.status, r.status) }}</span>
-        {% if r.fehler %}<div class="klein fehler">{{ r.fehler }}</div>{% endif %}
+        {# Rot nur fuer echte Fehler. In der Sichtpruefung steht hier der GRUND
+           (Firma an der Reservierung, keine Adresse …) — die Detailseite zeigt
+           ihn gelb, und hier stand er rot: Es sah nach einem Fehler aus, wo
+           nur jemand hinsehen soll. #}
+        {% if r.fehler %}<div class="klein {{ 'fehler' if r.status == 'fehler' else 'grund' }}">{{ r.fehler }}</div>{% endif %}
         {% if r.pruefbefund and r.status not in ('gesendet', 'ignoriert') %}<div class="klein fehler">Prüfung: {{ r.pruefbefund }}</div>{% endif %}</td>
     <td class="klein fest">{{ r.faellig_ab or '' }}</td>
   </tr>
