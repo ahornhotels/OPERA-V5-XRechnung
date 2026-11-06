@@ -573,12 +573,12 @@ pruefe(_kette.index("resv.folio_text1") < _kette.index("resv.custom_reference"),
 # BT-10 ist FREITEXT, nicht numerisch — die Norm verlangt nur, dass das Feld
 # gefuellt ist. Das Haus kann deshalb einen Satz hinschreiben, an dem sein
 # Kunde die Rechnung wiedererkennt.
-_haus_p = {"haus": "Musterhotel Berlin",
+_haus_p = {"haus": "Beispielhaus Mitte",
            "buyerreference_vorlage": "{haus} ReservNr.: {reservierungsnummer}",
            "buyerreference_ersatz": "reservierungsnummer"}
 _k = opera.kaeuferreferenz(
     {"buyerreference": None, "reservierungsnummer": "3000001"}, _haus_p, 1400019)
-pruefe(_k["buyerreference"] == "Musterhotel Berlin ReservNr.: 3000001",
+pruefe(_k["buyerreference"] == "Beispielhaus Mitte ReservNr.: 3000001",
        f"die Vorlage des Hauses wird gefuellt ({_k['buyerreference']})")
 pruefe(_k["buyerreference_quelle"].startswith("Ersatzwert"),
        "und bleibt als Ersatzwert gekennzeichnet")
@@ -614,6 +614,9 @@ pruefe(opera._vorlage_fuellen("{haus} ReservNr.: {reservierungsnummer}", _mit_op
        == opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}", _mit_opera, _hp_leer, 1),
        "{haus} und {hotel} sind derselbe Name")
 pruefe(opera.hausname(_hp_leer, "") == "IHRHAUS", "ohne beides bleibt das Resortkuerzel")
+pruefe(opera.hausname({"haus": "Musterhotel Berlin", "resort": "IHRHAUS"}, "Hotel aus OPERA")
+       == "Hotel aus OPERA",
+       "der alte Beispielwert 'Musterhotel Berlin' gilt als nicht eingetragen — es zaehlt OPERA")
 pruefe(json.loads((BASE / "config" / "app.example.json").read_text(encoding="utf-8"))["property"]["haus"] == "",
        "die Vorlage laesst den Namen leer, er folgt also OPERA")
 pruefe(opera._vorlage_fuellen("{hotel}", {"suppliername": "Hotel aus OPERA"}, _hp, 1) == "",

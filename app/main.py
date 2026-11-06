@@ -58,6 +58,11 @@ async def lebenszyklus(app: FastAPI):
         db.start(cfg)
     except Exception as e:
         log.error("Datenbankverbindung beim Start nicht möglich: %s", e)
+    # Den Hotelnamen aus OPERA gleich beim Start holen, im Hintergrund. Sonst
+    # stand oben links bis zum ersten Aufruf der Konfigurationsseite das
+    # Resortkuerzel — die Kopfzeile selbst fragt die Datenbank nie.
+    import threading as _thr
+    _thr.Thread(target=_hotel_aus_opera, args=(cfg,), daemon=True, name="hotelname").start()
     if cfg["automatik"].get("aktiv"):
         automatik.starten()
     # Nachsehen, ob ein neuerer Stand bereitliegt — unabhaengig von der
@@ -863,6 +868,7 @@ def konfiguration(request: Request, meldung: str = ""):
     return seiten.TemplateResponse(request, "konfiguration.html", _kontext(
         request, cfg=config.oeffentlich(cfg), meldung=meldung,
         hotel_opera=hotel_opera, vorlage_beispiel=vorlage_beispiel,
+        haus_eigen=opera.eigener_hausname(p),
         vorlage_platzhalter=opera.VORLAGE_PLATZHALTER,
         schalter=[f"{s}.{f}" for s, f in SCHALTER],
         # Tooltips aus docs/15_EINSTELLUNGEN.md, siehe app/einstellungen.py

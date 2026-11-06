@@ -49,7 +49,7 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Haus</h2>
     <label>Resort{{ tipp('property.resort') }}<input name="property.resort" value="{{ cfg.property.resort }}"></label>
-    <label>Name des Hauses{{ tipp('property.haus') }}<input name="property.haus" value="{{ cfg.property.haus or '' }}"
+    <label>Name des Hauses{{ tipp('property.haus') }}<input name="property.haus" value="{{ haus_eigen }}"
              placeholder="{{ hotel_opera or 'leer = Name aus OPERA' }}">
       <span class="klein">Leer lassen: Es gilt der Name aus OPERA
         ({% if hotel_opera %}<strong>{{ hotel_opera }}</strong>{% else %}<em>gerade nicht erreichbar</em>{% endif %}).

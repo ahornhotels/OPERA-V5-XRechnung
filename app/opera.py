@@ -987,6 +987,18 @@ def kuerzen(wert) -> tuple[str, int]:
     return roh[:BT10_LAENGE].strip(), len(roh) if len(roh) > BT10_LAENGE else 0
 
 
+# Der Beispielwert, der bis 06.11.2026 in config/app.example.json stand. Er ist
+# in bestehende Installationen gewandert und zeigte dort "Musterhotel Berlin"
+# oben links, obwohl niemand ihn eingetragen hatte. Er gilt als nicht gesetzt.
+BEISPIEL_HAUSNAMEN = {"Musterhotel Berlin"}
+
+
+def eigener_hausname(p: dict) -> str:
+    """Der eingetragene Name, ohne den alten Beispielwert. Leer: nicht gesetzt."""
+    wert = (p.get("haus") or "").strip()
+    return "" if wert in BEISPIEL_HAUSNAMEN else wert
+
+
 def hausname(p: dict, aus_opera: str = "") -> str:
     """DER Name des Hauses fuer Oberflaeche und BT-10-Vorlage: der in der
     Konfiguration eingetragene (property.haus), sonst der aus OPERA, sonst das
@@ -997,7 +1009,7 @@ def hausname(p: dict, aus_opera: str = "") -> str:
     einer: Bleibt das Feld leer, folgt er OPERA; wer einen anderen will,
     traegt ihn ein. Der Verkaeufer in der Rechnung (BT-27/28) kommt davon
     unberuehrt immer aus OPERA."""
-    return ((p.get("haus") or "").strip() or (aus_opera or "").strip()
+    return (eigener_hausname(p) or (aus_opera or "").strip()
             or (p.get("resort") or "").strip())
 
 
