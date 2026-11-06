@@ -581,8 +581,27 @@ pruefe(opera._vorlage_fuellen("{unsinn}", {}, _haus_p, 1) == "",
        "ein unbekannter Platzhalter fuehrt nicht zu einem halben Satz")
 pruefe(json.loads((BASE / "config" / "app.example.json").read_text(
            encoding="utf-8"))["property"]["buyerreference_vorlage"]
-       == "{haus} ReservNr.: {reservierungsnummer}",
+       == "{hotel} ReservNr.: {reservierungsnummer}",
        "die Vorlage steht so in der Konfigurationsvorlage")
+# {hotel} ist der Name aus OPERA, wie er auf dem Beleg steht (suppliername);
+# fehlt er, gilt der Name aus der Konfiguration.
+_hp = {"haus": "Name aus der Konfig", "buyerreference_vorlage": "{hotel} ReservNr.: {reservierungsnummer}"}
+pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}",
+                              {"suppliername": "Hotel aus OPERA", "reservierungsnummer": "3000001"}, _hp, 1)
+       == "Hotel aus OPERA ReservNr.: 3000001",
+       "{hotel} nimmt den Hotelnamen aus OPERA")
+pruefe(opera._vorlage_fuellen("{hotel} ReservNr.: {reservierungsnummer}",
+                              {"reservierungsnummer": "3000001"}, _hp, 1)
+       == "Name aus der Konfig ReservNr.: 3000001",
+       "ohne Namen aus OPERA gilt der aus der Konfiguration")
+pruefe(opera._vorlage_fuellen("{hotel}", {"suppliername": "Hotel aus OPERA"}, _hp, 1) == "",
+       "eine Vorlage aus nur dem Hotelnamen wird nicht verwendet")
+for _v, _gut in (("{hotel} ReservNr.: {reservierungsnummer}", True), ("", True),
+                 ("{hotel}", False), ("{haus} {hotel}", False), ("{hotle} {debitor}", False),
+                 ("Res {", False), ("Res {}", False), ("Debitor {debitor}", True)):
+    pruefe((opera.vorlage_pruefen(_v) == "") == _gut,
+           f"Vorlage {_v!r} gilt als {'brauchbar' if _gut else 'fehlerhaft'} "
+           f"({opera.vorlage_pruefen(_v) or 'ohne Befund'})")
 
 # FOLIO_TEXT1 fasst 2000 Zeichen. Ein Satz darin ist als Kaeuferreferenz
 # unbrauchbar — gekuerzt wird, aber nie stillschweigend.
@@ -1808,6 +1827,23 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
            == "C:\\oracle\\instantclient_21_13",
            "ein Windows-Pfad mit Backslashes wird so gespeichert, dass die Datei ladbar bleibt")
     klient.post("/konfiguration", data={"datenbank.oracle_client_pfad": _vorher_pfad},
+                follow_redirects=False)
+    # Die BT-10-Vorlage ist auf der Seite editierbar; eine fehlerhafte wird
+    # abgelehnt, statt still nie zu greifen.
+    _kseite_v = klient.get("/konfiguration").text
+    pruefe('name="property.buyerreference_vorlage"' in _kseite_v and "{hotel}" in _kseite_v,
+           "die BT-10-Vorlage steht editierbar auf der Konfigurationsseite, mit {hotel}")
+    _vorher_vorlage = config.laden()["property"].get("buyerreference_vorlage")
+    _a = klient.post("/konfiguration", data={"property.buyerreference_vorlage": "{hotle} {debitor}"},
+                     follow_redirects=False)
+    pruefe("NICHT" in _a.headers.get("location", "") and
+           config.laden()["property"].get("buyerreference_vorlage") == _vorher_vorlage,
+           "eine Vorlage mit Tippfehler im Platzhalter wird nicht gespeichert")
+    klient.post("/konfiguration", data={"property.buyerreference_vorlage": "{hotel} Debitor {debitor}"},
+                follow_redirects=False)
+    pruefe(config.laden()["property"].get("buyerreference_vorlage") == "{hotel} Debitor {debitor}",
+           "eine gueltige Vorlage wird gespeichert")
+    klient.post("/konfiguration", data={"property.buyerreference_vorlage": _vorher_vorlage or ""},
                 follow_redirects=False)
     klient.post("/konfiguration", data={"mail.bcc": "test@beispiel.de"},
                 follow_redirects=False)

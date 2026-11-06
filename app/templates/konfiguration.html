@@ -118,6 +118,16 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
       einrichten</a> — welches Feld frei ist, und wie es per Screen Painter an die
       Firmenkartei kommt.</p>
     <label>Mitgliedschaftstyp Leitweg-ID{{ tipp('property.mitgliedschaftstyp_leitweg') }}<input name="property.mitgliedschaftstyp_leitweg" value="{{ cfg.property.mitgliedschaftstyp_leitweg }}"></label>
+    <label class="hervor">Vorlage für den Ersatzwert (Stufe 7)
+      {{ tipp('property.buyerreference_vorlage') }}<input name="property.buyerreference_vorlage"
+             value="{{ cfg.property.buyerreference_vorlage or '' }}" size="50" maxlength="80"
+             placeholder="{hotel} ReservNr.: {reservierungsnummer}">
+      <span class="klein">Platzhalter:
+        {% for n, b in vorlage_platzhalter.items() %}<code>{{ '{' ~ n ~ '}' }}</code> {{ b }}{{ ', ' if not loop.last }}{% endfor %}.
+        Fehlt einer der benutzten Werte, gilt der Rückfall darunter. Leer lassen schaltet die Vorlage ab.</span>
+      <span class="klein">Hotelname aus OPERA:
+        {% if hotel_opera %}<strong>{{ hotel_opera }}</strong>{% else %}<em>nicht erreichbar</em>{% endif %}
+        {% if vorlage_beispiel %} · Beispiel: <strong>{{ vorlage_beispiel }}</strong>{% endif %}</span></label>
     <label>Käuferreferenz (BT-10), wenn keine hinterlegt ist
       {{ tipp('property.buyerreference_ersatz') }}<select name="property.buyerreference_ersatz">
         {# Die Vorgabe 'reservierungsnummer' fehlte in der Liste — beim Speichern
@@ -126,8 +136,8 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
         <option value="{{ w }}" {{ 'selected' if cfg.property.buyerreference_ersatz == w }}>{{ b }}</option>
         {% endfor %}
       </select>
-      <span class="klein">Letzte Stufe oben (7), wenn keine Vorlage eingestellt ist
-      oder ihr ein Wert fehlt.</span></label>
+      <span class="klein">Rückfall, wenn keine Vorlage eingestellt ist oder ihr ein
+      Wert fehlt.</span></label>
   </section>
 
   {# Versandadresse aus zwei benutzerdefinierten Feldern (seit 03.11.2026). #}

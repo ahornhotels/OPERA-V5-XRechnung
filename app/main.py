@@ -789,13 +789,45 @@ def wieder_aufnehmen(request: Request, bill_no: int):
 
 
 # ------------------------------------------------------------- Konfiguration
+# Der Hotelname aus OPERA fuer die Vorschau der BT-10-Vorlage, gemerkt fuer
+# zehn Minuten — auch ein Fehlschlag. Ohne das wartete JEDER Aufruf der
+# Konfigurationsseite auf die Datenbank, und ist sie nicht erreichbar, bis zum
+# Verbindungs-Timeout: Die Seite, auf der man die Datenbank einstellt, waere
+# genau dann zaeh, wenn man sie braucht.
+_HOTEL_MERKEN_S = 600
+_hotel_gemerkt: dict = {}
+
+
+def _hotel_aus_opera(cfg: dict) -> str:
+    import time as _time
+    schluessel = ((cfg.get("datenbank") or {}).get("host"), (cfg.get("property") or {}).get("resort"))
+    alt = _hotel_gemerkt.get(schluessel)
+    if alt and _time.monotonic() - alt[0] < _HOTEL_MERKEN_S:
+        return alt[1]
+    try:
+        from . import zahlungsanforderung as _za
+        name = str(_za.haus(cfg).get("suppliername") or "").strip()
+    except Exception:
+        name = ""
+    _hotel_gemerkt[schluessel] = (_time.monotonic(), name)
+    return name
+
+
 @app.get("/konfiguration", response_class=HTMLResponse)
 def konfiguration(request: Request, meldung: str = ""):
     cfg = config.laden()
     _quelle = updater.quelle(cfg)
     schreibbar, schreibgrund = config.schreibbar()
+    hotel_opera = _hotel_aus_opera(cfg)
+    p = cfg.get("property") or {}
+    vorlage_beispiel = opera._vorlage_fuellen(
+        (p.get("buyerreference_vorlage") or "").strip(),
+        {"suppliername": hotel_opera, "reservierungsnummer": "3000001",
+         "debitorennummer": "10001", "customername": "Beispiel GmbH"}, p, 1400001)
     return seiten.TemplateResponse(request, "konfiguration.html", _kontext(
         request, cfg=config.oeffentlich(cfg), meldung=meldung,
+        hotel_opera=hotel_opera, vorlage_beispiel=vorlage_beispiel,
+        vorlage_platzhalter=opera.VORLAGE_PLATZHALTER,
         schalter=[f"{s}.{f}" for s, f in SCHALTER],
         # Tooltips aus docs/15_EINSTELLUNGEN.md, siehe app/einstellungen.py
         erklaerungen=einstellungen.erklaerungen(),
@@ -1009,6 +1041,14 @@ async def konfiguration_speichern(request: Request):
                                  "UDFC01 bis UDFC40")
             else:
                 cfg["property"][schluessel] = udf
+    # Die BT-10-Vorlage: Eine fehlerhafte griffe nie, und das stuende nur im
+    # Protokoll. Deshalb beim Speichern ablehnen.
+    if "property.buyerreference_vorlage" in formular:
+        cfg["property"]["buyerreference_vorlage"] = str(
+            formular["property.buyerreference_vorlage"]).strip()
+        fehler_vorlage = opera.vorlage_pruefen(cfg["property"]["buyerreference_vorlage"])
+        if fehler_vorlage:
+            ungueltig.append(f"Vorlage für BT-10: {fehler_vorlage}")
     if (cfg["property"].get("udf_mail_profil") and
             cfg["property"].get("udf_mail_profil") == cfg["property"].get("udf_leitweg")):
         ungueltig.append("Mailfeld am Profil und Leitweg-Feld dürfen nicht dasselbe Feld sein")

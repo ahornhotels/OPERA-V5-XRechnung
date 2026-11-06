@@ -987,17 +987,61 @@ def kuerzen(wert) -> tuple[str, int]:
     return roh[:BT10_LAENGE].strip(), len(roh) if len(roh) > BT10_LAENGE else 0
 
 
+# Platzhalter der BT-10-Vorlage, mit Beschreibung fuer die Konfigurationsseite.
+# {hotel} ist der Name aus OPERA, so wie er auf dem Beleg steht
+# (NVL(FOLIO$_TAX.HOTEL_NAME, RESORT.NAME), invoice_header.sql) — derselbe, der
+# als Verkaeufer in der Rechnung steht. {haus} ist der Name aus der
+# Konfiguration (property.haus), der auch in der Kopfzeile der Oberflaeche steht.
+VORLAGE_PLATZHALTER = {
+    "hotel": "Hotelname aus OPERA, wie auf dem Beleg",
+    "haus": "Name des Hauses aus dieser Konfiguration",
+    "reservierungsnummer": "Reservierungsnummer (Confirmation No.)",
+    "rechnungsnummer": "Rechnungsnummer",
+    "debitor": "Debitorennummer",
+    "kunde": "Name des Rechnungsempfängers",
+}
+# Namen des Hauses zaehlen nicht als Wert: Eine Kaeuferreferenz, die nur sagt,
+# welches Hotel sie ausgestellt hat, sagt dem Empfaenger nichts — das steht
+# ohnehin als Verkaeufer in der Rechnung.
+_NUR_RAHMEN = {"haus", "hotel"}
+
+
+def vorlage_pruefen(vorlage: str) -> str:
+    """Fehlertext fuer eine BT-10-Vorlage, leer wenn sie taugt. Fuer das
+    Speichern der Konfiguration: Eine fehlerhafte Vorlage griffe sonst nie,
+    und niemand saehe warum — nur das Protokoll."""
+    vorlage = (vorlage or "").strip()
+    if not vorlage:
+        return ""
+    try:
+        benutzt = {name for _, name, _, _ in Formatter().parse(vorlage) if name is not None}
+    except ValueError as e:
+        return f"fehlerhafte Klammern ({e})"
+    if "" in benutzt:
+        return "leere Klammern {} — bitte einen Platzhalter hineinschreiben"
+    unbekannt = benutzt - set(VORLAGE_PLATZHALTER)
+    if unbekannt:
+        return (f"unbekannter Platzhalter {', '.join('{' + u + '}' for u in sorted(unbekannt))} — "
+                f"möglich sind {', '.join('{' + n + '}' for n in VORLAGE_PLATZHALTER)}")
+    if not benutzt - _NUR_RAHMEN:
+        return ("die Vorlage braucht mindestens eine Nummer oder den Kunden — "
+                "nur der Hotelname sagt dem Empfänger nichts")
+    return ""
+
+
 def _vorlage_fuellen(vorlage: str, kopf: dict, p: dict, bill_no: int) -> str:
     """Die Vorlage fuer BT-10 fuellen. Leerer String heisst: nicht verwendbar.
 
     Fehlt einer der benutzten Werte, wird die Vorlage NICHT genommen — sonst
     stuende auf der Rechnung "… ReservNr.:" ohne Nummer, und das sieht aus wie
-    ein Wert. Der Hausname zaehlt dabei nicht als Wert: Eine Kaeuferreferenz,
-    die nur den Namen des Hauses traegt, sagt dem Empfaenger nichts."""
+    ein Wert. Die Namen des Hauses zaehlen dabei nicht als Wert (_NUR_RAHMEN).
+    Fehlt der Hotelname aus OPERA, gilt der aus der Konfiguration."""
     if not vorlage:
         return ""
+    haus = (p.get("haus") or p.get("resort") or "").strip()
     werte = {
-        "haus": (p.get("haus") or p.get("resort") or "").strip(),
+        "hotel": str(kopf.get("suppliername") or "").strip() or haus,
+        "haus": haus,
         "reservierungsnummer": str(kopf.get("reservierungsnummer") or "").strip(),
         "rechnungsnummer": str(bill_no or "").strip(),
         "debitor": str(kopf.get("debitorennummer") or "").strip(),
@@ -1017,8 +1061,8 @@ def _vorlage_fuellen(vorlage: str, kopf: dict, p: dict, bill_no: int) -> str:
     # ALLE benutzten Werte muessen da sein, nicht nur einer: Aus
     # "{kunde} / {debitor}" wurde sonst "Firma GmbH / " — ein halber Wert, der
     # wie ein ganzer aussieht.
-    if not benutzt or any(not werte[n] for n in benutzt if n != "haus") \
-            or not [n for n in benutzt if n != "haus"]:
+    if not benutzt or any(not werte[n] for n in benutzt if n not in _NUR_RAHMEN) \
+            or not benutzt - _NUR_RAHMEN:
         return ""
     try:
         return vorlage.format(**werte).strip()

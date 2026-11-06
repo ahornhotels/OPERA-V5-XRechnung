@@ -42,7 +42,7 @@ zweiten Haus anders sein wird als hier.
 | `positionen` | Wie die Positionen stehen: `automatisch`, `A` (jede Buchung einzeln), `B` (zusammengefasst), `C` (je Gast). Siehe [14_POSITIONEN.md](14_POSITIONEN.md) |
 | `positionsbemerkung` | **Welche Felder der Buchung als Bemerkung an der Position stehen (BT-127).** Vorgabe `remark` — das ist das Feld, das OPERA in der Buchungsmaske „Supplement" nennt. `reference` **nicht** einschalten: Systemprotokoll mit fremden Gastnamen und Rufnummern |
 | `gastzuordnung_bestaetigt` | Solange `false`, verschickt die Automatik keine Rechnung in der Darstellung je Gast. Der Rückweg, falls `sql/discovery/06_positionen_gast.sql` im eigenen Haus ein anderes Bild zeigt |
-| `buyerreference_vorlage` | BT-10 ist Pflicht (BR-DE-15), aber nur Behörden haben eine Leitweg-ID. Diese Vorlage greift, wenn nichts anderes etwas hergibt |
+| `buyerreference_vorlage` | BT-10 ist Pflicht (BR-DE-15), aber nur Behörden haben eine Leitweg-ID. Diese Vorlage greift, wenn nichts anderes etwas hergibt. Platzhalter: {hotel} (Hotelname aus OPERA, wie auf dem Beleg), {haus} (Name aus dieser Konfiguration), {reservierungsnummer}, {rechnungsnummer}, {debitor}, {kunde}. Mindestens eine Nummer oder der Kunde muss darin vorkommen |
 | `buyerreference_ersatz` | Letzter Rückfall: `reservierungsnummer`, `rechnungsnummer`, `debitornummer` oder `kundenname` |
 | `mitgliedschaftstyp_leitweg` | **Mitgliedschaftstyp am Profil, der die Leitweg-ID trägt** |
 | `mitgliedschaftstyp_erechnung` | Kennzeichnet übrige Firmenkunden, die eine E-Rechnung bekommen sollen |
