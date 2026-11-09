@@ -37,7 +37,7 @@ sondern vorgelegt.
 | **Supplement-Feld** | was in der Buchungsmaske als Zusatztext steht, erscheint an der Position (BT-127) — vollständig, wie auf der gedruckten Rechnung |
 | **Kein Doppelversand** | Statussperre im Server; ein Versand mit unklarem Ausgang wird als solcher gemeldet, statt stillschweigend zu gelten |
 | **Aktualisierung** | jeder Stand in eigenem Verzeichnis, Umschalten in einem Schritt, Zurückgehen auf Knopfdruck. Standzeit: eine Sekunde |
-| **Selbsttest** | rund 760 Prüfungen, **ohne Datenbank**. Zu jeder gehört die Frage, ob sie überhaupt rot werden kann |
+| **Selbsttest** | rund 1200 Prüfungen, **ohne Datenbank**. Zu jeder gehört die Frage, ob sie überhaupt rot werden kann |
 
 ## Voraussetzungen
 
@@ -62,6 +62,15 @@ tägliche Arbeit **[HANDBUCH.md](HANDBUCH.md)**.
 abhängen: Schema, Resortkürzel, welche Profiltypen als Firma gelten, in
 welchem Feld die Leitweg-ID steht. Die Skripte unter `sql/discovery/`
 beantworten das an den eigenen Daten — rein lesend.
+
+## Versionen
+
+Die laufende Nummer steht in [`VERSION`](VERSION), in der Fußzeile der
+Oberfläche und unter „Konfiguration“. Was sich je Version ändert, steht in
+**[CHANGELOG.md](CHANGELOG.md)**, und zu jeder Version gibt es unter
+[Releases](../../releases) ein Release mit demselben Text. Schema:
+Haupt.Neben.Korrektur. Eine neue **Haupt**nummer heißt: Die Aktualisierung
+verlangt einen Eingriff am Haus, und was zu tun ist, steht im CHANGELOG.
 
 ---
 

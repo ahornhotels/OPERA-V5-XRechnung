@@ -1245,6 +1245,29 @@ try:
 finally:
     validate._java_versionen.clear(); validate._java_versionen.update(_alt_java)
 
+print("6a3) Version und CHANGELOG")
+import re as _re_v
+sys.path.insert(0, str(BASE / "tools"))
+import versionshinweise as _vh
+_version = (BASE / "VERSION").read_text(encoding="utf-8").strip()
+pruefe(_re_v.fullmatch(r"\d+\.\d+\.\d+", _version) is not None,
+       f"VERSION hat die Form Haupt.Neben.Korrektur ({_version})")
+_abschn = _vh.abschnitte((BASE / "CHANGELOG.md").read_text(encoding="utf-8"))
+pruefe(bool(_abschn) and _abschn[0][0] == _version and _abschn[0][1],
+       f"der oberste Abschnitt in CHANGELOG.md ist die Version aus VERSION "
+       f"({_abschn[0][0] if _abschn else '-'} / {_version})")
+pruefe(_vh.hinweise("v" + _version) == _abschn[0][1] if _abschn else False,
+       "die Release-Hinweise finden den Abschnitt auch mit 'v' davor")
+_probe = "## [2.0.0] – x\nNeu\n\n## Nicht nummeriert\nweg\n## [1.9.1] – y\nAlt\n"
+pruefe(_vh.hinweise("2.0.0", _probe) == "Neu" and _vh.hinweise("1.9.1", _probe) == "Alt"
+       and _vh.hinweise("1.9.0", _probe) is None,
+       "ein Abschnitt endet am naechsten, eine fehlende Version ergibt nichts")
+_wf = (BASE / ".github/workflows/release.yml").read_text(encoding="utf-8")
+pruefe("tags:" in _wf and "VERSION" in _wf and "versionshinweise.py" in _wf
+       and "gh release create" in _wf,
+       "zu jedem Tag legt der Workflow ein Release an, nach Abgleich mit VERSION")
+pruefe("CHANGELOG.md" in updater.PROGRAMM, "CHANGELOG.md kommt mit jeder Aktualisierung mit")
+
 print("6b) Validierung und Aktualisierung")
 z = validate.zustand(cfg)
 pruefe("bereit" in z and isinstance(z["fehlt"], list), "Validator meldet seinen Zustand")

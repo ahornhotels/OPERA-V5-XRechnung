@@ -38,7 +38,7 @@ STAND_DATEI = pfade.DATEN_DIR / "update_stand.json"
 # lautlos nie stattfand.
 PROGRAMM = ["app", "sql", "tools", "docs", "install", "beispiele",
             "requirements.txt", "requirements-dev.txt",
-            "run.cmd", "run.sh", "VERSION", "README.md", "PROTOTYP.md",
+            "run.cmd", "run.sh", "VERSION", "CHANGELOG.md", "README.md", "PROTOTYP.md",
             "HANDBUCH.md", "INSTALLATION.md"]
 
 # Wird beim Austausch von install/ ausgespart: das Werkzeug laedt der

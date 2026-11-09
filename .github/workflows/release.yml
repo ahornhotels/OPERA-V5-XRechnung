@@ -1,0 +1,36 @@
+# Legt zu jedem Tag vX.Y.Z ein GitHub-Release an. Der Text kommt aus dem
+# passenden Abschnitt von CHANGELOG.md (tools/versionshinweise.py).
+# Ablauf einer neuen Version: siehe dort.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag gegen VERSION pruefen
+        run: |
+          datei="$(tr -d '[:space:]' < VERSION)"
+          if [ "${GITHUB_REF_NAME#v}" != "$datei" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zu VERSION ($datei)"
+            exit 1
+          fi
+
+      - name: Text aus CHANGELOG.md
+        run: python3 tools/versionshinweise.py "$GITHUB_REF_NAME" > versionshinweise.md
+
+      - name: Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "OPERA XRechnung ${GITHUB_REF_NAME#v}" \
+            --notes-file versionshinweise.md

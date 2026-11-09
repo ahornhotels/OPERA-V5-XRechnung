@@ -64,7 +64,7 @@ id "$DIENSTBENUTZER" >/dev/null 2>&1 || {
     schlecht "Das Dienstkonto '$DIENSTBENUTZER' gibt es nicht."; exit 1; }
 
 PROGRAMM_BEREICHE=(app sql tools docs install beispiele requirements.txt run.sh run.cmd
-                   VERSION README.md HANDBUCH.md INSTALLATION.md PROTOTYP.md)
+                   VERSION CHANGELOG.md README.md HANDBUCH.md INSTALLATION.md PROTOTYP.md)
 
 if [[ -L "$BASIS/programm/aktuell" ]]; then
     gut "Diese Installation laeuft bereits mit Freigaben — nichts zu tun."
