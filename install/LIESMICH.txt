@@ -5,6 +5,12 @@ WINDOWS
     Doppelklick auf   INSTALLIEREN.cmd
     Windows fragt einmal nach der Erlaubnis - mit Ja bestaetigen.
 
+    Aelteres Windows ohne winget (Server 2012 R2/2016/2019, Windows 8.1,
+    Windows 10 LTSC): ebenfalls INSTALLIEREN.cmd - fehlt winget, holt der
+    Installer Python selbst von python.org. Ist winget zwar da, aber
+    gesperrt oder haengt es:   INSTALLIEREN_OHNE_WINGET.cmd
+    Mindestens Windows 8.1 / Server 2012 R2, 64 Bit.
+
 ROCKY LINUX
     sudo ./installieren.sh
 
@@ -28,6 +34,7 @@ Was noch in diesem Ordner liegt
 
 Windows                      Rocky Linux
 INSTALLIEREN.cmd             installieren.sh          die Einrichtung
+INSTALLIEREN_OHNE_WINGET.cmd                          dasselbe, Python ohne winget
 installieren.ps1             (in installieren.sh)     die eigentliche Arbeit
 dienst_einrichten.cmd        dienst_einrichten.sh     nur den Dienst nachtragen
 dienst_entfernen.cmd         dienst_entfernen.sh      Dienst entfernen, Daten bleiben

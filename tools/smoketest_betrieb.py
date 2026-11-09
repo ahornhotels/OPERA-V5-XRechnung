@@ -391,7 +391,70 @@ try { $c = Nativ printf '%s;' "mit leer" -x; "ARGS_OK $c" } catch { "ARGS_ABBRUC
            f"Argumente gehen einzeln durch, auch '-x' ({[z for z in aus if z.startswith('ARGS')]})")
     if lauf.returncode != 0 and lauf.stderr:
         print("       pwsh:", lauf.stderr.strip()[:300])
+
+    # Entpacken ohne Expand-Archive (PowerShell 4 auf Server 2012 R2): der
+    # .NET-Weg muss Unterordner anlegen, beim zweiten Lauf ueberschreiben wie
+    # -Force und ein Zip ablehnen, das aus dem Zielordner hinausfuehrt.
+    import zipfile
+    _zg = _sandkasten / "zip_gut.zip"
+    with zipfile.ZipFile(_zg, "w") as z:
+        z.writestr("jdk-21-jre/", "")
+        z.writestr("jdk-21-jre/bin/java.exe", "eins")
+        z.writestr("jdk-21-jre/release", "JAVA_RUNTIME_VERSION=\"21\"")
+    _zb = _sandkasten / "zip_boese.zip"
+    with zipfile.ZipFile(_zb, "w") as z:
+        z.writestr("../ausserhalb.txt", "nein")
+    _ziel = _sandkasten / "entpackt"
+    entpacken = r"""
+param($pfad, $gut, $boese, $ziel)
+$tokens = $null; $fehler = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($pfad, [ref]$tokens, [ref]$fehler)
+foreach ($name in @("EntpackenNet", "WindowsVersion")) {
+    $f = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq $name }, $true) | Select-Object -First 1
+    if (-not $f) { "FEHLT $name"; exit }
+    . ([ScriptBlock]::Create($f.Extent.Text))
+}
+$ErrorActionPreference = "Stop"
+EntpackenNet $gut $ziel
+"ERSTER " + (Get-Content (Join-Path $ziel "jdk-21-jre/bin/java.exe"))
+Set-Content -Path (Join-Path $ziel "jdk-21-jre/bin/java.exe") -Value "veraendert"
+Set-Content -Path (Join-Path $ziel "bleibt.txt") -Value "x"
+EntpackenNet $gut $ziel
+"ZWEITER " + (Get-Content (Join-Path $ziel "jdk-21-jre/bin/java.exe")) + " " + (Test-Path (Join-Path $ziel "bleibt.txt"))
+try { EntpackenNet $boese $ziel; "BOESE durch" } catch { "BOESE abgelehnt " + (Test-Path (Join-Path (Split-Path -Parent $ziel) "ausserhalb.txt")) }
+"VERSION " + ((WindowsVersion) -is [Version])
+"ORDNER " + ("Python" + ("3.11.9" -replace '^(\d+)\.(\d+).*$', '$1$2'))
+"""
+    _s2 = _sandkasten / "entpacken.ps1"
+    _s2.write_text(entpacken, encoding="utf-8")
+    lauf = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-File", str(_s2), str(ps1),
+                           str(_zg), str(_zb), str(_ziel)], capture_output=True, text=True, timeout=120)
+    aus = lauf.stdout.splitlines()
+    pruefe("ERSTER eins" in aus and "ZWEITER eins True" in aus,
+           f"Entpacken ueber .NET legt Unterordner an, ueberschreibt, laesst Fremdes stehen ({aus[:3]} {lauf.stderr[:200]})")
+    pruefe("BOESE abgelehnt False" in aus, f"ein Zip mit ..\\ wird abgelehnt, nichts landet ausserhalb ({aus})")
+    pruefe("VERSION True" in aus, f"die Windows-Version wird ermittelt, auch ohne CIM ({aus})")
+    pruefe("ORDNER Python311" in aus, f"fester Ort der Python-Installation wird richtig gebildet ({aus})")
 import re  # noqa: E402
+
+# Ohne winget (Server 2012 R2/2016/2019, Windows 8.1, Windows 10 LTSC)
+pruefe(re.search(r"\[switch\]\$OhneWinget", ps1_text) is not None
+       and "-OhneWinget" in (WURZEL / "install" / "INSTALLIEREN_OHNE_WINGET.cmd").read_text(encoding="utf-8"),
+       "Schalter -OhneWinget, und INSTALLIEREN_OHNE_WINGET.cmd setzt ihn")
+_direkt = ps1_text[ps1_text.find("function PythonDirekt"):ps1_text.find("function PythonNachInstallation")]
+pruefe("Get-AuthenticodeSignature" in _direkt and "Python Software Foundation" in _direkt
+       and _direkt.find("Get-AuthenticodeSignature") < _direkt.find("Start-Process"),
+       "der Python-Installer von python.org startet erst nach gepruefter Signatur")
+pruefe("https://www.python.org/ftp/python/" in _direkt and "InstallAllUsers=1" in _direkt
+       and "PrependPath=1" in _direkt, "Python kommt von python.org, fuer alle Benutzer, im Suchpfad")
+pruefe('"3.12.10"' in ps1_text and '"3.11.9"' in ps1_text and '[Version]"6.3"' in ps1_text,
+       "Windows 8.1 / Server 2012 R2 bekommt Python 3.11, aelteres wird abgewiesen")
+pruefe(ps1_text.count("Expand-Archive -Path") == 1
+       and ps1_text.find("Expand-Archive -Path") > ps1_text.find("function Entpacken("),
+       "Expand-Archive nur ueber Entpacken (fehlt unter PowerShell 4)")
+pruefe("PfadNeuLaden" in ps1_text[ps1_text.find("function PythonNachInstallation"):][:400]
+       and ps1_text.count("PythonDirekt") >= 2,
+       "nach der Python-Installation wird der Suchpfad neu gelesen")
 pfad_zuweisungen = re.findall(r"^\s*\$env:Path\s*=.*$", ps1_text, flags=re.M | re.I)
 pruefe(pfad_zuweisungen and all('"User"' in z or "PfadNeuLaden" in z or "$benutzer" in z
                                 for z in pfad_zuweisungen),

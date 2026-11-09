@@ -9,12 +9,22 @@
 #   -OhneRueckfrage  alles ohne Nachfrage (fuer unbeaufsichtigte Laeufe)
 #   -OhneDienst      keinen Windows-Dienst anlegen
 #   -OhnePruefer     KoSIT-Pruefprogramm nicht herunterladen
+#   -OhneWinget      Python direkt von python.org statt ueber winget
+#                    (INSTALLIEREN_OHNE_WINGET.cmd setzt das)
 #   -Port 8022       abweichender Port
+#
+# Laeuft auch dort, wo es winget nicht gibt: Windows Server 2016/2019,
+# Windows 10 LTSC, Server 2012 R2 und Windows 8.1 mit PowerShell 4. Ohne
+# winget holt der Installer Python selbst von python.org und prueft vor dem
+# Start die digitale Signatur. Untergrenze ist Windows 8.1 / Server 2012 R2
+# (64 Bit): aelter kann Python 3.11 nicht, und darunter laeuft die
+# Anwendung nicht.
 
 param(
     [switch]$OhneRueckfrage,
     [switch]$OhneDienst,
     [switch]$OhnePruefer,
+    [switch]$OhneWinget,
     [int]$Port = 8022
 )
 
@@ -138,6 +148,95 @@ function Laden($url, $ziel) {
     finally { $ProgressPreference = $alt }
 }
 
+# Entpackt ein Zip. Expand-Archive gibt es erst ab PowerShell 5; auf
+# Server 2012 R2 und Windows 8.1 ist ab Werk PowerShell 4 dabei. Dort geht
+# es ueber .NET (ab 4.5 vorhanden). Wie Expand-Archive -Force: vorhandene
+# Dateien werden ueberschrieben, der Rest des Zielordners bleibt.
+function Entpacken($zip, $ziel) {
+    if (Get-Command Expand-Archive -ErrorAction SilentlyContinue) {
+        Expand-Archive -Path $zip -DestinationPath $ziel -Force
+    } else {
+        EntpackenNet $zip $ziel
+    }
+}
+function EntpackenNet($zip, $ziel) {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $wurzel = [IO.Path]::GetFullPath($ziel).TrimEnd('\', '/')
+    New-Item -ItemType Directory -Force -Path $wurzel | Out-Null
+    $archiv = [IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        foreach ($eintrag in $archiv.Entries) {
+            $pfad = [IO.Path]::GetFullPath((Join-Path $wurzel $eintrag.FullName))
+            # Kein Eintrag darf aus dem Zielordner hinausfuehren ("..\")
+            if (-not $pfad.StartsWith($wurzel + [IO.Path]::DirectorySeparatorChar)) {
+                throw "Unzulaessiger Pfad im Zip: $($eintrag.FullName)"
+            }
+            if ($eintrag.FullName.EndsWith("/") -or $eintrag.FullName.EndsWith("\")) {
+                New-Item -ItemType Directory -Force -Path $pfad | Out-Null
+                continue
+            }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $pfad) | Out-Null
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($eintrag, $pfad, $true)
+        }
+    } finally { $archiv.Dispose() }
+}
+
+# Python ohne winget: der offizielle Installer von python.org. Bevor er
+# startet, muss seine Authenticode-Signatur gueltig sein und auf die Python
+# Software Foundation lauten - eine feste Pruefsumme muesste bei jeder neuen
+# Fassung nachgezogen werden, die Signatur nicht.
+#
+# Welche Fassung: 3.12.10 ist die letzte 3.12 mit Windows-Installer. Auf
+# Windows 8.1 / Server 2012 R2 (Kernel 6.3) wird 3.12 nicht mehr
+# unterstuetzt, dort 3.11.9 - die letzte 3.11 mit Installer und die letzte
+# Python-Reihe, die 8.1 offiziell kennt. Die Anwendung braucht 3.11.
+#
+# Die Version kommt aus CIM, nicht aus [Environment]::OSVersion: Das meldet
+# einem Programm ohne passendes Manifest unter 8.1 die 6.2.
+function WindowsVersion {
+    try { return [Version](Get-CimInstance -ClassName Win32_OperatingSystem).Version }
+    catch { return [Environment]::OSVersion.Version }
+}
+$WinVersion = WindowsVersion
+$PythonFassung = if ($WinVersion -ge [Version]"10.0") { "3.12.10" } else { "3.11.9" }
+function PythonDirekt {
+    $datei = "python-$PythonFassung-amd64.exe"
+    $url = "https://www.python.org/ftp/python/$PythonFassung/$datei"
+    $tmp = Join-Path $env:TEMP ("py-" + [Guid]::NewGuid().ToString("N"))
+    try {
+        New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+        $exe = Join-Path $tmp $datei
+        Laden $url $exe
+        $sig = Get-AuthenticodeSignature -FilePath $exe
+        if ($sig.Status -ne "Valid" -or "$($sig.SignerCertificate.Subject)" -notmatch "Python Software Foundation") {
+            throw ("Signatur des Python-Installers nicht in Ordnung ($($sig.Status), " +
+                   "$($sig.SignerCertificate.Subject)) - nicht gestartet")
+        }
+        Info "Signatur gueltig: Python Software Foundation"
+        Info "Python wird installiert, das dauert einige Minuten ..."
+        $lauf = Start-Process -FilePath $exe -Wait -PassThru -ArgumentList @(
+            "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_launcher=1",
+            "InstallLauncherAllUsers=1", "Include_test=0", "Include_doc=0")
+        # 3010: fertig, Neustart empfohlen - Python ist trotzdem benutzbar
+        if ($lauf.ExitCode -ne 0 -and $lauf.ExitCode -ne 3010) {
+            throw "Python-Installer meldet Rueckgabewert $($lauf.ExitCode)"
+        }
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Nach einer Installation: zuerst der Starter py, dann der feste Ort einer
+# Installation fuer alle Benutzer. Den kennt der Suchpfad dieses Prozesses
+# auch nach PfadNeuLaden nicht immer (etwa bei Rueckgabewert 3010).
+function PythonNachInstallation {
+    PfadNeuLaden
+    if (Vorhanden "py") { return "py" }
+    $fest = Join-Path $env:ProgramFiles ("Python" + ($PythonFassung -replace '^(\d+)\.(\d+).*$', '$1$2') + "\python.exe")
+    if (Test-Path $fest) { return $fest }
+    return $null
+}
+
 function LetztesRelease($repo, $muster) {
     $daten = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" `
                                -Headers @{ "User-Agent" = "OPERA-XRechnung" } -TimeoutSec 60
@@ -153,7 +252,12 @@ Write-Host ""
 Write-Host "  Folgendes ist vorgesehen. Jeder Punkt wird einzeln angesagt und muss"
 Write-Host "  bestaetigt werden - Ablehnen ueberspringt nur diesen Punkt:"
 Write-Host ""
-Write-Host "    1. Python 3.12                ueber winget von python.org"
+$WingetNehmen = (-not $OhneWinget) -and (Vorhanden "winget")
+if ($WingetNehmen) {
+    Write-Host "    1. Python 3.12                ueber winget von python.org"
+} else {
+    Write-Host "    1. Python $PythonFassung              Installer direkt von python.org (ohne winget)"
+}
 Write-Host "    2. Java 21 (JRE)              Zip von adoptium.net, nur in $Basis\validation\jre"
 Write-Host "    3. Python-Bausteine           von pypi.org"
 Write-Host "    4. KoSIT-Pruefprogramm        von github.com/itplr-kosit"
@@ -169,6 +273,7 @@ if ($OhneRueckfrage) {
 # ---------------------------------------------------------------- 1. Python
 Titel "Python"
 $Python = $null
+$WingetAbgelehnt = $false
 foreach ($kandidat in @("py", "python")) {
     if (Vorhanden $kandidat) {
             try {
@@ -187,20 +292,49 @@ foreach ($kandidat in @("py", "python")) {
         }
     }
     if (-not $Python) {
-        if (Vorhanden "winget") {
-            Ansage "Python 3.12 installieren (dauert einige Minuten)" "winget, Quelle python.org" `
-                   "die Anwendung ist in Python geschrieben"
-            if (Frage) {
-                $null = Nativ winget install --id Python.Python.3.12 --silent --accept-package-agreements `
-                       --accept-source-agreements --scope machine
-                if ($script:NativCode -ne 0) { Info "winget meldet Rueckgabewert $script:NativCode" }
-                PfadNeuLaden
-                if (Vorhanden "py") { $Python = "py"; Gut "Python installiert" }
-            } else {
-                Uebergangen "Python - ohne Python laeuft nichts. Nachholen: https://www.python.org/downloads/windows/ (Haken bei 'Add python.exe to PATH')"
+        # Windows 8 / Server 2012 und aelter: Python 3.11 und neuer laufen dort
+        # nicht mehr, ein Download waere vergeblich.
+        if ($WinVersion -lt [Version]"6.3" -or -not [Environment]::Is64BitOperatingSystem) {
+            Schlecht ("Dieses Windows ($WinVersion, " + $(if ([Environment]::Is64BitOperatingSystem) { "64" } else { "32" }) +
+                      " Bit) ist zu alt fuer Python 3.11 - gebraucht wird mindestens Windows 8.1 / Server 2012 R2, 64 Bit.")
+            Write-Host ""; exit 1
+        }
+    }
+    if (-not $Python -and $WingetNehmen) {
+        Ansage "Python 3.12 installieren (dauert einige Minuten)" "winget, Quelle python.org" `
+               "die Anwendung ist in Python geschrieben"
+        if (Frage) {
+            $null = Nativ winget install --id Python.Python.3.12 --silent --accept-package-agreements `
+                   --accept-source-agreements --scope machine
+            if ($script:NativCode -ne 0) { Info "winget meldet Rueckgabewert $script:NativCode" }
+            PfadNeuLaden
+            $Python = PythonNachInstallation
+            if ($Python) { Gut "Python installiert" }
+            else { Info "ueber winget hat es nicht geklappt - naechster Versuch direkt von python.org" }
+        } else {
+            Uebergangen "Python - ohne Python laeuft nichts. Nachholen: https://www.python.org/downloads/windows/ (Haken bei 'Add python.exe to PATH')"
+            $WingetAbgelehnt = $true
+        }
+    }
+    if (-not $Python -and -not $WingetAbgelehnt) {
+        if (-not $WingetNehmen) {
+            if ($OhneWinget) { Info "winget wird nicht verwendet (-OhneWinget)" }
+            else { Info "winget ist auf diesem Windows nicht vorhanden" }
+        }
+        Ansage "Python $PythonFassung (64 Bit) installieren (etwa 25 MB, dauert einige Minuten)" `
+               "python.org, python-$PythonFassung-amd64.exe - Signatur wird vor dem Start geprueft" `
+               "die Anwendung ist in Python geschrieben"
+        if (Frage) {
+            try {
+                PythonDirekt
+                $Python = PythonNachInstallation
+                if ($Python) { Gut "Python $PythonFassung installiert" }
+                else { Schlecht "Python wurde installiert, ist aber noch nicht zu finden - Fenster schliessen und INSTALLIEREN erneut starten." }
+            } catch {
+                Schlecht "Python nicht installiert: $($_.Exception.Message)"
             }
         } else {
-            Info "winget ist nicht vorhanden - Python muss von Hand installiert werden"
+            Uebergangen "Python - ohne Python laeuft nichts. Nachholen: https://www.python.org/downloads/windows/ (Haken bei 'Add python.exe to PATH')"
         }
     }
     if (-not $Python) {
@@ -287,7 +421,7 @@ foreach ($kandidat in @("py", "python")) {
                 # Entpackt wird neben das Ziel, nicht nach TEMP: Move-Item kann
                 # unter 5.1 keinen Ordner ueber Laufwerksgrenzen verschieben.
                 Remove-Item $neuOrdner, $altOrdner -Recurse -Force -ErrorAction SilentlyContinue
-                Expand-Archive -Path $zip -DestinationPath $neuOrdner -Force
+                Entpacken $zip $neuOrdner
                 $innen = Get-ChildItem -Path $neuOrdner -Directory | Select-Object -First 1
                 if (-not $innen -or -not (Test-Path (Join-Path $innen.FullName "bin\java.exe"))) {
                     throw "Im Zip liegt keine bin\java.exe"
@@ -373,7 +507,7 @@ foreach ($kandidat in @("py", "python")) {
                 } else {
                     $zip = Join-Path $tmp "validator.zip"
                     Laden $asset.browser_download_url $zip
-                    Expand-Archive -Path $zip -DestinationPath (Join-Path $tmp "validator") -Force
+                    Entpacken $zip (Join-Path $tmp "validator")
                     $jar = Get-ChildItem -Path (Join-Path $tmp "validator") -Filter "*standalone.jar" -Recurse |
                            Select-Object -First 1
                     if (-not $jar) { throw "Im Paket ist keine standalone.jar enthalten" }
@@ -386,7 +520,7 @@ foreach ($kandidat in @("py", "python")) {
                 Laden $conf.browser_download_url $czip
                 $regeln = Join-Path $ValidOrdner "xrechnung-3.0.2"
                 New-Item -ItemType Directory -Force -Path $regeln | Out-Null
-                Expand-Archive -Path $czip -DestinationPath $regeln -Force
+                Entpacken $czip $regeln
                 $szenarien = Get-ChildItem -Path $regeln -Filter "scenarios.xml" -Recurse | Select-Object -First 1
                 if ($szenarien) {
                     if ($szenarien.DirectoryName -ne $regeln) {
@@ -531,7 +665,7 @@ if ($OhneDienst) {
                     }
                 }
                 if (-not $geladen) { throw "keine der Quellen auf nssm.cc erreichbar" }
-                Expand-Archive -Path $zipPfad -DestinationPath $tmp -Force
+                Entpacken $zipPfad $tmp
                 $gefunden = Get-ChildItem -Path $tmp -Filter "nssm.exe" -Recurse |
                             Where-Object { $_.DirectoryName -like "*win64*" } | Select-Object -First 1
                 if ($gefunden) { Copy-Item $gefunden.FullName $nssm -Force }

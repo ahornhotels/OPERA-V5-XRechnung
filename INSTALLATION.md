@@ -61,7 +61,36 @@ der Rest weiter, und am Ende steht, was nachzuholen ist.
    vorgenommen werden?" — mit **Ja** bestätigen
 
 > Schalter für Sonderfälle, in einer PowerShell mit Administratorrechten:
-> `install\installieren.ps1 -OhneRueckfrage -OhneDienst -OhnePruefer -Port 9000`
+> `install\installieren.ps1 -OhneRueckfrage -OhneDienst -OhnePruefer -OhneWinget -Port 9000`
+
+### Ältere Windows ohne winget
+
+Python installiert der Installer normalerweise über **winget**. Das fehlt
+auf Windows Server 2012 R2, 2016 und 2019, auf Windows 8.1 und auf
+Windows 10 LTSC. Dort genügt trotzdem **`INSTALLIEREN.cmd`**: Findet der
+Installer kein winget, lädt er den offiziellen Python-Installer direkt von
+python.org. Er startet ihn nur, wenn dessen **digitale Signatur gültig ist
+und auf die Python Software Foundation lautet**, und installiert dann ohne
+Rückfragen für alle Benutzer, mit Eintrag im Suchpfad.
+
+Ist winget zwar vorhanden, aber gesperrt, ohne Internetquelle oder hängt es,
+nehmen Sie **`INSTALLIEREN_OHNE_WINGET.cmd`**. Das ist derselbe Installer mit
+dem Schalter `-OhneWinget`.
+
+| Windows | Python | Hinweis |
+|---|---|---|
+| Windows 10/11, Server 2016 und neuer | 3.12.10 | |
+| Windows 8.1, Server 2012 R2 | 3.11.9 | 3.12 unterstützt diese Fassungen nicht mehr |
+| Windows 8, Server 2012 und älter, 32 Bit | — | zu alt, der Installer bricht mit einer Meldung ab |
+
+Unter PowerShell 4, ab Werk auf Server 2012 R2 und Windows 8.1, fehlt
+`Expand-Archive`. Der Installer entpackt dort über .NET. Ob Java 21 auf
+Server 2012 R2 läuft, ist ungeprüft: Startet die neue `java.exe` nicht, bleibt
+die Prüfung aus und das steht am Ende unter „Offen“. Dann ein Java 17 (64 Bit)
+von Hand nach `C:\XRechnung\validation\jre` legen, siehe „Windows von Hand“.
+
+Bei Rückgabewert 3010 empfiehlt der Python-Installer einen Neustart. Python
+ist trotzdem sofort benutzbar, der Installer läuft weiter.
 
 > **Ordnerrechte.** Der Installer schneidet die Vererbung von `C:\` ab: Auf
 > `C:\XRechnung` haben danach nur noch **SYSTEM** (der Dienst), die
@@ -176,12 +205,14 @@ einzelnen Punkt nachholen will.
 ## Windows von Hand
 
 **1. Python.** <https://www.python.org/downloads/windows/> öffnen, den
-„Windows installer (64-bit)" für **Python 3.12** laden, starten und **unbedingt
+„Windows installer (64-bit)" für **Python 3.12** laden (auf Windows 8.1 und
+Server 2012 R2: **3.11**), starten und **unbedingt
 den Haken bei „Add python.exe to PATH"** setzen. Prüfen: `Windows+R`, `cmd`,
 `python --version` → es muss eine 3.12er-Nummer erscheinen.
 
 **2. Java.** <https://adoptium.net/de/temurin/releases/>: Windows, x64,
-**JRE**, Version 21, die **`.zip`**-Datei (nicht das `.msi`). Entpacken und den
+**JRE**, Version 21 (startet sie auf Server 2012 R2 nicht: Version 17), die
+**`.zip`**-Datei (nicht das `.msi`). Entpacken und den
 Ordner darin (`jdk-21…-jre`) als `C:\XRechnung\validation\jre` ablegen, so
 dass `C:\XRechnung\validation\jre\bin\java.exe` existiert. Die Anwendung
 nimmt dieses Java von selbst. Ein vorhandenes Java 8, etwa für OPERA, bleibt

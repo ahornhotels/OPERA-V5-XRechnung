@@ -1196,7 +1196,7 @@ pruefe(umbruch.count("<li>") == 2, "die Fortsetzungszeile bleibt Teil derselben 
 
 print("6a2) Beide Plattformen")
 import os, stat
-for name in ("install/INSTALLIEREN.cmd", "install/installieren.ps1", "install/dienst_einrichten.cmd",
+for name in ("install/INSTALLIEREN.cmd", "install/INSTALLIEREN_OHNE_WINGET.cmd", "install/installieren.ps1", "install/dienst_einrichten.cmd",
              "install/dienst_entfernen.cmd", "run.cmd"):
     pruefe((BASE / name).exists(), f"Windows: {name} vorhanden")
 for name in ("install/installieren.sh", "install/dienst_einrichten.sh",
