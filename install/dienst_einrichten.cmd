@@ -13,6 +13,8 @@ if %errorlevel% neq 0 (
 if not exist "install\nssm.exe" (
     echo nssm.exe fehlt. Von https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip laden, entpacken und
     echo aus dem Ordner win64 die Datei nssm.exe nach install\ kopieren.
+    echo Liefert nssm.cc Fehler 503, dieselbe Datei hier laden:
+    echo https://web.archive.org/web/2024id_/https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip
     pause & exit /b 1
 )
 if not exist ".venv\Scripts\python.exe" (

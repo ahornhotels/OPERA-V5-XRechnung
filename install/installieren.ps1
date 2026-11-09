@@ -630,7 +630,7 @@ if ($OhneDienst) {
         Move-Item (Join-Path $Basis "nssm.exe") $nssm -Force
     }
     if (-not (Test-Path $nssm)) {
-        Ansage "NSSM laden (etwa 400 KB)" "nssm.cc" `
+        Ansage "NSSM laden (etwa 400 KB)" "nssm.cc, ersatzweise dieselbe Datei aus web.archive.org - mit Pruefsumme" `
                "damit die Anwendung als Windows-Dienst laeuft und beim Hochfahren mitstartet"
         if (-not (Frage)) {
             Uebergangen "NSSM - ohne das Werkzeug kein Dienst. Start bis dahin ueber run.cmd"
@@ -638,23 +638,29 @@ if ($OhneDienst) {
             try {
                 $tmp = Join-Path $env:TEMP ("nssm-" + [Guid]::NewGuid().ToString("N"))
                 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
-                # nssm.cc liefert die Veroeffentlichung 2.24 haeufig nicht aus (503),
-                # die Fassung 2.24-101 aus dem Build-Bereich aber schon. Sie ist
-                # zudem die, die fuer Windows 10/11 und Server 2016+ empfohlen wird,
-                # und dieselbe, die auch ueber winget kommt. Deren Pruefsumme steht im
-                # winget-Verzeichnis (NSSM.NSSM 2.24-101-g897c7ad) — sie wird
-                # geprueft. Die alte Fassung bleibt Rueckfall, wie bisher ungeprueft.
+                # nssm.cc antwortet oft mit 503, mal fuer die eine, mal fuer die
+                # andere Datei. Erste Wahl ist die Fassung 2.24-101 aus dem
+                # Build-Bereich: empfohlen fuer Windows 10/11 und Server 2016+,
+                # dieselbe wie ueber winget (NSSM.NSSM 2.24-101-g897c7ad).
+                # Liefert nssm.cc nicht, kommt dieselbe Datei aus dem Internet
+                # Archive. Jede Quelle wird gegen ihre Pruefsumme geprueft - eine
+                # Kopie ist damit so gut wie das Original, und eine veraenderte
+                # Datei faellt durch. Die alte 2.24 bleibt letzter Rueckfall,
+                # jetzt ebenfalls geprueft.
+                $sumNeu = "99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8"
+                $sumAlt = "727D1E42275C605E0F04ABA98095C38A8E1E46DEF453CDFFCE42869428AA6743"
                 $quellen = @(
-                    @{ url = "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip"
-                       sha256 = "99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8" },
-                    @{ url = "https://nssm.cc/release/nssm-2.24.zip"; sha256 = "" }
+                    @{ url = "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip"; sha256 = $sumNeu },
+                    @{ url = "https://web.archive.org/web/2024id_/https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip"; sha256 = $sumNeu },
+                    @{ url = "https://nssm.cc/release/nssm-2.24.zip"; sha256 = $sumAlt },
+                    @{ url = "https://web.archive.org/web/2024id_/https://nssm.cc/release/nssm-2.24.zip"; sha256 = $sumAlt }
                 )
                 $zipPfad = Join-Path $tmp "nssm.zip"
                 $geladen = $false
                 foreach ($q in $quellen) {
                     try {
                         Laden $q.url $zipPfad
-                        if ($q.sha256 -and (Get-FileHash -Path $zipPfad -Algorithm SHA256).Hash -ne $q.sha256) {
+                        if ((Get-FileHash -Path $zipPfad -Algorithm SHA256).Hash -ne $q.sha256) {
                             Info "Pruefsumme passt nicht: $($q.url)"
                             continue
                         }
@@ -664,15 +670,18 @@ if ($OhneDienst) {
                         Info "nicht erreichbar: $($q.url) ($($_.Exception.Message))"
                     }
                 }
-                if (-not $geladen) { throw "keine der Quellen auf nssm.cc erreichbar" }
+                if (-not $geladen) { throw "weder nssm.cc noch das Internet Archive lieferten eine passende Datei" }
+                Gut "NSSM geladen ($($q.url))"
                 Entpacken $zipPfad $tmp
                 $gefunden = Get-ChildItem -Path $tmp -Filter "nssm.exe" -Recurse |
                             Where-Object { $_.DirectoryName -like "*win64*" } | Select-Object -First 1
-                if ($gefunden) { Copy-Item $gefunden.FullName $nssm -Force }
+                if (-not $gefunden) { throw "im Zip liegt keine win64\nssm.exe" }
+                Copy-Item $gefunden.FullName $nssm -Force
                 Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
             } catch {
                 Schlecht ("nssm.exe konnte nicht geladen werden: $($_.Exception.Message). Von Hand: " +
-                          "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip laden, aus dem Ordner win64 die " +
+                          "https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip laden (oder dieselbe Datei ueber " +
+                          "web.archive.org), aus dem Ordner win64 die " +
                           "nssm.exe nach $Basis\install kopieren und den Installer erneut starten")
             }
         }

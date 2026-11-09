@@ -236,11 +236,14 @@ bis drei Minuten. Steht `Uvicorn running on http://0.0.0.0:8022`, läuft es.
 **Fenster offen lassen** — schließen beendet das Programm.
 
 **6. Dienst.** <https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip> laden (die Seite
-`nssm.cc/download` und die Fassung 2.24 sind oft nicht erreichbar), entpacken,
+`nssm.cc/download` und die Fassung 2.24 sind oft nicht erreichbar; meldet
+nssm.cc Fehler 503, dieselbe Datei aus dem Internet Archive:
+<https://web.archive.org/web/2024id_/https://nssm.cc/ci/nssm-2.24-101-g897c7ad.zip>), entpacken,
 aus `win64` die `nssm.exe` nach `C:\XRechnung\install` kopieren. Prüfsumme des
 Zips (SHA-256, wie im winget-Verzeichnis):
 `99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8`. Der
-Installer lädt sie selbst — scheitert er an nssm.cc, die Datei so ablegen und
+Installer lädt sie selbst, bei Fehler 503 ersatzweise aus dem Internet
+Archive, und prüft dabei die Prüfsumme — scheitert beides, die Datei so ablegen und
 ihn erneut starten. Dann Rechtsklick auf
 `install\dienst_einrichten.cmd` → **„Als Administrator ausführen"**.
 

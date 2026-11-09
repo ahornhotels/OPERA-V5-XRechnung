@@ -497,6 +497,16 @@ pruefe("nssm.cc/ci/nssm-2.24-101-g897c7ad.zip" in ps1_text
        and "99F5045FFFBFFB745D67FE3A065A953C4A3D9C253B868892D9B685B0EE7D07B8" in ps1_text
        and ps1_text.index("nssm.cc/ci/") < ps1_text.index("nssm.cc/release/"),
        "NSSM zuerst aus dem Build-Bereich, mit Pruefsumme; die alte Fassung als Rueckfall")
+# nssm.cc antwortet immer wieder mit 503. Dieselbe Datei aus dem Internet
+# Archive ist Ausweich - aber nur, weil jede Quelle gegen eine Pruefsumme laeuft.
+_nssm = ps1_text[ps1_text.find("$quellen = @("):]
+_nssm = _nssm[:_nssm.find(")\n")]
+_eintraege = re.findall(r"@\{ url = \"([^\"]+)\"; sha256 = (\$\w+|\"[0-9A-F]{64}\") \}", _nssm)
+pruefe(len(_eintraege) == 4 and any("web.archive.org" in u for u, _ in _eintraege)
+       and all(s in ("$sumNeu", "$sumAlt") for _, s in _eintraege)
+       and "727D1E42275C605E0F04ABA98095C38A8E1E46DEF453CDFFCE42869428AA6743" in ps1_text,
+       f"NSSM: Ausweich ueber web.archive.org, jede Quelle mit Pruefsumme ({_eintraege})")
+pruefe("$q.sha256 -and" not in ps1_text, "keine NSSM-Quelle wird ungeprueft genommen")
 
 # =========================================================================
 print("7) run.sh ueber programm/aktuell")
