@@ -256,17 +256,26 @@ VORGABE = {
     "hinweis": HINWEIS_KEINE_RECHNUNG,
     "schlusstext": "",
     "fusszeile": "",
+    "angaben_titel": "Angaben für Ihre Rechnung",
+    "angaben_text": ("Bitte prüfen und ergänzen: direkt im PDF ausfüllen und zurücksenden "
+                     "oder einfach per E-Mail antworten."),
     "mail_betreff": "Zahlungsanforderung {nummer} vom {datum}",
     "mail_text": ("Guten Tag,\n\nanbei erhalten Sie unsere Zahlungsanforderung {nummer} über "
                   "{betrag} für: {grund}.\n\nWir bitten um Zahlung bis zum {faellig}. Die "
                   "Bankverbindung steht in der angehängten PDF-Datei.\n\n"
                   "Dies ist keine Rechnung. Nach Zahlungseingang erhalten Sie eine "
                   "Anzahlungsrechnung mit ausgewiesener Umsatzsteuer.\n\n"
+                  "Damit diese Rechnung bei Ihnen richtig ankommt, prüfen und ergänzen Sie bitte "
+                  "die „Angaben für Ihre Rechnung“ in der PDF-Datei: Firmierung, E-Mail-Adresse "
+                  "für die Rechnung, Ihre Bestell- oder Referenznummer und Hinweise für die "
+                  "Buchhaltung. Sie können das Formular ausgefüllt zurücksenden oder einfach auf "
+                  "diese Mail antworten.\n\n"
                   "Mit freundlichen Grüßen\n{absender}"),
 }
 # Hoechstlaengen: Das Schreiben hat genau eine Seite.
 LAENGEN = {"titel": 60, "einleitung": 500, "zahlungstext": 300, "hinweis": 600,
-           "schlusstext": 500, "fusszeile": 400, "mail_betreff": 200, "mail_text": 3000}
+           "schlusstext": 500, "fusszeile": 400, "angaben_titel": 80, "angaben_text": 400,
+           "mail_betreff": 200, "mail_text": 3000}
 
 
 # Anordnung: feste Wahlmoeglichkeiten statt freier Koordinaten — so koennen
@@ -274,7 +283,8 @@ LAENGEN = {"titel": 60, "einleitung": 500, "zahlungstext": 300, "hinweis": 600,
 # brauchbare Seite. Die Vorgaben ergeben genau das bisherige Bild.
 AUSRICHTUNGEN = {"links": "links", "mitte": "mittig", "rechts": "rechts"}
 BLOECKE = {"betraege": "Einleitung und Beträge", "zahlung": "Zahlungssatz und Bankverbindung",
-           "hinweis": "Hinweis im Kasten", "schluss": "Schlusstext"}
+           "hinweis": "Hinweis im Kasten", "schluss": "Schlusstext",
+           "angaben": "Angaben für die Rechnung (Felder zum Ausfüllen)"}
 LAYOUT_VORGABE = {
     "logo_position": "rechts", "logo_breite": 60, "logo_hoehe": 22, "logo_oben": 12,
     "kopf_position": "links",
@@ -287,11 +297,15 @@ LAYOUT_VORGABE = {
     "fuss_ausrichtung": "mitte", "fuss_groesse": 7.5,
     "reihe_betraege": 1, "reihe_zahlung": 2, "reihe_hinweis": 3, "reihe_schluss": 4,
     "abstand_betraege": 2, "abstand_zahlung": 5, "abstand_hinweis": 6, "abstand_schluss": 6,
+    # Die Angaben kamen spaeter dazu: zuletzt, wie ein Rueckantwortteil. So
+    # bleibt eine gespeicherte Reihenfolge 1 bis 4 gueltig.
+    "angaben_zeigen": "ja", "reihe_angaben": 5, "abstand_angaben": 6,
 }
 # Je Schluessel: erlaubte Werte oder (kleinster, groesster Wert, Bezeichnung).
 LAYOUT_REGELN: dict = {
     "logo_position": AUSRICHTUNGEN, "kopf_position": AUSRICHTUNGEN,
     "anschrift_seite": {"links": "links", "rechts": "rechts"},
+    "angaben_zeigen": {"ja": "ja", "nein": "nein"},
     "logo_breite": (15, 90, "Logo, größte Breite (mm)"),
     "logo_hoehe": (8, 45, "Logo, größte Höhe (mm)"),
     "logo_oben": (5, 40, "Logo, Abstand von oben (mm)"),
@@ -305,7 +319,7 @@ for _feld, _name in (("einleitung", "Einleitung"), ("zahlungstext", "Zahlungssat
                      ("hinweis", "Hinweis"), ("schlusstext", "Schlusstext")):
     LAYOUT_REGELN[f"{_feld}_groesse"] = (7, 14, f"{_name}, Schriftgröße")
 for _block, _name in BLOECKE.items():
-    LAYOUT_REGELN[f"reihe_{_block}"] = (1, 4, f"{_name}, Reihenfolge")
+    LAYOUT_REGELN[f"reihe_{_block}"] = (1, len(BLOECKE), f"{_name}, Reihenfolge")
     LAYOUT_REGELN[f"abstand_{_block}"] = (0, 40, f"{_name}, Abstand davor (mm)")
 # Nummernkreis: Muster mit {jahr} und {nr}, Stellen der laufenden Nummer, und
 # ob jedes Jahr wieder bei 1 begonnen wird. Der Zaehler selbst steht in der
@@ -403,6 +417,8 @@ def vorlage_pruefen(werte: dict) -> dict:
     for feld, name in (("titel", "Titel"), ("einleitung", "Einleitung"),
                        ("zahlungstext", "Zahlungssatz"), ("hinweis", "Hinweis"),
                        ("schlusstext", "Schlusstext"), ("fusszeile", "Fußzeile"),
+                       ("angaben_titel", "Überschrift der Angaben"),
+                       ("angaben_text", "Text über den Angaben"),
                        ("mail_betreff", "Betreff der Mail"), ("mail_text", "Text der Mail")):
         text = str(werte.get(feld) or "").replace("\r\n", "\n").strip()
         if feld == "mail_betreff":
@@ -430,8 +446,8 @@ def vorlage_pruefen(werte: dict) -> dict:
     aus.update(nk)
     fehler += nk_fehler
     reihen = [aus.get(f"reihe_{b}") for b in BLOECKE]
-    if None not in reihen and sorted(reihen) != [1, 2, 3, 4]:
-        fehler.append("Reihenfolge: Jede Zahl von 1 bis 4 genau einmal vergeben.")
+    if None not in reihen and sorted(reihen) != list(range(1, len(BLOECKE) + 1)):
+        fehler.append(f"Reihenfolge: Jede Zahl von 1 bis {len(BLOECKE)} genau einmal vergeben.")
     if "keine rechnung" not in aus["hinweis"].lower():
         fehler.append("Der Hinweis muss sagen, dass das Schreiben keine Rechnung ist "
                       "(„keine Rechnung“). Sonst kann es als Rechnung gelten.")
@@ -658,16 +674,73 @@ def pdf(cfg: dict, eingabe: dict, k: dict, h: dict, heute: date | None = None,
         absatz(v.get("schlusstext") or "", v["schlusstext_ausrichtung"],
                float(v["schlusstext_groesse"]))
 
-    teile = {"betraege": betraege, "zahlung": zahlung, "hinweis": hinweis, "schluss": schluss}
+    def angaben() -> None:
+        nonlocal y
+        if v["angaben_zeigen"] != "ja":
+            return
+        titel = fuellen(v.get("angaben_titel") or "", werte).strip()
+        if titel:
+            s.linie(LINKS, y - 4.5, RECHTS, y - 4.5, grau=0.75)
+            s.text(LINKS, y + 0.5, t(titel), 10.5, fett=True)
+            y += 5
+        absatz(v.get("angaben_text") or "", "links", 8.5, abstand=2)
+        luecke = 4.0
+        for zeile in angaben_felder(eingabe, k):
+            frei = breite - luecke * (len(zeile) - 1)
+            x = LINKS
+            hoehe = max(f["hoehe"] for f in zeile)
+            for f in zeile:
+                b_ = frei * f["anteil"]
+                s.text(x, y, t(f["beschriftung"]), 7, grau=0.35)
+                s.feld(f["name"], x, y + 1, b_, f["hoehe"], t(f["wert"]), groesse=9,
+                       mehrzeilig=f["hoehe"] > 8)
+                x += b_ + luecke
+            y += 1 + hoehe + 3.8
+
+    teile = {"betraege": betraege, "zahlung": zahlung, "hinweis": hinweis, "schluss": schluss,
+             "angaben": angaben}
     for block in sorted(BLOECKE, key=lambda b_: int(v[f"reihe_{b_}"])):
+        if block == "angaben" and v["angaben_zeigen"] != "ja":
+            continue
         y += float(v[f"abstand_{block}"])
         teile[block]()
 
     if y > grenze:
         raise ZuLang("Der Inhalt passt nicht auf eine Seite. Bitte Texte, Schriftgrößen oder "
-                     "Abstände verkleinern.")
+                     "Abstände verkleinern"
+                     + (" oder die Angaben für die Rechnung abschalten (Vorlage anpassen)."
+                        if v["angaben_zeigen"] == "ja" else "."))
     return s.pdf(titel=t(f"{fuellen(v['titel'], werte)} {eingabe['nummer']}"),
                  autor=t(h.get("suppliername") or ""), komprimieren=komprimieren)
+
+
+# Profiltypen, deren Name eine Firmierung ist. Gruppen und Quellen tragen
+# Kuerzel oder Veranstaltungsnamen; dort bleibt das Feld leer.
+FIRMIERUNG_TYPEN = ("COMPANY", "TRAVEL_AGENT")
+
+
+def angaben_felder(eingabe: dict, k: dict) -> list[list[dict]]:
+    """Die Felder, die der Kunde ausfuellt, Zeile fuer Zeile. Vorbelegt ist
+    nur, was wir sicher wissen: die Firmierung am Firmenprofil und die
+    Referenz, die bei der Anforderung eingetragen wurde. Was der Kunde
+    zurueckmeldet, gehoert danach in OPERA: Firmierung und Mailadresse an das
+    Profil, die Referenz vor dem Check-out in das Reservierungsfeld fuer die
+    Kaeuferreferenz (BT-10)."""
+    firma = k.get("legal_company") or (
+        k.get("name") if str(k.get("name_type") or "").upper() in FIRMIERUNG_TYPEN else "")
+    return [
+        [{"name": "firmierung", "anteil": 0.64, "hoehe": 6.0, "wert": firma or "",
+          "beschriftung": "Rechnungsempfänger: exakte Firmierung, wie im Handelsregister"},
+         {"name": "ust_id", "anteil": 0.36, "hoehe": 6.0, "wert": "",
+          "beschriftung": "USt-IdNr."}],
+        [{"name": "email", "anteil": 0.5, "hoehe": 6.0, "wert": "",
+          "beschriftung": "E-Mail-Adresse für die Rechnung, etwa Ihrer Buchhaltung"},
+         {"name": "referenz", "anteil": 0.5, "hoehe": 6.0, "wert": eingabe.get("referenz") or "",
+          "beschriftung": "Ihre Bestell- oder Referenznummer (bei Behörden: Leitweg-ID)"}],
+        [{"name": "hinweise", "anteil": 1.0, "hoehe": 9.0, "wert": "",
+          "beschriftung": "Sonstige Hinweise für unsere Buchhaltung, etwa abweichende "
+                          "Rechnungsanschrift, Kostenstelle oder Ansprechpartner"}],
+    ]
 
 
 def verwendungszweck(eingabe: dict, k: dict) -> str:
@@ -1026,7 +1099,8 @@ def versenden(cfg: dict, form: dict, name_id: int, benutzer: str,
 
 
 # ------------------------------------------------------------------ Muster
-MUSTER_KUNDE = {"name": "Muster & Söhne AG", "legal_company": None, "address1": "Hauptstraße 1",
+MUSTER_KUNDE = {"name": "Muster & Söhne AG", "name_type": "COMPANY", "legal_company": None,
+                "address1": "Hauptstraße 1",
                 "address2": None, "zip_code": "80331", "city": "München", "country": "DE",
                 "debitorennummer": "4711"}
 MUSTER_EINGABE = {"brutto_7": "12.450,00", "brutto_19": "3.980,50",

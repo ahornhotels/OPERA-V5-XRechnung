@@ -633,6 +633,28 @@ Rechnung.
 - Unten der Satz: „Dies ist keine Rechnung. Die Umsatzsteuer wird hier nicht
   ausgewiesen. Nach Zahlungseingang erhalten Sie eine Anzahlungsrechnung mit
   ausgewiesener Umsatzsteuer; sie wird mit der späteren Rechnung verrechnet.“
+- Darunter **„Angaben für Ihre Rechnung“**: Felder, die der Kunde direkt im PDF
+  ausfüllt (Acrobat, Vorschau auf dem Mac) oder ausgedruckt von Hand.
+  - Exakte Firmierung, wie im Handelsregister. Vorbelegt mit der Firmierung am
+    Firmenprofil, damit der Kunde sie nur prüft.
+  - USt-IdNr.
+  - E-Mail-Adresse für die Rechnung, etwa die seiner Buchhaltung.
+  - Bestell- oder Referenznummer, bei Behörden die Leitweg-ID. Vorbelegt mit
+    „Ihre Referenz“, falls eingetragen.
+  - Sonstige Hinweise für die Buchhaltung, etwa abweichende Rechnungsanschrift
+    oder Kostenstelle.
+
+  Der Kunde schickt das ausgefüllte PDF zurück oder antwortet auf die Mail.
+  **Die Anwendung liest die Antwort nicht ein** und schreibt nichts in OPERA.
+  Was zurückkommt, gehört von Hand nach OPERA, und zwar **vor der Buchung der
+  Anzahlung**, denn der Anzahlungsbeleg lautet auf das Profil, das dann am Folio
+  steht:
+  - Firmierung, USt-IdNr. und Mailadresse an das Firmenprofil
+  - die Referenz in das Reservierungsfeld für die Käuferreferenz („XRechnung“),
+    vor dem Check-out
+  - Hinweise je nach Inhalt
+
+  Abschalten lässt sich der Abschnitt unter „Vorlage anpassen“.
 
 **Logo, Texte, Anordnung und Nummernkreis anpassen** (nur Verwalter): auf der Seite oben
 **„Vorlage anpassen“**.
@@ -640,14 +662,19 @@ Rechnung.
   oben, höchstens 60 × 22 mm.
 - **Texte:** Titel, Einleitung vor den Beträgen, Satz vor der Bankverbindung, Hinweis
   im Kasten, Schlusstext (etwa die Grußformel), weitere Zeilen der Fußzeile (etwa
-  Handelsregister und Geschäftsführung), dazu Betreff und Text der Mail.
+  Handelsregister und Geschäftsführung), Überschrift und Text der „Angaben für Ihre
+  Rechnung“, dazu Betreff und Text der Mail.
+- **Angaben für Ihre Rechnung:** ein- oder ausschalten. Die Felder selbst sind fest.
+  Eine vor diesem Stand gespeicherte Vorlage behält ihren Mailtext; der Satz, der auf
+  die Angaben hinweist, steht nur in der Vorgabe und gehört dort von Hand ergänzt.
 - **Anordnung:**
   - Logo links, mittig oder rechts oben, mit Größe und Abstand.
   - Hausname links, mittig oder rechts; auf der Seite des Logos rückt er darunter.
   - Anschrift links oder rechts, Nummer und Datum auf der anderen Seite, mit Abstand von
     oben, etwa passend zum Fenster im Umschlag.
   - Je Textbaustein Ausrichtung und Schriftgröße.
-  - Reihenfolge und Abstand der Blöcke Beträge, Bankverbindung, Hinweis und Schlusstext.
+  - Reihenfolge und Abstand der Blöcke Beträge, Bankverbindung, Hinweis, Schlusstext und
+    Angaben für die Rechnung (Vorgabe: zuletzt, wie ein Rückantwortteil).
 - **Nummernkreis:** Muster mit `{jahr}` und `{nr}`, Stellen der laufenden Nummer, jedes
   Jahr neu oder fortlaufend, nächste Nummer.
 - **Platzhalter** in geschweiften Klammern setzen Werte ein: `{nummer}`, `{datum}`,

@@ -16,6 +16,12 @@ Bilder: JPEG wird unveraendert eingebettet. PNG wird entpackt und neu
 gepackt, damit auch Transparenz (Alphakanal, transparente Palettenfarbe)
 stimmt: 8 Bit je Kanal, Graustufen, RGB oder Palette, ohne Interlacing.
 
+Formularfelder: Textfelder, die der Empfaenger in einem PDF-Programm
+ausfuellen kann (AcroForm). Jedes Feld bringt sein Erscheinungsbild selbst
+mit, damit ein vorbelegter Wert auch dort zu sehen ist, wo ein Betrachter
+Felder nicht selbst zeichnet. Der Rahmen steht im Seiteninhalt: Ausgedruckt
+bleibt so ein Kasten zum Ausfuellen von Hand.
+
 Koordinaten in Millimetern, gemessen von der linken OBEREN Ecke; bei Text ist
 y die Grundlinie."""
 from __future__ import annotations
@@ -240,6 +246,7 @@ class Seite:
     def __init__(self) -> None:
         self._inhalt: list[bytes] = []
         self._bilder: list[dict] = []
+        self._felder: list[dict] = []
 
     def _y(self, y_mm: float) -> float:
         return (HOEHE_MM - y_mm) * MM
@@ -266,6 +273,26 @@ class Seite:
         """Gefuelltes Rechteck, (x, y) ist die linke obere Ecke."""
         self._inhalt.append(b"%.3f %.3f %.3f rg %.2f %.2f %.2f %.2f re f 0 g" % (
             *rgb, x * MM, self._y(y + h), b * MM, h * MM))
+
+    def rahmen(self, x: float, y: float, b: float, h: float, grau: float = 0.6,
+               staerke: float = 0.25) -> None:
+        """Rechteck ohne Fuellung, (x, y) ist die linke obere Ecke."""
+        self._inhalt.append(b"%.3f G %.2f w %.2f %.2f %.2f %.2f re S" % (
+            grau, staerke * MM, x * MM, self._y(y + h), b * MM, h * MM))
+
+    def feld(self, name: str, x: float, y: float, b: float, h: float, wert: str = "",
+             groesse: float = 9, mehrzeilig: bool = False) -> None:
+        """Ein ausfuellbares Textfeld mit Rahmen; (x, y) ist die linke obere
+        Ecke. name ist der technische Feldname (nur Buchstaben, Ziffern, _)
+        und muss auf der Seite eindeutig sein."""
+        if not name or not all(z.isascii() and (z.isalnum() or z == "_") for z in name):
+            raise ValueError(f"Feldname {name!r}: nur Buchstaben, Ziffern und _.")
+        if any(f["name"] == name for f in self._felder):
+            raise ValueError(f"Feldname {name!r} gibt es schon.")
+        self.rahmen(x, y, b, h)
+        self._felder.append({"name": name, "x": x, "y": y, "b": b, "h": h,
+                             "wert": str(wert or ""), "groesse": groesse,
+                             "mehrzeilig": mehrzeilig})
 
     def bild(self, bild: dict, x: float, y: float, b: float, h: float) -> None:
         """Ein mit bild_lesen vorbereitetes Bild; (x, y) ist die linke obere Ecke."""
@@ -308,11 +335,42 @@ class Seite:
         else:
             inhalt_nr = neu(strom(inhalt))
         xobj = b" ".join(b"/Im%d %d 0 R" % (k + 1, nr) for k, nr in enumerate(bilder))
-        seite = neu(b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %.2f %.2f] "
-                    b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >>%s >> /Contents %d 0 R >>"
-                    % (seiten, BREITE_MM * MM, HOEHE_MM * MM, f1, f2,
-                       (b" /XObject << " + xobj + b" >>") if bilder else b"", inhalt_nr))
-        objekte[katalog - 1] = b"<< /Type /Catalog /Pages %d 0 R >>" % seiten
+        seite = len(objekte) + 1 + 2 * len(self._felder)   # nach den Feldern
+        felder = []
+        for f in self._felder:
+            bb, hh = f["b"] * MM, f["h"] * MM
+            g = f["groesse"]
+            # Erscheinungsbild: der vorbelegte Wert, eine Zeile, linksbuendig.
+            # Mehrzeilige Felder beginnen oben, einzeilige stehen mittig.
+            grund = hh - g * 1.15 if f["mehrzeilig"] else (hh - g * 0.72) / 2
+            text = b""
+            if f["wert"]:
+                text = (b"BT /F1 %.2f Tf 0 g 2 %.2f Td " % (g, grund)
+                        + _pdf_string(f["wert"]) + b" Tj ET")
+            bild_ = neu(strom(b"/Tx BMC q 1 1 %.2f %.2f re W n " % (bb - 2, hh - 2) + text
+                              + b" Q EMC",
+                              b"/Type /XObject /Subtype /Form /BBox [0 0 %.2f %.2f] "
+                              b"/Resources << /Font << /F1 %d 0 R >> >>" % (bb, hh, f1)))
+            x0, y0 = f["x"] * MM, self._y(f["y"] + f["h"])
+            felder.append(neu(
+                b"<< /Type /Annot /Subtype /Widget /FT /Tx /T " + _pdf_string(f["name"])
+                + b" /Rect [%.2f %.2f %.2f %.2f] /F 4 /P %d 0 R /Ff %d /DA (/F1 %.2f Tf 0 g)"
+                % (x0, y0, x0 + bb, y0 + hh, seite, 4096 if f["mehrzeilig"] else 0, g)
+                + (b" /V " + _pdf_string(f["wert"]) if f["wert"] else b"")
+                + b" /BS << /W 0 >> /MK << >> /AP << /N %d 0 R >> >>" % bild_))
+        annots = (b" /Annots [" + b" ".join(b"%d 0 R" % n for n in felder) + b"]"
+                  if felder else b"")
+        nr_seite = neu(b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 %.2f %.2f] "
+                   b"/Resources << /Font << /F1 %d 0 R /F2 %d 0 R >>%s >> /Contents %d 0 R%s >>"
+                   % (seiten, BREITE_MM * MM, HOEHE_MM * MM, f1, f2,
+                      (b" /XObject << " + xobj + b" >>") if bilder else b"", inhalt_nr,
+                      annots))
+        if nr_seite != seite:   # die Felder verweisen vorab auf diese Nummer
+            raise RuntimeError("PDF: Seitenobjekt an unerwarteter Stelle.")
+        formular = (b" /AcroForm << /Fields [" + b" ".join(b"%d 0 R" % n for n in felder)
+                    + b"] /DA (/F1 9 Tf 0 g) /DR << /Font << /F1 %d 0 R >> >> >>" % f1
+                    if felder else b"")
+        objekte[katalog - 1] = b"<< /Type /Catalog /Pages %d 0 R%s >>" % (seiten, formular)
         objekte[seiten - 1] = b"<< /Type /Pages /Kids [%d 0 R] /Count 1 >>" % seite
         info = neu(b"<< /Title " + _pdf_string(titel) + b" /Author " + _pdf_string(autor)
                    + b" /Producer (OPERA XRechnung) >>")

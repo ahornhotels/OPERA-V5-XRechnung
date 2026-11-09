@@ -61,6 +61,10 @@ AUSGELASSEN = {
     # Inhaltssuche unten nicht (OHNE_INHALT), deshalb muss der Ordner hier
     # stehen. Ausdruecklich nicht oeffentlich (03.11.2026).
     "docs/steuerberatung/": "Unterlagen fuer die steuerliche Beratung",
+    # Leitfaden fuer die Buchhaltung des Hauses, mit echten Betraegen und
+    # offenen Fragen an die Steuerberatung. Wie oben: ganzer Ordner, weil
+    # die Inhaltssuche das PDF nicht prueft.
+    "docs/buchhaltung/": "Leitfaden fuer die Buchhaltung des Hauses",
 }
 
 # Bloecke in gemeinsamen Dateien, die nur privat sind: von der Zeile mit der

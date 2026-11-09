@@ -73,6 +73,20 @@ unberührt.</p>
       <textarea name="fusszeile" rows="2" maxlength="{{ laengen.fusszeile }}">{{ werte.fusszeile }}</textarea></label>
     <p class="klein">Darüber stehen immer Firmierung mit USt-IdNr., Anschrift und Kontakt
     des Hauses.</p>
+    <h3>Angaben für die Rechnung</h3>
+    <p class="klein">Ein Teil zum Ausfüllen: Firmierung, abweichende Anschrift,
+    E-Mail-Adresse für die Rechnung, USt-IdNr., Bestell- oder Referenznummer (bei Behörden
+    die Leitweg-ID) und Hinweise für die Buchhaltung. Der Kunde füllt die Felder im PDF aus
+    oder antwortet per Mail; die Angaben gehören danach in OPERA.</p>
+    <table class="auswahl anordnung">
+      <tr><td>Im Schreiben zeigen</td>
+          <td><select name="angaben_zeigen"><option value="ja" {{ 'selected' if werte.angaben_zeigen == 'ja' }}>ja</option>
+              <option value="nein" {{ 'selected' if werte.angaben_zeigen == 'nein' }}>nein</option></select></td></tr>
+    </table>
+    <label>Überschrift
+      <input name="angaben_titel" value="{{ werte.angaben_titel }}" maxlength="{{ laengen.angaben_titel }}"></label>
+    <label>Text über den Feldern
+      <textarea name="angaben_text" rows="3" maxlength="{{ laengen.angaben_text }}">{{ werte.angaben_text }}</textarea></label>
     <h3>Nummernkreis</h3>
     <label>Muster — {jahr} wird das Jahr, {nr} die laufende Nummer
       <input name="nk_muster" value="{{ werte.nk_muster }}" maxlength="40" required></label>

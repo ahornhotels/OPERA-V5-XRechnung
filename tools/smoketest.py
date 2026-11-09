@@ -75,6 +75,11 @@ pruefe(oeff["mail"]["passwort"] in ("", "gesetzt"), "Passwoerter erscheinen nie 
 # Installationsskripts setzt.
 if hasattr(_os, "geteuid"):
     config._key()          # legt an oder zieht die Rechte nach
+    # Reihenfolge wie beim Start der Anwendung (main.py): erst die Datenbank,
+    # dann die Zugaenge. Ohne users.json - ein frischer Checkout - legt
+    # benutzer_laden den admin an und beendet dabei dessen Sitzungen; ohne
+    # Schema brach der Test dort mit "no such table: sitzungen" ab.
+    store.init()
     auth.benutzer_laden()
     for _datei in (config.KEY_FILE, auth.USER_DATEI):
         _rechte = _stat.S_IMODE(_datei.stat().st_mode)
@@ -5903,6 +5908,41 @@ for _wort in ("Zahlungsanforderung", "ZA-31-001", "04.05.2031", "18.05.2031", "1
     pruefe(_wort in _zt, f"im PDF steht: {_wort}")
 pruefe("Rechnungsnummer" not in _zt and "Steuerbetrag" not in _zt,
        "das PDF nennt sich nirgends Rechnung und weist keinen Steuerbetrag aus")
+# Angaben fuer die Rechnung: Felder zum Ausfuellen (AcroForm)
+pruefe(b"/AcroForm" in _zp and all(b"/T (%s)" % n in _zp for n in
+       (b"firmierung", b"ust_id", b"email", b"referenz", b"hinweise"))
+       and "Angaben für Ihre Rechnung" in _zt and "Leitweg-ID" in _zt,
+       "Angaben fuer die Rechnung: fuenf ausfuellbare Felder, Leitweg-ID genannt")
+pruefe(b"/T (referenz)" in _zp and b"/V (PO 99)" in _zp and b"/V (Muster" not in _zp,
+       "vorbelegt: die eingetragene Referenz; kein Firmenname ohne Firmenprofil")
+_zpf = _za.pdf(_zcfg, _ze, dict(_zk, name_type="COMPANY"), _zh, heute=_heute, komprimieren=False)
+pruefe(b"/V (Muster & S\xf6hne AG)" in _zpf,
+       "Firmenprofil: die Firmierung ist vorbelegt, zum Pruefen durch den Kunden")
+pruefe(b"/V (Muster Holding GmbH)" in _za.pdf(
+           _zcfg, _ze, dict(_zk, name_type="D", legal_company="Muster Holding GmbH"), _zh,
+           heute=_heute, komprimieren=False),
+       "eine gepflegte Firmierung (LEGAL_COMPANY) geht vor dem Namen")
+_zpn = _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute, komprimieren=False,
+               vorlage=dict(_za.VORLAGE_VORGABE, angaben_zeigen="nein"))
+pruefe(b"/AcroForm" not in _zpn and b"/Annots" not in _zpn
+       and "Angaben für Ihre Rechnung" not in _zpn.decode("latin-1"),
+       "Angaben abgeschaltet: keine Felder, kein Abschnitt")
+try:
+    _za.pdf(_zcfg, _ze, _zk, _zh, heute=_heute,
+            vorlage=dict(_za.VORLAGE_VORGABE, abstand_angaben=40, schlusstext="Gruß\n" * 6))
+    pruefe(False, "passen die Angaben nicht mehr, wird es gemeldet")
+except _za.ZuLang as _e:
+    pruefe("Angaben für die Rechnung abschalten" in str(_e),
+           "passen die Angaben nicht mehr, nennt die Meldung den Ausweg")
+# Die Vorgabe mit voller Belegung muss auf eine Seite passen: Leistungszeitraum,
+# Referenz, Kundennummer, zweizeiliger Gruss, eine weitere Fusszeile.
+try:
+    _za.pdf(_zcfg, _ze, dict(_zk, name_type="COMPANY"), _zh, heute=_heute,
+            vorlage=dict(_za.VORLAGE_VORGABE, schlusstext="Mit freundlichen Grüßen\nIhr Team",
+                         fusszeile="Amtsgericht Charlottenburg HRB 12345 · Geschäftsführung: E. Muster"))
+    pruefe(True, "Vorgabe mit Angaben und voller Belegung passt auf eine Seite")
+except _za.ZuLang:
+    pruefe(False, "Vorgabe mit Angaben und voller Belegung passt auf eine Seite")
 for _bad, _wort in (({"brutto_7": ""}, "kein Betrag"), ({"grund": " "}, "Grund"),
                     ({"faellig": "2031-05-01"}, "Vergangenheit"), ({"von": "2031-06-01"}, "beide Daten")):
     _eing = dict({"nummer": "ZA-9", "brutto_7": "10", "grund": "x", "faellig": "2031-05-18"}, **_bad)
@@ -5985,6 +6025,25 @@ _roh = _seite.pdf(titel="T", komprimieren=False)
 pruefe(_roh.startswith(b"%PDF-1.4") and _roh.endswith(b"%%EOF\n") and b"/SMask" in _roh
        and b"(Klammer \\(auf\\) und \\\\ R\xfcckstrich)" in _roh,
        "PDF: Klammern und Rueckstrich maskiert, Umlaut in WinAnsi, Logo mit Maske")
+_fs = _pe.Seite()
+_fs.text(20, 20, "Formular", 10)
+_fs.feld("eins", 20, 30, 80, 6, "Vorbelegt (mit Klammer)")
+_fs.feld("zwei", 20, 40, 80, 12, mehrzeilig=True)
+for _name in ("eins", "mit leer", "ä"):
+    try:
+        _fs.feld(_name, 20, 60, 10, 6)
+        pruefe(False, f"Feldname {_name!r} wird abgelehnt")
+    except ValueError:
+        pruefe(True, f"Feldname {_name!r} wird abgelehnt (doppelt oder unzulaessig)")
+_fr = _fs.pdf(komprimieren=False)
+_fx = int(_fr.rsplit(b"startxref\n", 1)[1].split(b"\n")[0])
+_fst = [int(z[:10]) for z in _fr[_fx:].split(b"\n")[3:] if len(z) >= 18 and z[:10].isdigit()]
+_fseite = [n + 1 for n, st in enumerate(_fst) if _fr[st:].split(b"endobj")[0].count(b"/Type /Page ")]
+pruefe(_fst and all(_fr[st:].startswith(b"%d 0 obj" % (n + 1)) for n, st in enumerate(_fst))
+       and len(_fseite) == 1 and _fr.count(b"/P %d 0 R" % _fseite[0]) == 2
+       and b"/Ff 4096" in _fr and b"/V (Vorbelegt \\(mit Klammer\\))" in _fr
+       and b"/AcroForm << /Fields [" in _fr and b"/Annots [" in _fr,
+       "PDF mit Feldern: Objekttabelle stimmt, Felder zeigen auf ihre Seite, Wert maskiert")
 _xref = int(_roh.rsplit(b"startxref\n", 1)[1].split(b"\n")[0])
 pruefe(_roh[_xref:_xref + 4] == b"xref", "PDF: der Verweis auf die Objekttabelle stimmt")
 _stellen = [int(z[:10]) for z in _roh[_xref:].split(b"\n")[3:] if len(z) >= 18 and z[:10].isdigit()]
@@ -5998,7 +6057,9 @@ pruefe(_za.vorlage_pruefen(_za.VORLAGE_VORGABE) == _za.VORLAGE_VORGABE
 for _aend, _wort in (({"logo_breite": "200"}, "zwischen 15 und 90"),
                      ({"logo_position": "unten"}, "nicht möglich"),
                      ({"titel_groesse": "gross"}, "keine Zahl"),
-                     ({"reihe_hinweis": "1"}, "genau einmal")):
+                     ({"reihe_hinweis": "1"}, "genau einmal"),
+                     ({"reihe_angaben": "4"}, "von 1 bis 5"),
+                     ({"angaben_zeigen": "vielleicht"}, "nicht möglich")):
     try:
         _za.vorlage_pruefen(dict(_za.VORLAGE_VORGABE, **_aend))
         pruefe(False, f"Anordnung {_aend}: wird abgelehnt")
