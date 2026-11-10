@@ -103,6 +103,53 @@ ist trotzdem sofort benutzbar, der Installer läuft weiter.
 > Ordner. Ein erneuter Lauf des Installers setzt die Rechte wieder so — für den,
 > der ihn startet.
 
+### Mehrere Häuser auf einem Rechner (Multiproperty)
+
+Eine Installation gehört zu **genau einem Hotelcode**: dem Eintrag
+„Hotelcode (Resort)“ unter „Konfiguration“. Jede Abfrage grenzt auf ihn ein.
+Das gilt bei Multiproperty genauso wie bei einem einzelnen Haus, denn auch
+dort hat OPERA einen Hotelcode. Gästeprofile sind in OPERA für alle Häuser
+gemeinsam; sie werden über ihre Nummer gelesen und brauchen keinen Code.
+
+Für mehrere Häuser laufen mehrere Installationen, auf Wunsch auf demselben
+Rechner. Jede bekommt einen **eigenen Ordner**, einen **eigenen Namen** und
+einen **eigenen Port**:
+
+| Haus | Ordner | Aufruf (PowerShell als Administrator) | Oberfläche |
+|---|---|---|---|
+| erstes | `C:\XRechnung` | `install\installieren.ps1` | `http://<rechner>:8022/` |
+| zweites | `C:\XRechnung-NORD` | `install\installieren.ps1 -Instanz NORD -Port 8023` | `http://<rechner>:8023/` |
+| drittes | `C:\XRechnung-SUED` | `install\installieren.ps1 -Instanz SUED -Port 8024` | `http://<rechner>:8024/` |
+
+So geht es:
+
+1. Den Projektordner für jedes weitere Haus in einen **eigenen Ordner**
+   kopieren.
+2. Dort den Installer mit `-Instanz` und `-Port` starten. Der Dienst heißt
+   dann `OperaXRechnung-NORD`, in der Diensteverwaltung „OPERA XRechnung NORD“.
+3. In der Oberfläche dieser Installation unter „Konfiguration“ den
+   **Hotelcode** des Hauses eintragen und „Verbindung testen“. Die Meldung
+   nennt das Haus zum Code. Ist der Code unbekannt, nennt sie die Codes, die
+   es in der Datenbank gibt.
+
+Name und Port merkt sich der Installer in `config\instanz.cmd`. Ein erneuter
+Lauf, `run.cmd`, `dienst_einrichten.cmd` und `dienst_entfernen.cmd` nehmen sie
+von dort, ohne dass man sie wieder angeben muss.
+
+**Der Installer schützt die anderen Installationen.** Gehört der Dienstname
+schon einer Installation in einem anderen Ordner, oder belegt ein anderes
+Programm den Port, bricht er ab, bevor er etwas lädt oder ändert, und nennt
+den Grund. Früher hätte eine zweite Kopie mit den Vorgaben den Dienst der
+ersten stillschweigend auf sich umgelegt.
+
+Jede Installation hat ihre eigene Konfiguration, eigene Benutzer, eigene
+Daten und eine eigene Aktualisierung. Angemeldet wird man je Installation
+getrennt: Ein Browser kann an allen gleichzeitig angemeldet sein.
+
+> Unter Rocky Linux ist bisher **eine** Installation je Rechner vorgesehen
+> (Dienst `xrechnung`). Mehrere Häuser dort: je Haus ein eigener Server oder
+> eine eigene VM.
+
 ## Rocky Linux
 
 1. Kopieren Sie den Projektordner nach **`/opt/xrechnung`**

@@ -16,6 +16,7 @@ SELECT 'Gast an der Reservierung'      AS quelle,
   FROM @SCHEMA@.folio$_tax f
   JOIN @SCHEMA@.reservation_name r
     ON r.resv_name_id = f.resv_name_id
+   AND r.resort       = f.resort   -- Multiproperty, siehe invoice_header.sql
   JOIN @SCHEMA@.name_phone ph
     ON ph.name_id = r.name_id
  WHERE f.bill_no  = :bill_no

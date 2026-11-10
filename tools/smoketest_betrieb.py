@@ -509,6 +509,53 @@ pruefe(len(_eintraege) == 4 and any("web.archive.org" in u for u, _ in _eintraeg
 pruefe("$q.sha256 -and" not in ps1_text, "keine NSSM-Quelle wird ungeprueft genommen")
 
 # =========================================================================
+print("6b) Mehrere Installationen auf einem Rechner (je Hotelcode eine)")
+pruefe(re.search(r"\[string\]\$Instanz", ps1_text) is not None
+       and '"OperaXRechnung-$Instanz"' in ps1_text,
+       "Schalter -Instanz, Dienstname OperaXRechnung-<Instanz>")
+pruefe(ps1_text.count('"OperaXRechnung"') == 1 and "Get-Service -Name $Dienst" in ps1_text
+       and "Stop-Service -Name $Dienst" in ps1_text,
+       "der Dienstname steht nur noch als Vorgabe im Text, alle Zugriffe ueber $Dienst")
+_vor_laden = ps1_text.find('Titel "Python"')
+_wache = ps1_text.find("$DienstFremd -and")
+_port = ps1_text.find("$PortFremd)")
+pruefe(0 < _wache < _vor_laden and 0 < _port < _vor_laden,
+       "fremder Dienst und belegter Port brechen ab, BEVOR etwas geladen oder geaendert wird")
+pruefe("AppDirectory" in ps1_text[:_vor_laden] and "ParentProcessId" in ps1_text[:_vor_laden],
+       "Zugehoerigkeit ueber das NSSM-Arbeitsverzeichnis; beim Port zaehlt der Elternprozess (venv-Starter)")
+pruefe('$InstanzDatei' in ps1_text and '"set PORT=$Port"' in ps1_text and '"set DIENST=$Dienst"' in ps1_text,
+       "Name und Port werden in config\\instanz.cmd gemerkt")
+for _name in ("install/dienst_einrichten.cmd", "install/dienst_entfernen.cmd", "run.cmd"):
+    _c = (WURZEL / _name).read_text(encoding="utf-8")
+    _ohne_vorgabe = _c.replace("set PORT=8022", "")
+    pruefe("instanz.cmd" in _c and "8022" not in _ohne_vorgabe,
+           f"{_name}: liest config\\instanz.cmd, 8022 nur noch als Vorgabe")
+for _name in ("install/dienst_einrichten.cmd", "install/dienst_entfernen.cmd"):
+    _c = (WURZEL / _name).read_text(encoding="utf-8")
+    pruefe('sc qc %DIENST% | find /i "%CD%\\install\\nssm.exe"' in _c
+           and _c.find("sc qc") < _c.find("nssm.exe stop" if "einrichten" in _name else "install\\nssm.exe stop"),
+           f"{_name}: fasst keinen Dienst einer anderen Installation an")
+if pwsh:
+    _f = r"""
+param($pfad)
+$tokens = $null; $fehler = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($pfad, [ref]$tokens, [ref]$fehler)
+$f = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq "InDiesemOrdner" }, $true) | Select-Object -First 1
+. ([ScriptBlock]::Create($f.Extent.Text))
+$Basis = 'C:\XRechnung'
+"A " + (InDiesemOrdner '"C:\XRechnung\install\nssm.exe"')
+"B " + (InDiesemOrdner 'C:\XRechnung2\install\nssm.exe')
+"C " + (InDiesemOrdner 'c:\xrechnung\.venv\Scripts\python.exe')
+"D " + (InDiesemOrdner $null)
+"""
+    _s3 = _sandkasten / "ordner.ps1"
+    _s3.write_text(_f, encoding="utf-8")
+    _l = subprocess.run([pwsh, "-NoProfile", "-NonInteractive", "-File", str(_s3), str(ps1)],
+                        capture_output=True, text=True, timeout=60).stdout.split()
+    pruefe(_l == ["A", "True", "B", "False", "C", "True", "D", "False"],
+           f"C:\\XRechnung gilt nicht als Teil von C:\\XRechnung2, Gross/Klein egal ({_l})")
+
+# =========================================================================
 print("7) run.sh ueber programm/aktuell")
 if os.name == "nt" or not shutil.which("bash"):
     uebersprungen("ohne bash nicht pruefbar")

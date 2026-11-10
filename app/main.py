@@ -39,6 +39,16 @@ logging.basicConfig(
               logging.StreamHandler()],
 )
 log = logging.getLogger("xrechnung")
+
+# Name des Anmelde-Cookies, eigens fuer DIESE Installation. Browser trennen
+# Cookies nach Rechnername, nicht nach Port: Laufen zwei Installationen auf
+# einem Rechner (je Hotelcode eine, auf 8022 und 8023), ueberschrieb die
+# Anmeldung an der einen das Cookie der anderen, und man flog dort hinaus.
+# Abgeleitet aus dem Installationsordner - der bleibt ueber Aktualisierungen
+# gleich (im Freigabenbetrieb ist es der Bestand, nicht die Freigabe).
+import hashlib as _hashlib  # noqa: E402
+SITZUNG_COOKIE = "sitzung_" + _hashlib.sha256(
+    str(pfade.BASIS.resolve()).encode("utf-8")).hexdigest()[:10]
 seiten = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 OEFFENTLICH = {"/login", "/health", "/static", "/favicon.ico"}
@@ -112,7 +122,7 @@ async def zugang(request: Request, call_next):
     pfad = request.url.path
     if any(pfad.startswith(p) for p in OEFFENTLICH):
         return await call_next(request)
-    sitzung = auth.sitzung(request.cookies.get("sitzung"))
+    sitzung = auth.sitzung(request.cookies.get(SITZUNG_COOKIE))
     if not sitzung:
         return RedirectResponse("/login", status_code=303)
     request.state.benutzer = sitzung["benutzer"]
@@ -199,17 +209,17 @@ def login(request: Request, benutzer: str = Form(...), passwort: str = Form(...)
     if not token:
         return RedirectResponse("/login?fehler=Benutzer oder Passwort falsch", status_code=303)
     antwort = RedirectResponse("/", status_code=303)
-    antwort.set_cookie("sitzung", token, httponly=True, samesite="strict", max_age=8 * 3600)
+    antwort.set_cookie(SITZUNG_COOKIE, token, httponly=True, samesite="strict", max_age=8 * 3600)
     return antwort
 
 
 @app.get("/logout")
 def logout(request: Request):
-    token = request.cookies.get("sitzung")
+    token = request.cookies.get(SITZUNG_COOKIE)
     if token:
         auth.abmelden(token)
     antwort = RedirectResponse("/login", status_code=303)
-    antwort.delete_cookie("sitzung")
+    antwort.delete_cookie(SITZUNG_COOKIE)
     return antwort
 
 
@@ -962,7 +972,7 @@ def passwort(request: Request, alt: str = Form(...), neu: str = Form(...),
     if fehler:
         return RedirectResponse(f"/benutzer?meldung={fehler}", status_code=303)
     antwort = RedirectResponse("/login?fehler=Passwort geändert, bitte neu anmelden", status_code=303)
-    antwort.delete_cookie("sitzung")
+    antwort.delete_cookie(SITZUNG_COOKIE)
     return antwort
 
 
@@ -1277,6 +1287,29 @@ def einrichtung_leitweg_speichern(request: Request, feld: str = Form(""),
         status_code=303)
 
 
+def hotelcode_pruefen(cfg: dict) -> str:
+    """Gibt es den eingetragenen Hotelcode in dieser OPERA-Datenbank?
+
+    Jede Abfrage der Anwendung grenzt auf ihn ein. Ein falscher Code liefert
+    keine Fehlermeldung, sondern einfach keine Rechnungen - und in einer
+    Multiproperty-Datenbank mit dem Code des Nachbarhauses die Rechnungen
+    des Nachbarhauses. Deshalb sagt der Verbindungstest, welches Haus der
+    Code bezeichnet, und nennt bei einem unbekannten die vorhandenen."""
+    code = str((cfg.get("property") or {}).get("resort") or "").strip()
+    try:
+        haeuser = db.abfrage(opera._sql("resort_liste.sql", cfg), {})
+    except Exception as e:
+        return f" Hotelcode nicht geprüft: {e}"
+    namen = {str(h.get("resort") or ""): str(h.get("name") or "") for h in haeuser}
+    if code in namen:
+        andere = len(namen) - 1
+        return (f" Hotelcode {code}: {namen[code]}"
+                + (f" (in dieser Datenbank gibt es {andere} weitere)." if andere else "."))
+    liste = ", ".join(f"{k} ({v})" if v else k for k, v in namen.items())
+    return (f" ACHTUNG: Den Hotelcode „{code or 'leer'}“ gibt es in dieser OPERA-Datenbank nicht. "
+            f"Vorhanden: {liste or 'keiner'}.")
+
+
 @app.post("/konfiguration/dbtest")
 def dbtest(request: Request):
     # Baut die Datenbankverbindung ab und neu. Waehrend ein Automatiklauf sie
@@ -1296,6 +1329,7 @@ def dbtest(request: Request):
         modus = (" Ältere OPERA-Version ohne " + " und ".join(sorted(fehlt))
                  + " in FOLIO$_TAX — die Anwendung arbeitet mit Ersatz "
                  "(Firma aus der Reservierung, ohne Belegart)." if fehlt else "")
+        modus += hotelcode_pruefen(cfg)
         if befunde:
             meldung = (f"Verbindung steht ({banner}), aber {len(befunde)} Abfrage(n) passen nicht "
                        f"zu dieser OPERA-Datenbank — in diesem Punkt wird sie nicht unterstützt: "

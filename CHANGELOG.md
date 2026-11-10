@@ -13,6 +13,29 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.1.0] – 2026-11-10
+
+**Multiproperty: eine Installation je Hotelcode, mehrere auf einem Rechner**
+- Windows-Installer mit `-Instanz` und `-Port`: Jede Installation bekommt
+  einen eigenen Dienst (`OperaXRechnung-<Instanz>`) und einen eigenen Port.
+  Name und Port stehen danach in `config\instanz.cmd`. `run.cmd` und die
+  Dienst-Skripte lesen sie dort.
+- Schutz der anderen Installationen: Gehört der Dienst einem anderen Ordner
+  oder ist der Port belegt, bricht der Installer ab, bevor er etwas ändert.
+  `dienst_einrichten.cmd` und `dienst_entfernen.cmd` fassen keinen Dienst
+  einer anderen Installation an.
+- Anmelde-Cookie je Installation: Mehrere Installationen auf einem Rechner
+  melden sich nicht mehr gegenseitig ab. Nach der Aktualisierung einmal neu
+  anmelden.
+- Konfiguration: Das Feld heißt „Hotelcode (Resort)“. „Verbindung testen“
+  nennt das Haus zum Code und bei einem unbekannten Code die vorhandenen.
+- Reservierungen werden zusätzlich über den Hotelcode verknüpft, bei Gast,
+  Zimmer, Zeitraum, Reservierungsfeldern und Gast-Mailadressen. Ein Verweis
+  in ein anderes Haus ergibt „Gast unbekannt“ statt eines fremden Gastes.
+- Die Bankverbindung wird nie aus OPERA gelesen: Der Eintrag dort gilt für
+  die ganze Kette. Das bisher mitgelesene, ungenutzte Feld ist entfernt.
+- Unter Rocky Linux bleibt es bei einer Installation je Rechner.
+
 ## [1.0.1] – 2026-11-10
 
 **Korrekturen**

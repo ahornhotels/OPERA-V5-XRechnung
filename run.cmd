@@ -21,6 +21,11 @@ if not errorlevel 1 (
     call echo Freigabenbetrieb erkannt. Bestand: %%BASIS%%
 )
 
+rem Port dieser Installation, vom Installer gemerkt (mehrere Installationen
+rem auf einem Rechner, je Hotelcode eine)
+set PORT=8022
+if exist "%BASIS%\config\instanz.cmd" call "%BASIS%\config\instanz.cmd"
+
 if not exist "%BASIS%\.venv\Scripts\python.exe" (
     echo Erstelle virtuelle Umgebung...
     py -3 -m venv "%BASIS%\.venv" || python -m venv "%BASIS%\.venv" || goto :fehler
@@ -35,10 +40,10 @@ if not exist "%BASIS%\config\app.json" (
 )
 
 echo.
-echo Oberflaeche:  http://%COMPUTERNAME%:8022/
+echo Oberflaeche:  http://%COMPUTERNAME%:%PORT%/
 echo Beenden mit Strg+C
 echo.
-"%BASIS%\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8022
+"%BASIS%\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port %PORT%
 goto :ende
 
 :fehler

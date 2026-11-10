@@ -14,6 +14,7 @@ SELECT TRIM(r.@SPALTE@) AS wert
   FROM @SCHEMA@.folio$_tax f
   JOIN @SCHEMA@.reservation_name r
     ON r.resv_name_id = f.resv_name_id
+   AND r.resort       = f.resort   -- Multiproperty, siehe invoice_header.sql
  WHERE f.bill_no  = :bill_no
    AND f.resort   = :resort
    AND f.folio_no = :folio_no

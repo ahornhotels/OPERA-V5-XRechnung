@@ -7,7 +7,12 @@
 -- Nicht aus OPERA zu holen und daher in der App zu ergaenzen:
 --   duedate                (Zahlungsziel aus Config; AR$_ACCOUNT.PAYMENT_DUE_DAYS ist leer)
 --   suppliercompanyid      (USt-IdNr., BT-31 — RESORT.VAT_ID ist leer)
---   payeefinancialaccount* (IBAN/BIC, BG-17 — siehe supplier_bank_udf als Abgleich)
+--   payeefinancialaccount* (IBAN/BIC, BG-17). NICHT aus UDF_ATTRIBUTES
+--                          'BANK_DETAILS': Der Eintrag gilt fuer die ganze
+--                          Kette (Schluessel ohne Resort, nur CHAIN_CODE) und
+--                          ist Freitext - bei Multiproperty saehen alle Haeuser
+--                          dieselbe Bank (gemessen 10.11.2026). Je Installation fest
+--                          eingestellt.
 --   suppliercontactname    (BT-41, Pflicht nach BR-DE-5)
 
 SELECT f.bill_no                                              AS id,
@@ -144,11 +149,6 @@ SELECT f.bill_no                                              AS id,
        TO_CHAR(NULL)                                          AS suppliercompanyid,
        r.telephone                                            AS suppliercontacttelephone,
        r.email                                                AS suppliercontactelectronicmail,
-       (SELECT MAX(a.description)
-          FROM @SCHEMA@.udf_attributes a
-          JOIN @SCHEMA@.udf_types     u ON u.udf_type = a.udf_type
-         WHERE u.table_name = 'RESORT'
-           AND u.udf_type   = 'BANK_DETAILS')                 AS supplier_bank_udf,
        -- Erwerber (BG-7): ADDRESSEE_NAME_ID ist im Bestand nie gefuellt,
        -- massgeblich sind PAYEE_NAME_ID bzw. NAME_ID.
        NVL(f.payee_name_id, f.name_id)                        AS customer_name_id,
@@ -209,8 +209,12 @@ SELECT f.bill_no                                              AS id,
     ON adr.name_id = n.name_id AND adr.primary_yn = 'Y'
   LEFT JOIN @SCHEMA@.ar$_account ar
     ON ar.account_code = f.account_code AND ar.resort = f.resort
+  -- Auch ueber den Hotelcode: resv_name_id kommt nach OPERA-Konstruktion aus
+  -- einer gemeinsamen Sequenz, an Daten mit mehreren Haeusern belegt ist das
+  -- aber nicht (gemessen 10.11.2026 an einer Datenbank mit nur einem echten Haus).
   LEFT JOIN @SCHEMA@.reservation_name resv
     ON resv.resv_name_id = f.resv_name_id
+   AND resv.resort       = f.resort
  WHERE f.bill_no = :bill_no
    -- BILL_NO allein ist nicht eindeutig, siehe invoice_folio.sql
    AND f.folio_no = :folio_no

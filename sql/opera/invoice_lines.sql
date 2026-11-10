@@ -111,8 +111,13 @@ SELECT z.trx_no,
           FROM @SCHEMA@.financial_transactions ft
           LEFT JOIN @SCHEMA@.trx$_codes tc
             ON tc.trx_code = ft.trx_code AND tc.resort = ft.resort
+          -- Auch ueber den Hotelcode (Multiproperty): resv_name_id ist nach
+          -- OPERA-Konstruktion global, belegt ist das an Daten mit mehreren
+          -- Haeusern nicht. Ein Verweis in ein anderes Haus fuehrt so zu
+          -- "Gast unbekannt" statt zu einem fremden Gast.
           LEFT JOIN @SCHEMA@.reservation_name rn
             ON rn.resv_name_id = NVL(ft.original_resv_name_id, ft.resv_name_id)
+           AND rn.resort       = ft.resort
           LEFT JOIN @SCHEMA@.name g
             ON g.name_id = rn.name_id
          WHERE ft.bill_no      = :bill_no

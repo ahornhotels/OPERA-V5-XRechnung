@@ -12,6 +12,15 @@
 #   -OhneWinget      Python direkt von python.org statt ueber winget
 #                    (INSTALLIEREN_OHNE_WINGET.cmd setzt das)
 #   -Port 8022       abweichender Port
+#   -Instanz NORD     weitere Installation auf demselben Rechner, etwa je
+#                    Hotelcode eine: eigener Dienst OperaXRechnung-NORD.
+#                    Zusammen mit -Port und einem eigenen Ordner.
+#
+# Mehrere Installationen auf einem Rechner: jede in ihrem eigenen Ordner, mit
+# eigenem -Instanz und eigenem -Port. Name und Port merkt sich der Installer in
+# config\instanz.cmd; ein erneuter Lauf, run.cmd und die Dienst-Skripte lesen
+# sie dort. Gehoert der Dienst schon einem anderen Ordner oder ist der Port
+# belegt, bricht er ab, bevor er etwas laedt oder aendert.
 #
 # Laeuft auch dort, wo es winget nicht gibt: Windows Server 2016/2019,
 # Windows 10 LTSC, Server 2012 R2 und Windows 8.1 mit PowerShell 4. Ohne
@@ -25,7 +34,8 @@ param(
     [switch]$OhneDienst,
     [switch]$OhnePruefer,
     [switch]$OhneWinget,
-    [int]$Port = 8022
+    [int]$Port = 8022,
+    [string]$Instanz = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -245,9 +255,88 @@ function LetztesRelease($repo, $muster) {
     return $treffer
 }
 
+# ------------------------------------------------- Welche Installation ist das?
+# Vorher hiess der Dienst immer OperaXRechnung. Eine zweite Kopie in einem
+# anderen Ordner, mit denselben Vorgaben gestartet, entfernte den Dienst der
+# ersten und legte ihn auf sich selbst neu an - die erste Installation lief
+# danach still nicht mehr. Deshalb jetzt: eigener Name je Installation, und
+# kein Dienst, der einem anderen Ordner gehoert, wird angefasst.
+$InstanzDatei = Join-Path $Basis "config\instanz.cmd"
+$Gemerkt = @{}
+if (Test-Path $InstanzDatei) {
+    foreach ($eintrag in Get-Content $InstanzDatei) {
+        if ($eintrag -match '^\s*set\s+(INSTANZ|PORT)=(.*)$') { $Gemerkt[$Matches[1].ToUpper()] = $Matches[2].Trim() }
+    }
+}
+if (-not $PSBoundParameters.ContainsKey("Instanz") -and $Gemerkt["INSTANZ"]) { $Instanz = $Gemerkt["INSTANZ"] }
+if (-not $PSBoundParameters.ContainsKey("Port") -and "$($Gemerkt["PORT"])" -match '^\d+$') { $Port = [int]$Gemerkt["PORT"] }
+if ($Instanz -and $Instanz -notmatch '^[A-Za-z0-9_-]{1,20}$') {
+    Write-Host "  -Instanz darf nur Buchstaben, Ziffern, - und _ enthalten, hoechstens 20 Zeichen." -ForegroundColor Yellow
+    exit 1
+}
+$Dienst = if ($Instanz) { "OperaXRechnung-$Instanz" } else { "OperaXRechnung" }
+$Anzeigename = if ($Instanz) { "OPERA XRechnung $Instanz" } else { "OPERA XRechnung" }
+
+# Gehoert ein Pfad zu diesem Ordner? Ohne Wildcards (Ordnernamen mit [ ]) und
+# ohne Gross/Klein. Der abschliessende \ verhindert, dass C:\XRechnung als Teil
+# von C:\XRechnung2 gilt.
+function InDiesemOrdner($pfad) {
+    if (-not $pfad) { return $false }
+    return ("$pfad".IndexOf(($Basis.TrimEnd('\') + '\'), [StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+$DienstFremd = ""
+try {
+    $vorhanden = Get-CimInstance -ClassName Win32_Service -Filter "Name='$Dienst'" -ErrorAction Stop
+    if ($vorhanden) {
+        # Zu welcher Installation ein Dienst gehoert, sagt das Arbeitsverzeichnis,
+        # das NSSM in der Registry ablegt; Rueckfall ist der Pfad der nssm.exe.
+        $arbeitsordner = (Get-ItemProperty -Path ("HKLM:\SYSTEM\CurrentControlSet\Services\$Dienst\Parameters") `
+                          -Name AppDirectory -ErrorAction SilentlyContinue).AppDirectory
+        $eigen = if ($arbeitsordner) { "$arbeitsordner".TrimEnd('\') -eq $Basis.TrimEnd('\') }
+                 else { InDiesemOrdner $vorhanden.PathName }
+        if (-not $eigen) { $DienstFremd = if ($arbeitsordner) { "$arbeitsordner" } else { "$($vorhanden.PathName)" } }
+    }
+} catch { }
+if ($DienstFremd -and -not $OhneDienst) {
+    Write-Host ""
+    Write-Host "  Den Dienst '$Dienst' gibt es schon - er gehoert zu einer anderen Installation:" -ForegroundColor Yellow
+    Write-Host "    $DienstFremd" -ForegroundColor Yellow
+    Write-Host "  Fuer eine weitere Installation auf diesem Rechner einen eigenen Namen und Port angeben," -ForegroundColor Yellow
+    Write-Host "  zum Beispiel:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
+    Write-Host "  Es wurde nichts geaendert." -ForegroundColor Yellow
+    Write-Host ""; exit 1
+}
+# Belegt schon ein anderes Programm den Port? Die eigene Anwendung (erneuter
+# Lauf) zaehlt nicht. Get-NetTCPConnection gibt es ab Server 2012 / Windows 8;
+# fehlt es, bleibt die Pruefung aus.
+$PortFremd = ""
+try {
+    $lauscher = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop | Select-Object -First 1
+    if ($lauscher) {
+        # Die python.exe einer venv ist unter Windows nur ein Starter: Sie
+        # startet den eigentlichen Interpreter (etwa C:\Program Files\Python312)
+        # als Kindprozess, und DER haelt den Port. Deshalb zaehlt auch der
+        # Elternprozess - sonst hielte ein erneuter Lauf den eigenen Dienst
+        # fuer ein fremdes Programm.
+        $prozess = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($lauscher.OwningProcess)" -ErrorAction Stop
+        $eltern = if ($prozess) { Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($prozess.ParentProcessId)" -ErrorAction SilentlyContinue }
+        if ($prozess -and -not (InDiesemOrdner $prozess.ExecutablePath) -and -not (InDiesemOrdner $eltern.ExecutablePath)) {
+            $PortFremd = "$($prozess.Name) ($($prozess.ExecutablePath))"
+        }
+    }
+} catch { }
+if ($PortFremd) {
+    Write-Host ""
+    Write-Host "  Port $Port ist schon belegt: $PortFremd" -ForegroundColor Yellow
+    Write-Host "  Einen freien Port angeben, zum Beispiel:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
+    Write-Host "  Es wurde nichts geaendert." -ForegroundColor Yellow
+    Write-Host ""; exit 1
+}
+
 Write-Host ""
 Write-Host "  OPERA XRechnung - Einrichtung (Windows)" -ForegroundColor White
 Write-Host "  Zielordner: $Basis"
+Write-Host "  Dienst:     $Dienst, Port $Port"
 Write-Host ""
 Write-Host "  Folgendes ist vorgesehen. Jeder Punkt wird einzeln angesagt und muss"
 Write-Host "  bestaetigt werden - Ablehnen ueberspringt nur diesen Punkt:"
@@ -426,10 +515,10 @@ foreach ($kandidat in @("py", "python")) {
                 if (-not $innen -or -not (Test-Path (Join-Path $innen.FullName "bin\java.exe"))) {
                     throw "Im Zip liegt keine bin\java.exe"
                 }
-                $dienstJetzt = Get-Service -Name "OperaXRechnung" -ErrorAction SilentlyContinue
+                $dienstJetzt = Get-Service -Name $Dienst -ErrorAction SilentlyContinue
                 if ($dienstJetzt -and $dienstJetzt.Status -eq "Running") {
-                    Info "Dienst OperaXRechnung wird fuer den Austausch angehalten"
-                    Stop-Service -Name "OperaXRechnung" -Force
+                    Info "Dienst $Dienst wird fuer den Austausch angehalten"
+                    Stop-Service -Name $Dienst -Force
                     $angehalten = $true
                 }
                 if (Test-Path $JreOrdner) { Rename-Item $JreOrdner "jre.alt" }
@@ -446,7 +535,7 @@ foreach ($kandidat in @("py", "python")) {
                 Schlecht "Java 21 nicht eingerichtet: $($_.Exception.Message)"
             } finally {
                 Remove-Item $tmp, $neuOrdner, $altOrdner -Recurse -Force -ErrorAction SilentlyContinue
-                if ($angehalten) { Start-Service -Name "OperaXRechnung" -ErrorAction SilentlyContinue }
+                if ($angehalten) { Start-Service -Name $Dienst -ErrorAction SilentlyContinue }
             }
         }
     }
@@ -550,6 +639,16 @@ if (Test-Path $ConfDatei) {
 foreach ($ordner in @("data", "logs", "data\xml", "data\archiv")) {
     New-Item -ItemType Directory -Force -Path (Join-Path $Basis $ordner) | Out-Null
 }
+# Name und Port dieser Installation, fuer run.cmd, die Dienst-Skripte und den
+# naechsten Lauf. In config\, weil eine Aktualisierung dort nur die Vorlage
+# erneuert. Als .cmd, weil die Batch-Dateien JSON nicht lesen koennen.
+Set-Content -Path $InstanzDatei -Encoding ASCII -Value @(
+    "@rem Von install\installieren.ps1 geschrieben. Gelesen von run.cmd,",
+    "@rem install\dienst_einrichten.cmd und install\dienst_entfernen.cmd.",
+    "set INSTANZ=$Instanz",
+    "set DIENST=$Dienst",
+    "set PORT=$Port")
+Gut "Dienst $Dienst, Port $Port (config\instanz.cmd)"
 
 # ------------------------------------------------------------ 5b. Ordnerrechte
 # C:\XRechnung erbt seine Rechte von C:\. Dort duerfen "Benutzer" lesen und
@@ -621,7 +720,6 @@ if (-not (Frage)) {
 
 # ------------------------------------------------------------------ 6. Dienst
 Titel "Windows-Dienst"
-$Dienst = "OperaXRechnung"
 if ($OhneDienst) {
     Uebergangen "Windows-Dienst (-OhneDienst). Start von Hand ueber run.cmd"
 } else {
@@ -687,7 +785,7 @@ if ($OhneDienst) {
         }
     }
     if (Test-Path $nssm) {
-        Ansage "Dienst 'OperaXRechnung' einrichten und starten" "" `
+        Ansage "Dienst '$Dienst' einrichten und starten" "" `
                "die Anwendung laeuft dann im Hintergrund und startet beim Hochfahren mit"
         if (-not (Frage)) {
             Uebergangen "Windows-Dienst - Nachholen: install\dienst_einrichten.cmd als Administrator"
@@ -699,7 +797,7 @@ if ($OhneDienst) {
             $schritte = @(
                 @("install", $Dienst, $VenvPython, "-m uvicorn app.main:app --host 0.0.0.0 --port $Port"),
                 @("set", $Dienst, "AppDirectory", $Basis),
-                @("set", $Dienst, "DisplayName", "OPERA XRechnung"),
+                @("set", $Dienst, "DisplayName", $Anzeigename),
                 @("set", $Dienst, "Description", "Erzeugt XRechnungen aus OPERA und versendet sie"),
                 @("set", $Dienst, "Start", "SERVICE_AUTO_START"),
                 @("set", $Dienst, "AppStdout", (Join-Path $Basis "logs\dienst.log")),

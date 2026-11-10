@@ -1801,6 +1801,27 @@ except mailer.MailFehler as e:
 
 print("7) Oberflaeche")
 from app.main import app
+from app import main
+# Je Installation ein eigenes Anmelde-Cookie: Zwei Installationen auf einem
+# Rechner (je Hotelcode eine) melden sich sonst gegenseitig ab, Browser trennen
+# Cookies nicht nach Port.
+pruefe(main.SITZUNG_COOKIE.startswith("sitzung_") and len(main.SITZUNG_COOKIE) == 18,
+       f"Anmelde-Cookie traegt eine Kennung der Installation ({main.SITZUNG_COOKIE})")
+# Hotelcode: Der Verbindungstest sagt, welches Haus er bezeichnet, und nennt
+# bei einem unbekannten die vorhandenen (Multiproperty).
+_echt_abfrage_hc = main.db.abfrage
+main.db.abfrage = lambda sql, parameter=None: (
+    [{"resort": "NORD", "name": "Haus Nord"}, {"resort": "CRO", "name": "Zentrale"},
+     {"resort": "SUED", "name": "Haus Sued"}] if "resort_liste.sql" in sql.splitlines()[0] else [])
+try:
+    _hc_ok = main.hotelcode_pruefen({"property": {"resort": "NORD"}, "datenbank": {}})
+    _hc_falsch = main.hotelcode_pruefen({"property": {"resort": "IHRHAUS"}, "datenbank": {}})
+finally:
+    main.db.abfrage = _echt_abfrage_hc
+pruefe("Haus Nord" in _hc_ok and "2 weitere" in _hc_ok and "ACHTUNG" not in _hc_ok,
+       f"Verbindungstest nennt das Haus zum Hotelcode ({_hc_ok.strip()})")
+pruefe("ACHTUNG" in _hc_falsch and "NORD (Haus Nord)" in _hc_falsch and "SUED" in _hc_falsch,
+       f"ein unbekannter Hotelcode wird gemeldet, mit den vorhandenen ({_hc_falsch.strip()})")
 # TestClient meldet sich sonst als Host "testclient" — der Netzfilter
 # erwartet eine IP-Adresse, deshalb hier ausdruecklich 127.0.0.1.
 with TestClient(app, client=("127.0.0.1", 50000)) as klient:
@@ -1814,7 +1835,7 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
            "Symbol ohne Anmeldung abrufbar, ICO und SVG, im Kopf der Seiten verlinkt")
     antwort = klient.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"},
                           follow_redirects=False)
-    pruefe(antwort.status_code == 303 and "sitzung" in antwort.cookies, "Anmeldung setzt Sitzung")
+    pruefe(antwort.status_code == 303 and main.SITZUNG_COOKIE in antwort.cookies, "Anmeldung setzt Sitzung")
     for pfad in ("/", "/protokoll", "/konfiguration", "/benutzer", "/?status=neu",
                  "/hilfe", "/hilfe/installation"):
         seite = klient.get(pfad)
@@ -2319,7 +2340,7 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
         # Nur wer versenden darf, bestimmt, wie die Rechnung aussieht — und
         # welche Kaeuferreferenz darauf steht. Vorher durfte das jedes Konto.
         auth.anlegen("leser", "Nur-Lesen!42", "ansehen")
-        _leser = {"sitzung": auth.anmelden("leser", "Nur-Lesen!42", "127.0.0.1")}
+        _leser = {main.SITZUNG_COOKIE: auth.anmelden("leser", "Nur-Lesen!42", "127.0.0.1")}
         _a = klient.post("/rechnung/970001/positionen", data={"art": "A"},
                          cookies=_leser, follow_redirects=False)
         pruefe("Berechtigung" in _a.headers.get("location", "")
@@ -2408,7 +2429,7 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
     store.rechnung_anlegen({"bill_no": 970020, "resort": "IHRHAUS", "kunde": "Formular GmbH",
                             "total_gross": 3688.57}, 0)
     auth.anlegen("leser2", "Nur-Lesen!42", "ansehen")
-    _l2 = {"sitzung": auth.anmelden("leser2", "Nur-Lesen!42", "127.0.0.1")}
+    _l2 = {main.SITZUNG_COOKIE: auth.anmelden("leser2", "Nur-Lesen!42", "127.0.0.1")}
     try:
         # Befund 3: Die Auswahl gewinnt gegen das (leere) Freitextfeld.
         store.setzen(970020, empfaenger="a@firma.example", status="neu")

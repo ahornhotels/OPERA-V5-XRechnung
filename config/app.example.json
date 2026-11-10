@@ -58,7 +58,7 @@
     "_udf_erechnung_hinweis": "Benutzerdefiniertes Feld der Firmenkartei als E-Rechnungs-Kennzeichen. Leer lassen schaltet die Stufe ab. Was ein Eintrag BEDEUTET, sagt udf_erechnung_bedeutung: 'schliesst_aus' (Vorgabe) nimmt gekennzeichnete Karteien heraus, 'erlaubt' nimmt nur gekennzeichnete auf. Bei einem gewachsenen Karteibestand ist 'erlaubt' erst praktikabel, wenn jemand ihn gepflegt hat — sonst geht gar nichts hinaus.",
     "udf_erechnung": "",
     "udf_erechnung_bedeutung": "schliesst_aus",
-    "_resort_hinweis": "Das Resortkuerzel IHRES Hauses, so wie es in OPERA steht (Tabelle RESORT). In einer Datenbank liegen oft mehrere Properties — eine Reservierungszentrale und Demo-Mandanten gehoeren dazu und muessen ausgefiltert bleiben. Welche es gibt, zeigt sql/discovery/01_umgebung.sql."
+    "_resort_hinweis": "Der Hotelcode IHRES Hauses, so wie er in OPERA steht (Tabelle RESORT). Jede Abfrage grenzt auf ihn ein. In einer Datenbank liegen oft mehrere Properties — bei Multiproperty mehrere Haeuser, dazu eine Reservierungszentrale und Demo-Mandanten. Je Hotelcode laeuft eine eigene Installation; mehrere lassen sich auf einem Rechner betreiben (INSTALLATION.md, Mehrere Haeuser auf einem Rechner). Der Verbindungstest zeigt, welches Haus der Code bezeichnet, und nennt bei einem unbekannten die vorhandenen."
   },
   "mail": {
     "aktiv": true,
