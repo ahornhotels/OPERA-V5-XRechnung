@@ -755,8 +755,28 @@ def pruefsummen(rechnung: dict) -> list[str]:
                             "Positionen (%s) — die Gegenprobe gegen den Kopf bleibt aus",
                             sorted(kopf_saetze), sorted(doku_saetze))
             else:
+                # Aeltere OPERA fuehrt die City Tax wie eine Steuer: nicht in
+                # TOTAL_NET und in KEINEM Steuertopf, auf der Rechnung aber als
+                # Position ohne Umsatzsteuer (0 %). Gemeldet aus einem frisch
+                # eingerichteten Haus (10.11.2026): jede Rechnung mit City Tax
+                # stand mit "Steuersatz 0.00 %: Die Positionen ergeben 2.50, der
+                # Rechnungskopf in OPERA fuehrt 0.00". Die Folio-Klammer laesst
+                # genau das seit dem 06.11. zu, die Gegenprobe mit Anzahlung die
+                # durchlaufenden Posten - hier fehlte beides. Zugelassen wird es
+                # mit denselben Bedingungen wie in der Klammer: Abweichung genau
+                # diese Buchungen UND Gesamtbetrag wie in OPERA. Paid Out fuehrt
+                # der Kopf ebenfalls nicht im Topf (siehe _kopf_gegenprobe_anzahlung).
+                durchlauf = _netto_der_gruppen(roh, DURCHLAUF_GRUPPEN)
                 for satz in sorted(set(je_satz) | set(gebildet)):
                     a, b = gebildet.get(satz, Decimal(0)), _rund(je_satz.get(satz, Decimal(0)))
+                    if satz == 0 and abs(a - b) > Decimal("0.02") and (
+                            _klammer_ohne_null(rechnung, roh, rechnung.get("kontrolle") or {},
+                                               a - b, brutto)
+                            or (durchlauf and _klammer_ohne_null(
+                                rechnung, roh, rechnung.get("kontrolle") or {},
+                                a - b - durchlauf, brutto))
+                            or (durchlauf and abs(a - b - durchlauf) <= Decimal("0.02"))):
+                        continue
                     if abs(a - b) > Decimal("0.02"):
                         fehler.append(
                             f"Steuersatz {satz} %: Die Positionen ergeben {a}, der Rechnungskopf in "

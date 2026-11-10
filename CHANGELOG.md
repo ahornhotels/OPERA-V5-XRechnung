@@ -13,6 +13,16 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.0.1] – 2026-11-10
+
+**Korrekturen**
+- Ältere OPERA-Versionen führen die City Tax in keinem Steuertopf des
+  Rechnungskopfs. Die Gegenprobe je Steuersatz hielt deshalb jede Rechnung
+  mit City Tax an („Steuersatz 0.00 %: Die Positionen ergeben 2.50, der
+  Rechnungskopf in OPERA führt 0.00“). Zugelassen wird das jetzt, wenn die
+  Abweichung genau die City Tax ist und der Gesamtbetrag mit OPERA stimmt.
+- USt-IdNr., IBAN und BIC gehen ohne Leerzeichen in die XRechnung, auch
+  wenn sie in der Konfiguration in Vierergruppen stehen.
 ## [1.0.0] – 2026-11-09
 
 Erste gezählte Version. Sie entspricht dem Stand, der in einem Haus produktiv
@@ -39,5 +49,7 @@ läuft.
 - Neu: Windows ohne winget (Server 2012 R2/2016/2019, Windows 8.1,
   Windows 10 LTSC): Python kommt direkt von python.org, mit Prüfung der
   Signatur. Dazu `install\INSTALLIEREN_OHNE_WINGET.cmd`.
+- Neu: Liefert nssm.cc Fehler 503, lädt der Windows-Installer NSSM aus dem
+  Internet Archive, geprüft gegen die Prüfsumme.
 - Selbsttest ohne Datenbank, rund 1200 Prüfungen; läuft jetzt auch in einem
   frischen Checkout.

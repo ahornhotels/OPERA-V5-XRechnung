@@ -391,6 +391,27 @@ _alt_falsch = json.loads(json.dumps(_alt_opera))
 _alt_falsch["kontrolle"]["kopf_brutto"] = 3688.57 - 243.00
 pruefe(any("Folio-Klammer" in h for h in xml_build.pruefsummen(_alt_falsch)),
        "stimmt dabei das Brutto nicht, bleibt die Meldung")
+# Dasselbe gegen die Steuertoepfe des Kopfs: Dort steht die City Tax in
+# keinem Topf. Gemeldet aus einem frisch eingerichteten Haus: jede Rechnung
+# mit City Tax "Steuersatz 0.00 %: Die Positionen ergeben 2.50, der
+# Rechnungskopf in OPERA fuehrt 0.00".
+_alt_topf = json.loads(json.dumps(_alt_opera))
+_alt_topf["tax_kopf"] = [{"taxcategorypercent": 7, "taxableamount": 3094.04},
+                         {"taxcategorypercent": 19, "taxableamount": 113.40}]
+pruefe(not [h for h in xml_build.pruefsummen(_alt_topf) if h.startswith("Steuersatz")],
+       "aeltere OPERA: 0-%-Position in keinem Steuertopf, Brutto stimmt — keine Meldung "
+       f"({[h for h in xml_build.pruefsummen(_alt_topf) if h.startswith('Steuersatz')]})")
+_alt_topf_falsch = json.loads(json.dumps(_alt_topf))
+_alt_topf_falsch["kontrolle"]["kopf_brutto"] = 3688.57 - 243.00
+pruefe(any(h.startswith("Steuersatz 0") for h in xml_build.pruefsummen(_alt_topf_falsch)),
+       "stimmt dabei das Brutto nicht, meldet die Gegenprobe den 0-%-Topf weiter")
+_alt_topf_falsch = json.loads(json.dumps(rechnung))
+_alt_topf_falsch["tax_kopf"] = [{"taxcategorypercent": 7, "taxableamount": 3094.04},
+                                {"taxcategorypercent": 19, "taxableamount": 113.40},
+                                {"taxcategorypercent": 0, "taxableamount": 143.00}]
+_alt_topf_falsch["kontrolle"]["kopf_netto"] = 3350.44
+pruefe(any(h.startswith("Steuersatz 0") for h in xml_build.pruefsummen(_alt_topf_falsch)),
+       "fuehrt der Kopf im 0-%-Topf einen anderen Betrag, bleibt die Meldung")
 _alt_falsch = json.loads(json.dumps(rechnung))
 _alt_falsch["kontrolle"]["kopf_netto"] = 3450.44 - 200.00
 pruefe(any("Folio-Klammer" in h for h in xml_build.pruefsummen(_alt_falsch)),
@@ -3786,6 +3807,15 @@ try:
         pruefe((_kk["suppliercontacttelephone"], _kk["suppliercontactelectronicmail"])
                == (_soll_tel, _soll_mail),
                f"{_fall} ({_kk['suppliercontacttelephone']}, {_kk['suppliercontactelectronicmail']})")
+    # Von Hand in Vierergruppen eingetragen, wie auf dem Briefbogen
+    _cfg_k = json.loads(json.dumps(cfg))
+    _cfg_k["property"].update(ust_id="DE 123 456 789", iban="DE02 1203 0000 0000 2020 51",
+                              bic=" BYLA DEM1001 ", udf_leitweg="")
+    _kk = opera.rechnung(_cfg_k, 1)["header"]
+    pruefe((_kk["suppliercompanyid"], _kk["payeefinancialaccountid"], _kk["payeefinancialaccountbic"])
+           == ("DE123456789", "DE02120300000000202051", "BYLADEM1001"),
+           f"USt-IdNr., IBAN und BIC gehen ohne Leerzeichen in die XRechnung "
+           f"({_kk['suppliercompanyid']}, {_kk['payeefinancialaccountid']}, {_kk['payeefinancialaccountbic']})")
 finally:
     opera.db.abfrage = _echt_abfrage2
 _kx = xml_build.bauen(dict(json.loads(json.dumps(rechnung)), header=dict(

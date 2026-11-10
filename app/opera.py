@@ -1296,6 +1296,10 @@ _GUTSCHRIFT_SUMMEN = ("invoicenet", "invoicegross", "invoicetaxtotal", "prepaida
                       "payableamount", "spay_cl")
 
 
+def _ohne_leerzeichen(wert) -> str:
+    return "".join(str(wert or "").split())
+
+
 def anzahlung_abzuege(cfg: dict, anzahlungen: list[dict]) -> tuple[list[dict], str]:
     """Die verrechneten Anzahlungen als Abzug je Steuersatz — Netto und Steuer
     aus den Buckets des Anzahlungsbelegs. Gibt (Abzuege, Befund) zurueck.
@@ -1407,11 +1411,17 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
                               "anzahlung_status": anzahlung_status(cfg)})
 
     # --- Konfigurationswerte ergaenzen, die OPERA nicht fuehrt ---------------
-    kopf["suppliercompanyid"] = p["ust_id"]
+    # USt-IdNr., IBAN und BIC ohne Leerzeichen: Von Hand eingetragen stehen sie
+    # oft in Vierergruppen ("DE81 3905 ..."), wie auf dem Briefbogen. In der
+    # XRechnung gilt die elektronische Schreibweise ohne Leerzeichen; KoSIT
+    # nimmt beides, die Buchhaltung des Empfaengers gleicht aber gegen ihre
+    # Stammdaten ab, und "DE 153 229 077" ist dort eine andere Nummer als
+    # "DE153229077". Gesehen in einem frisch eingerichteten Haus (10.11.2026).
+    kopf["suppliercompanyid"] = _ohne_leerzeichen(p["ust_id"])
     kopf["suppliercontactname"] = p["kontakt_name"]
     hauskontakt(kopf, p)
-    kopf["payeefinancialaccountid"] = p["iban"]
-    kopf["payeefinancialaccountbic"] = p["bic"]
+    kopf["payeefinancialaccountid"] = _ohne_leerzeichen(p["iban"])
+    kopf["payeefinancialaccountbic"] = _ohne_leerzeichen(p["bic"])
     kopf["payeefinancialaccountname"] = p["kontoinhaber"]
 
     # Leitweg-ID aus dem benutzerdefinierten Feld der FIRMENkartei, sofern
