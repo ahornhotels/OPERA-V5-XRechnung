@@ -34,7 +34,7 @@
     <form method="post" action="/rechnung/{{ satz.bill_no }}/xml"><button>XML erzeugen</button></form>
     <a class="knopf" href="/rechnung/{{ satz.bill_no }}/xml.xml" target="_blank">XML ansehen</a>
     {% endif %}
-    {% if verwalten %}
+    {% if bearbeiten %}
     {% if satz.status in ('pruefung', 'fehler') %}
     {# Eine gewaehlte Adresse gibt nichts frei; das tut nur dieser Knopf. #}
     <form method="post" action="/rechnung/{{ satz.bill_no }}/freigeben">
@@ -65,7 +65,7 @@
   {% elif satz.status == 'fehler' and satz.fehler %}
   <p class="fehler"><strong>Fehler:</strong> {{ satz.fehler }}</p>
   {% endif %}
-  {% if versand_offen and verwalten %}
+  {% if versand_offen and bearbeiten %}
   {# Ein Versand mit offenem Ergebnis laesst sich nur von einem Menschen
      klaeren: Nur er kann im Postfach der Blindkopie nachsehen. #}
   <div class="pruefhinweis">
@@ -106,14 +106,14 @@
       <p>Die Stornorechnung {{ satz.bill_no }}-S wird aus der versendeten Fassung gebaut:
          dieselben Positionen und Beträge, als Gutschrift mit Verweis auf diese Rechnung.
          <a href="/rechnung/{{ satz.bill_no }}/storno.xml" target="_blank">Ansehen</a></p>
-        {% if verwalten %}
+        {% if bearbeiten %}
         <form method="post" action="/rechnung/{{ satz.bill_no }}/storno"
               onsubmit="return confirm('Stornorechnung {{ satz.bill_no }}-S jetzt senden? Sie hebt die Rechnung {{ satz.bill_no }} beim Kunden auf.')">
           <button>Stornorechnung senden an {{ satz.empfaenger }}</button></form>
         {% endif %}
       {% endif %}
     {% endif %}
-    {% if verwalten and not satz.nachpruefung_erledigt %}
+    {% if bearbeiten and not satz.nachpruefung_erledigt %}
     <form method="post" action="/rechnung/{{ satz.bill_no }}/nachpruefung_erledigt">
       <button>Als erledigt markieren</button></form>
     {% endif %}

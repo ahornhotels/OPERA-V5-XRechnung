@@ -152,7 +152,7 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
       {% for f in felder %}<input type="hidden" name="{{ f }}" value="{{ werte[f] or '' }}">{% endfor %}
       <button>PDF ansehen</button>
     </form>
-    {% if verwalten and not vorschau.befunde %}
+    {% if bearbeiten and not vorschau.befunde %}
     <form method="post" action="/zahlungsanforderung/senden"
           onsubmit="return confirm('Zahlungsanforderung über {{ euro(e.gesamt) }} jetzt senden?')">
       <input type="hidden" name="name_id" value="{{ kunde.name_id }}">
@@ -167,8 +167,8 @@ OPERA als Anzahlung gebucht, geht der Anzahlungsbeleg wie gewohnt als XRechnung 
       <input type="hidden" name="aktion" value="ablegen">
       <button>Nur ablegen</button>
     </form>
-    {% elif not verwalten %}
-    <p class="klein">Versenden dürfen nur Verwalter.</p>
+    {% elif not bearbeiten %}
+    <p class="klein">Versenden dürfen die Rollen „bearbeiten“ und „verwalten“.</p>
     {% endif %}
   </div>
   <p class="klein">Geändert? Oben anpassen und erneut „Prüfen“. Beim Senden wird alles noch

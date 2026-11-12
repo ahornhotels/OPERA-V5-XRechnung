@@ -120,6 +120,18 @@ def host_pruefen(cfg: dict, sekunden: float = 3.0) -> str:
                 "Webservers, oder der Port stimmt nicht — 25, 465 oder 587 sind ueblich.")
 
 
+_ISO_DATUM = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+
+
+def datum_deutsch(wert):
+    """2026-11-09 -> 09.11.2026, auch mitten im Text (" zur Rechnung 1234 vom
+    2026-10-29"). OPERA und das XML fuehren das Datum nach ISO; in Betreff und
+    Text der Mail liest der Kunde es deutsch. Alles andere bleibt unveraendert."""
+    if not isinstance(wert, str):
+        return wert
+    return _ISO_DATUM.sub(r"\3.\2.\1", wert)
+
+
 def _text(vorlage: str, werte: dict) -> str:
     """Vorlage fuellen. Scheitert das — unbekannter Platzhalter, eine
     Formatangabe wie {bill_no:05}, eine einzelne geschweifte Klammer —, bleibt
@@ -206,11 +218,14 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
     werte = {"bill_no": bill_no, "issuedate": issuedate,
              "absender_name": m.get("absender_name") or "",
              "empfaenger": an,
-             # Nur bei Gutschriften gefuellt: " zur Rechnung 1234 vom 2026-10-29"
+             # Nur bei Gutschriften gefuellt: " zur Rechnung 1234 vom 29.10.2026"
              # oder leer, wenn die berichtigte Rechnung nicht eindeutig ist.
              "bezug": bezug,
              # Weitere Platzhalter fuer eine eigene Vorlage.
              **(werte_dazu or {})}
+    # Datum in Betreff und Text deutsch (TT.MM.JJJJ), nicht ISO — die
+    # Adresse des Empfaengers bleibt, wie sie ist.
+    werte = {k: (v if k == "empfaenger" else datum_deutsch(v)) for k, v in werte.items()}
     # Eine Gutschrift bekommt eigene Vorlagen. Die Rechnungsvorlage sagte
     # "anbei erhalten Sie die Rechnung" — bei einer Gutschrift falsch, und der
     # Satz zu § 14c UStG ("keine zusaetzliche Forderung") passt dort nicht.

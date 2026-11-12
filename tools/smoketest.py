@@ -4010,9 +4010,15 @@ try:
     _gs = [e[1] for e in _smtp_protokoll if e[0] == "nachricht"]
     _gs_text = _gs[0].get_body(("plain",)).get_content() if _gs else ""
     pruefe(bool(_gs) and _gs[0]["Subject"].startswith("Gutschrift 1400095")
-           and "Gutschrift 1400095 vom 2026-10-29 zur Rechnung 1400094" in _gs_text
+           and "Gutschrift 1400095 vom 29.10.2026 zur Rechnung 1400094 vom 29.10.2026" in _gs_text
            and "Rechnung 1400095" not in _gs_text,
            f"eine Gutschrift geht mit eigener Vorlage hinaus, mit Bezug ({_gs[0]['Subject'] if _gs else '-'})")
+    pruefe(bool(_gs) and "vom 29.10.2026" in _gs[0]["Subject"] and "2026-10-29" not in _gs[0]["Subject"]
+           and "2026-10-29" not in _gs_text,
+           f"Datum in Betreff und Text der Mail deutsch, nicht ISO ({_gs[0]['Subject'] if _gs else '-'})")
+    pruefe(_mailer.datum_deutsch("2026-11-09") == "09.11.2026" and _mailer.datum_deutsch("ZA-2026-0001") == "ZA-2026-0001"
+           and _mailer.datum_deutsch(1400095) == 1400095,
+           "nur echte Datumsangaben werden umgestellt, Nummern bleiben")
 finally:
     _smtplib.SMTP, _smtplib.SMTP_SSL = _echt_smtp, _echt_smtp_ssl
 # Befund 41: PDF-Ordner relativ zur Installation.
@@ -6525,6 +6531,68 @@ with TestClient(app, client=("127.0.0.1", 50000)) as _km:
            "Mailfeld und Leitweg-Feld duerfen nicht dasselbe sein")
     _km.post("/konfiguration", data={"property.udf_mail_profil": "", "property.udf_mail_reservierung": "",
                                      "property.udf_leitweg": ""}, follow_redirects=False)
+
+print("8w) Rolle bearbeiten: versenden ja, Konfiguration nein; Rolle aendern")
+_quelle_r = (BASE / "app" / "main.py").read_text(encoding="utf-8")
+for _route in ("/aufnehmen", "/einlesen", "/automatik/jetzt", "/nachpruefen", "/rechnung/{bill_no}/senden",
+               "/rechnung/{bill_no}/freigeben", "/rechnung/{bill_no}/empfaenger", "/rechnung/{bill_no}/zuruecklegen",
+               "/rechnung/{bill_no}/storno", "/rechnung/{bill_no}/buyerreference"):
+    _stueck = _quelle_r.split(f'@app.post("{_route}")', 1)[1].split("@app.", 1)[0]
+    pruefe("_darf_bearbeiten(request)" in _stueck and "_darf_verwalten(request)" not in _stueck,
+           f"{_route} duerfen bearbeiten und verwalten")
+for _route in ("/konfiguration", "/automatik", "/update/anwenden", "/neustart", "/benutzer/anlegen",
+               "/benutzer/rolle_setzen", "/benutzer/loeschen", "/benutzer/passwort_setzen"):
+    _stueck = _quelle_r.split(f'@app.post("{_route}")', 1)[1].split("@app.", 1)[0]
+    pruefe("_darf_verwalten(request)" in _stueck, f"{_route} bleibt den Verwaltern vorbehalten")
+auth.anlegen("sachbearbeiter", "Geheim!123", "bearbeiten")
+auth.anlegen("zweiter_verw", "Geheim!123", "verwalten")
+try:
+    with TestClient(app, client=("127.0.0.1", 50000)) as _kr:
+        _kr.post("/login", data={"benutzer": "sachbearbeiter", "passwort": "Geheim!123"})
+        _start = _kr.get("/").text
+        pruefe("Jetzt einlesen" in _start and "Durchlauf starten" in _start,
+               "bearbeiten sieht Einlesen und Durchlauf")
+        pruefe('action="/automatik"' not in _start, "bearbeiten sieht den Automatik-Schalter nicht")
+        _a = _kr.post("/konfiguration", data={"property.udf_leitweg": "UDFC07"}, follow_redirects=False)
+        pruefe("Keine Berechtigung" in _uq(_a.headers.get("location", ""))
+               and config.laden()["property"].get("udf_leitweg") != "UDFC07",
+               "bearbeiten darf die Konfiguration nicht aendern")
+        _a = _kr.post("/benutzer/rolle_setzen", data={"name": "sachbearbeiter", "rolle": "verwalten"},
+                      follow_redirects=False)
+        pruefe(auth.benutzer_laden()["sachbearbeiter"]["rolle"] == "bearbeiten",
+               "bearbeiten kann sich nicht selbst hochstufen")
+        _a = _kr.post("/rechnung/1/zuruecklegen", follow_redirects=False)
+        pruefe("Keine Berechtigung" not in _uq(_a.headers.get("location", "")),
+               "bearbeiten wird beim Zuruecklegen nicht abgewiesen")
+    with TestClient(app, client=("127.0.0.1", 50000)) as _kv:
+        _kv.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+        _seite_b = _kv.get("/benutzer").text
+        pruefe('action="/benutzer/rolle_setzen"' in _seite_b and 'value="bearbeiten"' in _seite_b,
+               "die Benutzerseite bietet den Rollenwechsel und die Rolle bearbeiten")
+        _tok_r = auth.anmelden("sachbearbeiter", "Geheim!123", "127.0.0.1")
+        _kv.post("/benutzer/rolle_setzen", data={"name": "sachbearbeiter", "rolle": "ansehen"},
+                 follow_redirects=False)
+        pruefe(auth.benutzer_laden()["sachbearbeiter"]["rolle"] == "ansehen"
+               and auth.sitzung(_tok_r)["rolle"] == "ansehen",
+               "Rollenwechsel wird gespeichert und wirkt sofort auf die offene Sitzung")
+        _kv.post("/benutzer/rolle_setzen", data={"name": "sachbearbeiter", "rolle": "chef"},
+                 follow_redirects=False)
+        pruefe(auth.benutzer_laden()["sachbearbeiter"]["rolle"] == "ansehen", "unbekannte Rolle wird abgelehnt")
+        _kv.post("/benutzer/rolle_setzen", data={"name": "pruefer", "rolle": "ansehen"}, follow_redirects=False)
+        pruefe(auth.benutzer_laden()["pruefer"]["rolle"] == "verwalten", "die eigene Rolle aendert man nicht selbst")
+    _ud_r = auth.benutzer_laden()
+    _verw_r = [n for n, d in _ud_r.items() if d.get("rolle") == "verwalten"]
+    for _n in _verw_r[1:]:
+        _ud_r[_n]["rolle"] = "ansehen"
+    _config._schreiben(auth.USER_DATEI, json.dumps(_ud_r))
+    pruefe(auth.rolle_setzen(_verw_r[0], "bearbeiten") is not None
+           and auth.benutzer_laden()[_verw_r[0]]["rolle"] == "verwalten",
+           "der letzte Verwalter laesst sich nicht herabstufen")
+    for _n in _verw_r[1:]:
+        auth.rolle_setzen(_n, "verwalten")
+finally:
+    auth.loeschen("sachbearbeiter")
+    auth.loeschen("zweiter_verw")
 
 print()
 if fehler:

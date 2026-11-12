@@ -13,6 +13,25 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.3.0] – 2026-11-12
+
+**Dritte Rolle „bearbeiten“ und Rollenwechsel**
+- Neue Rolle **bearbeiten**: einlesen, Durchlauf starten, Rechnungen
+  aufnehmen, Empfänger und Käuferreferenz wählen, freigeben, versenden,
+  zurücklegen, Stornorechnung und Zahlungsanforderung senden. Keine
+  Konfiguration, kein Schalten der Automatik, keine Zugänge, keine
+  Aktualisierung.
+- **Rolle ändern** unter „Benutzer“: Ein Verwalter wählt die Rolle eines
+  anderen Zugangs in dessen Zeile. Das wirkt sofort, auch auf eine offene
+  Anmeldung, und das Passwort bleibt. Der letzte Verwalter lässt sich nicht
+  herabstufen, die eigene Rolle ändert ein anderer Verwalter.
+- Bestehende Zugänge behalten ihre Rolle; es ist nichts einzustellen.
+
+**Datum in der Mail deutsch**
+- Betreff und Text der Mail nennen das Datum als TT.MM.JJJJ (09.11.2026)
+  statt 2026-11-09, auch bei Gutschrift und Stornorechnung. Das XML führt
+  das Datum weiter nach Norm (ISO).
+
 ## [1.2.0] – 2026-11-12
 
 **Versandadresse: Das Mailfeld an der Reservierung hat Vorrang**

@@ -4,7 +4,7 @@
 <div class="kopfzeile">
   <h1>Rechnungen</h1>
   <div class="knoepfe">
-    {% if verwalten %}
+    {% if bearbeiten %}
     <form method="post" action="/einlesen" class="einlesen">
       <label class="zeitraum">Zeitraum
         <input name="tage" value="{{ zeitraum }}" size="4" title="Wie viele Tage zurück"> Tage
@@ -43,7 +43,7 @@
 
 {# Aufgaben nach dem Versand: In OPERA storniert oder anderer Empfaenger.
    Die Rechnung ist beim Kunden — hier muss jemand handeln, deshalb oben. #}
-{% if aufgaben or verwalten %}
+{% if aufgaben or bearbeiten %}
 <section class="aufgaben{{ ' offen' if aufgaben }}">
   {% if aufgaben %}
   <h2>{{ aufgaben|length }} Aufgabe(n) nach dem Versand</h2>
@@ -55,7 +55,7 @@
     {% endfor %}
   </ul>
   {% endif %}
-  {% if verwalten %}
+  {% if bearbeiten %}
   <form method="post" action="/nachpruefen" class="nachpruefen">
     <button {{ 'disabled' if automatik.arbeitet }}
             title="Prüft die versendeten Rechnungen der letzten Tage gegen OPERA: storniert oder anderer Empfänger? Läuft sonst einmal am Tag nach dem Tagesabschluss.">
@@ -142,7 +142,7 @@
       <td>
         {% if r.bekannt %}
           <span class="klein">steht schon in der Liste</span>
-        {% elif verwalten %}
+        {% elif bearbeiten %}
         <form method="post" action="/aufnehmen">
           <input type="hidden" name="bill_no" value="{{ r.bill_no }}">
           <input type="hidden" name="suche" value="{{ suche }}">

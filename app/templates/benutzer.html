@@ -27,7 +27,8 @@
       <label>Rolle
         <select name="rolle">
           <option value="ansehen">ansehen — Rechnungen und Protokoll lesen</option>
-          <option value="verwalten">verwalten — versenden, Konfiguration, Automatik</option>
+          <option value="bearbeiten">bearbeiten — einlesen, prüfen, freigeben, versenden</option>
+          <option value="verwalten">verwalten — zusätzlich Konfiguration, Automatik, Zugänge</option>
         </select></label>
       <button>Anlegen</button>
     </form>
@@ -48,7 +49,18 @@
     {% for name, daten in benutzerliste.items() %}
     <tr>
       <td>{{ name }}{% if name == benutzer %} <span class="klein">(Sie)</span>{% endif %}</td>
-      <td>{{ daten.rolle }}</td>
+      <td>{% if verwalten and name != benutzer %}
+        <form method="post" action="/benutzer/rolle_setzen" class="zeile"
+              data-frage="Rolle von {{ name }} ändern? Das wirkt sofort, auch auf eine offene Anmeldung."
+              onsubmit="return confirm(this.dataset.frage)">
+          <input type="hidden" name="name" value="{{ name }}">
+          <select name="rolle" aria-label="Rolle von {{ name }}">
+            {% for r in ('ansehen', 'bearbeiten', 'verwalten') %}
+            <option value="{{ r }}" {{ 'selected' if daten.rolle == r }}>{{ r }}</option>
+            {% endfor %}
+          </select>
+          <button>Ändern</button>
+        </form>{% else %}{{ daten.rolle }}{% endif %}</td>
       {% if verwalten %}<td>{% if name != benutzer %}
         <form method="post" action="/benutzer/passwort_setzen" class="zeile"
               data-frage="Passwort von {{ name }} neu setzen? Laufende Anmeldungen dieses Zugangs enden."

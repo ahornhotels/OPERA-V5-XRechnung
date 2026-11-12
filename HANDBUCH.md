@@ -27,12 +27,17 @@ Beim allerersten Mal steht der Zugang in der Datei
 erzeugtes Passwort. **Ändern Sie es sofort** unter „Benutzer" — die Datei wird
 dabei automatisch gelöscht.
 
-Es gibt zwei Rollen:
+Es gibt drei Rollen:
 
 | Rolle | darf |
 |---|---|
 | **ansehen** | Rechnungen und Protokoll lesen, XML erzeugen und ansehen |
-| **verwalten** | zusätzlich einlesen, Rechnungen aufnehmen, Empfänger, Käuferreferenz und Darstellung der Positionen wählen, freigeben, versenden, zurücklegen, Einstellungen ändern, Automatik schalten, Zugänge anlegen, Passwörter anderer Zugänge neu setzen |
+| **bearbeiten** | zusätzlich einlesen, Durchlauf starten, Rechnungen aufnehmen, Empfänger, Käuferreferenz und Darstellung der Positionen wählen, freigeben, versenden, zurücklegen, Versendete nachprüfen, Stornorechnung senden, Zahlungsanforderungen senden |
+| **verwalten** | zusätzlich Einstellungen ändern, Automatik ein- und ausschalten, Vorlage der Zahlungsanforderung anpassen, Aktualisierung einspielen, Dienst neu starten, Zugänge anlegen und löschen, Rollen ändern, Passwörter anderer Zugänge neu setzen |
+
+**Rolle ändern:** unter „Benutzer“ in der Zeile des Zugangs die Rolle wählen
+und „Ändern“ klicken (nur Verwalter). Die eigene Rolle ändert ein anderer
+Verwalter, und der letzte Verwalter lässt sich nicht herabstufen.
 
 **Wird ein Zugang gelöscht oder herabgestuft, wirkt das sofort** — auch auf
 eine offene Sitzung. Ein Zugang mit demselben Namen lässt sich nicht
@@ -540,7 +545,7 @@ Eine **versendete** Rechnung ändert sich durch eine andere Wahl nicht. Es gilt
 die abgelegte Fassung. Die Detailseite rechnet die Tabelle trotzdem neu und
 sagt das dazu.
 
-**Umschalten darf nur, wer auch versenden darf** (Rolle „verwalten“). Dasselbe
+**Umschalten darf nur, wer auch versenden darf** (Rollen „bearbeiten“ und „verwalten“). Dasselbe
 gilt seit dem 14.09. für die Käuferreferenz.
 
 Unter „je Gast und Zimmer“ steht bei einem **Zimmerwechsel** je Zimmer eine
@@ -622,8 +627,8 @@ Rechnung.
    - Wahlweise der **Leistungszeitraum** und die **Referenz des Kunden**.
    - **Empfänger:** eine Adresse aus dem Profil oder eine eigene.
 3. **Prüfen.** Die Seite zeigt die Zusammenfassung mit der voraussichtlichen Nummer.
-   „PDF ansehen“ öffnet das PDF, ohne eine Nummer zu vergeben. **„Ablegen und senden“** und **„Nur ablegen“** gibt es nur für
-   Verwalter.
+   „PDF ansehen“ öffnet das PDF, ohne eine Nummer zu vergeben. **„Ablegen und senden“** und **„Nur ablegen“** gibt es für
+   die Rollen „bearbeiten“ und „verwalten“.
 
 **Auf dem PDF steht:**
 - Absender, Anschrift und Bankverbindung aus OPERA und der Konfiguration.

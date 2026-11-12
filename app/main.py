@@ -135,7 +135,20 @@ BESCHAEFTIGT = ("Ein Automatiklauf arbeitet gerade — Einlesen, Versenden und e
 
 
 def _darf_verwalten(request: Request) -> bool:
+    """Konfiguration, Zugaenge, Aktualisierung, Automatik schalten."""
     return getattr(request.state, "rolle", "") == "verwalten"
+
+
+def _darf_bearbeiten(request: Request) -> bool:
+    """Die Arbeit an den Rechnungen: einlesen, aufnehmen, Empfaenger und
+    Referenz waehlen, freigeben, senden, zuruecklegen, Stornorechnung. Das
+    duerfen "bearbeiten" und "verwalten" — die Rolle "bearbeiten" gibt es seit
+    1.3.0 fuer Mitarbeiter, die versenden, aber nichts einstellen sollen."""
+    return getattr(request.state, "rolle", "") in ROLLEN_BEARBEITEN
+
+
+ROLLEN = ("ansehen", "bearbeiten", "verwalten")
+ROLLEN_BEARBEITEN = ("bearbeiten", "verwalten")
 
 
 def _ansicht(status: str, suche: str, sortieren: str, richtung: str, tage: str = "") -> str:
@@ -188,6 +201,7 @@ def _kontext(request: Request, **extra) -> dict:
             "benutzer": getattr(request.state, "benutzer", ""),
             "rolle": getattr(request.state, "rolle", ""),
             "verwalten": _darf_verwalten(request),
+            "bearbeiten": _darf_bearbeiten(request),
             "automatik": automatik.zustand(),
             "haus": _hausname(),
             **extra}
@@ -312,7 +326,7 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
 @app.post("/aufnehmen")
 def aufnehmen(request: Request, bill_no: int = Form(...), suche: str = Form("")):
     """Eine in OPERA gefundene Rechnung in die Arbeitsliste holen."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse("/?meldung=Keine Berechtigung", status_code=303)
     cfg = config.laden()
     try:
@@ -411,7 +425,7 @@ def einlesen(request: Request, tage: str = Form("")):
     # Einlesen nimmt Rechnungen in den Lauf — mit einem grossen Zeitraum auch
     # alte, die nach der Wartezeit automatisch hinausgehen. Das ist eine
     # Entscheidung fuer Verwalter, kein Lesevorgang.
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse("/?meldung=Keine Berechtigung", status_code=303)
     cfg = config.laden()
     try:
@@ -455,7 +469,7 @@ async def automatik_jetzt(request: Request):
     Verwalter. Vorher konnte jedes angemeldete Konto ihn ausloesen, und der
     Schalter 'Automatik aus' half nicht: Er wird nur in der Schleife geprueft,
     nicht beim Knopf."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse("/?meldung=Keine Berechtigung", status_code=303)
     if automatik.laeuft_gerade():
         return RedirectResponse("/?meldung=" + BESCHAEFTIGT, status_code=303)
@@ -472,7 +486,7 @@ async def automatik_jetzt(request: Request):
 def nachpruefen(request: Request):
     """Die Nachpruefung der versendeten Belege sofort, statt erst nach dem
     naechsten Tagesabschluss. Liest nur aus OPERA und schreibt Aufgaben."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse("/?meldung=Keine Berechtigung", status_code=303)
     try:
         z = automatik.nachpruefen_jetzt(config.laden())
@@ -490,7 +504,7 @@ def nachpruefen(request: Request):
 def nachpruefung_erledigt(request: Request, bill_no: int):
     """Eine Aufgabe aus der Nachpruefung abhaken. Der Befund bleibt stehen —
     er erscheint nur nicht mehr in der Aufgabenliste."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     satz = store.rechnung(bill_no) or {}
     if not (satz.get("nachpruefung") or "").strip():
@@ -557,7 +571,7 @@ def buyerreference_setzen(request: Request, bill_no: int,
     meldet der Kunde meist erst, wenn er die Rechnung in der Hand hat."""
     # BT-10 geht an den Kunden — nur wer versenden darf, darf ihn setzen.
     # Vorher ging das mit jedem angemeldeten Konto.
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung",
                                 status_code=303)
     if not store.rechnung(bill_no):
@@ -589,7 +603,7 @@ def positionen_setzen(request: Request, bill_no: int, art: str = Form("")):
     zurueckgegeben wird die archivierte Fassung (ablauf.xml_erzeugen)."""
     # Wie die Rechnung aussieht, die hinausgeht, ist eine Entscheidung vor dem
     # Versand — dieselbe Berechtigung wie beim Empfaenger.
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung",
                                 status_code=303)
     if not store.rechnung(bill_no):
@@ -617,7 +631,7 @@ def empfaenger_setzen(request: Request, bill_no: int, email: str = Form(""),
     # Wer den Empfaenger setzen darf, bestimmt, wohin eine Rechnung geht. Ohne
     # diese Pruefung konnte ein Konto mit Leserecht jede Rechnung auf eine frei
     # eingetippte Adresse umleiten.
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung",
                                 status_code=303)
     # Siehe Kaeuferreferenz: Das Freitextfeld ist leer vorbelegt und gewinnt
@@ -669,7 +683,7 @@ def freigeben(request: Request, bill_no: int):
     """Die Sichtpruefung ausdruecklich abschliessen. Danach darf die
     Automatik die Rechnung versenden — vorausgesetzt, ein Empfaenger steht fest.
     Die Gruende bleiben im Verlauf nachlesbar."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     satz = store.rechnung(bill_no) or {}
     if satz.get("status") not in ("pruefung", "fehler"):
@@ -698,7 +712,7 @@ def versand_klaeren(request: Request, bill_no: int, ergebnis: str = Form("")):
     Wer im Postfach der Blindkopie nachgesehen hat, weiss es — und braucht
     dafuer einen Knopf. Ohne ihn war der einzige Ausweg ein zweiter Versand,
     also genau das, wovor der Vermerk warnt."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     satz = store.rechnung(bill_no) or {}
     if ablauf.VERSAND_OFFEN not in (satz.get("fehler") or ""):
@@ -725,7 +739,7 @@ def versand_klaeren(request: Request, bill_no: int, ergebnis: str = Form("")):
 def xml_bauen(request: Request, bill_no: int, ersetzen: str = Form("")):
     cfg = config.laden()
     satz = store.rechnung(bill_no) or {}
-    if ersetzen and not _darf_verwalten(request):
+    if ersetzen and not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     if not ersetzen and ablauf.versendete_fassung(cfg, bill_no):
         # Nicht stillschweigend ersetzen: Danach laege dort etwas anderes als
@@ -764,7 +778,7 @@ def storno_anzeigen(request: Request, bill_no: int):
 def storno_senden(request: Request, bill_no: int):
     """Die Stornorechnung erzeugen, pruefen und an den Empfaenger der Rechnung
     senden. Nur von Hand, nie durch die Automatik."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung",
                                 status_code=303)
     try:
@@ -796,7 +810,7 @@ def xml_anzeigen(request: Request, bill_no: int, fassung: str = ""):
 
 @app.post("/rechnung/{bill_no}/senden")
 def senden(request: Request, bill_no: int):
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     if automatik.laeuft_gerade():
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=" + BESCHAEFTIGT, status_code=303)
@@ -812,7 +826,7 @@ def senden(request: Request, bill_no: int):
 
 @app.post("/rechnung/{bill_no}/zuruecklegen")
 def zuruecklegen(request: Request, bill_no: int):
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     satz = store.rechnung(bill_no) or {}
     if not satz:
@@ -832,7 +846,7 @@ def zuruecklegen(request: Request, bill_no: int):
 def wieder_aufnehmen(request: Request, bill_no: int):
     """Eine zurueckgelegte Rechnung zurueck in die Pruefung holen. Bewusst in
     die PRUEFUNG, nicht auf 'bereit': Wer zuruecklegt, hatte einen Grund."""
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return RedirectResponse(f"/rechnung/{bill_no}?meldung=Keine Berechtigung", status_code=303)
     satz = store.rechnung(bill_no) or {}
     if satz.get("status") != "ignoriert":
@@ -985,7 +999,7 @@ def benutzer_anlegen(request: Request, name: str = Form(...),
         return RedirectResponse("/benutzer?meldung=Das Passwort muss mindestens 10 Zeichen haben",
                                 status_code=303)
     fehler = auth.neu_anlegen(name.strip(), passwort,
-                              rolle if rolle in ("ansehen", "verwalten") else "ansehen")
+                              rolle if rolle in ROLLEN else "ansehen")
     if fehler:
         return RedirectResponse(f"/benutzer?meldung={fehler}", status_code=303)
     store.protokoll("benutzer", f"'{name}' angelegt ({rolle})", benutzer=request.state.benutzer)
@@ -1008,6 +1022,27 @@ def benutzer_passwort_setzen(request: Request, name: str = Form(...), neu: str =
     store.protokoll("benutzer", f"Passwort von '{name}' neu gesetzt", benutzer=request.state.benutzer)
     return RedirectResponse(f"/benutzer?meldung=Passwort von {name} neu gesetzt — "
                             "bisherige Anmeldungen dieses Zugangs sind beendet", status_code=303)
+
+
+@app.post("/benutzer/rolle_setzen")
+def benutzer_rolle_setzen(request: Request, name: str = Form(...), rolle: str = Form(...)):
+    """Ein Verwalter aendert die Rolle eines anderen Zugangs. Wirkt sofort,
+    auch auf eine offene Sitzung (die Rolle kommt bei jeder Anfrage aus der
+    Benutzerdatei)."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/benutzer?meldung=Keine Berechtigung", status_code=303)
+    if name == request.state.benutzer:
+        return RedirectResponse("/benutzer?meldung=Die eigene Rolle lässt sich nicht ändern — "
+                                "das macht ein anderer Verwalter", status_code=303)
+    if rolle not in ROLLEN:
+        return RedirectResponse("/benutzer?meldung=Unbekannte Rolle", status_code=303)
+    alt = (auth.benutzer_laden().get(name) or {}).get("rolle")
+    fehler = auth.rolle_setzen(name, rolle)
+    if fehler:
+        return RedirectResponse(f"/benutzer?meldung={fehler}", status_code=303)
+    store.protokoll("benutzer", f"Rolle von '{name}' geändert: {alt} → {rolle}",
+                    benutzer=request.state.benutzer)
+    return RedirectResponse(f"/benutzer?meldung=Rolle von {name} ist jetzt „{rolle}“", status_code=303)
 
 
 @app.post("/benutzer/loeschen")

@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from . import config, mailer
 from . import zahlungsanforderung as za
-from .main import _darf_verwalten, _kontext, seiten
+from .main import _darf_bearbeiten, _darf_verwalten, _kontext, seiten
 
 router = APIRouter()
 
@@ -112,9 +112,9 @@ async def pdf_ansehen(request: Request):
 @router.post("/zahlungsanforderung/senden", response_class=HTMLResponse)
 async def senden(request: Request):
     werte, name_id = await _form(request)
-    if not _darf_verwalten(request):
+    if not _darf_bearbeiten(request):
         return _seite(request, name_id=name_id, werte=werte,
-                      fehler="Keine Berechtigung — Versenden dürfen nur Verwalter.")
+                      fehler="Keine Berechtigung — Versenden dürfen die Rollen „bearbeiten“ und „verwalten“.")
     try:
         ergebnis, nummer = za.versenden(config.laden(), werte, name_id or 0,
                                         request.state.benutzer,

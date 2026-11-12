@@ -121,6 +121,28 @@ def _speichern(daten: dict) -> None:
                                   else f"{USER_DATEI} liess sich nicht schreiben: {e}") from e
 
 
+def rolle_setzen(benutzer: str, rolle: str) -> str | None:
+    """Rolle eines Zugangs aendern. Gibt eine Fehlermeldung zurueck oder None.
+    Das Passwort bleibt, laufende Sitzungen auch: Die Rolle wird bei jeder
+    Anfrage aus dieser Datei gelesen und wirkt deshalb sofort."""
+    from . import config
+    daten = json.loads(USER_DATEI.read_text(encoding="utf-8"))
+    eintrag = daten.get(benutzer)
+    if not eintrag:
+        return f"Den Zugang „{benutzer}“ gibt es nicht."
+    if eintrag.get("rolle") == rolle:
+        return None
+    verwalter = [n for n, d in daten.items() if d.get("rolle") == "verwalten"]
+    if eintrag.get("rolle") == "verwalten" and len(verwalter) <= 1:
+        return "Das ist der letzte Zugang mit Verwaltungsrecht — ohne ihn ließe sich nichts mehr einstellen."
+    eintrag["rolle"] = rolle
+    try:
+        _speichern(daten)
+    except config.KonfigFehler as e:
+        return str(e)
+    return None
+
+
 def loeschen(benutzer: str) -> str | None:
     """Zugang loeschen. Gibt eine Fehlermeldung zurueck oder None.
 
