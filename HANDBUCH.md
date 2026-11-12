@@ -741,12 +741,14 @@ benutzerdefinierten Feld (`UDFC…`) an der **Profilkartei** und in der
 
 Ist mindestens eines der Felder eingestellt, gilt:
 
-1. **Mailfeld am Profil** des Rechnungsempfängers, bei einer Firmenrechnung also
-   an der Firmenkartei. Steht dort eine Adresse, geht die Rechnung dorthin.
-2. Sonst das **Mailfeld an der Reservierung**.
+1. **Mailfeld an der Reservierung.** Steht dort eine Adresse, geht die Rechnung
+   dorthin. Es **hat Vorrang** vor dem Profil: Was für diesen Aufenthalt
+   eingetragen ist, schlägt die Adresse, die für alle Rechnungen der Firma gilt.
+2. Sonst das **Mailfeld am Profil** des Rechnungsempfängers, bei einer
+   Firmenrechnung also an der Firmenkartei.
 3. **Sind beide leer, wählt die Anwendung nicht selbst.** Die Rechnung geht zur
    Sichtprüfung („In den Mailfeldern steht keine Versandadresse“). Auf der
-   Detailseite stehen dann alle Adressen zur Auswahl: die Mailfelder, die Adressen
+   Detailseite stehen dann alle Adressen aus den Profilen zur Auswahl: die Mailfelder, die Adressen
    an Profil, Rechnungsanschrift und Debitorenkonto, und die des Gastes an der
    Reservierung, gekennzeichnet als „Gast“.
 

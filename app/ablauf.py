@@ -629,11 +629,14 @@ def bericht(z: dict) -> str:
 # ------------------------------------------------------------ Mailfelder
 # Zwei benutzerdefinierte Felder bestimmen die Versandadresse, wenn sie
 # eingerichtet sind (property.udf_mail_profil, property.udf_mail_reservierung):
-# erst das Feld am Profil des Rechnungsempfaengers, dann das an der
-# Reservierung. Ist keines gefuellt, waehlt die Anwendung NICHT selbst, sondern
-# legt die Rechnung zur Sichtpruefung vor, mit allen Adressen zur Auswahl
-# (Entscheidung des Hauses, 03.11.2026). Ohne eingerichtete Felder gilt die
-# bisherige Auswahl unveraendert.
+# ZUERST das Feld an der Reservierung, dann das am Profil des
+# Rechnungsempfaengers. Die Reservierung schlaegt das Profil: Was der Empfang
+# fuer diesen einen Aufenthalt eintraegt, ist genauer als die Adresse, die fuer
+# alle Rechnungen der Firma gilt (Entscheidung des Hauses, 12.11.2026; bis 1.1.0
+# galt das Profil zuerst). Ist keines gefuellt, waehlt die Anwendung NICHT
+# selbst, sondern legt die Rechnung zur Sichtpruefung vor, mit allen Adressen
+# zur Auswahl (03.11.2026). Ohne eingerichtete Felder gilt die bisherige
+# Auswahl unveraendert.
 HINWEIS_MAILFELD_LEER = ("In den Mailfeldern (Profil, Reservierung) steht keine Versandadresse "
                          "— Empfänger bitte wählen")
 HINWEIS_MAILFELD_UNGUELTIG = "Im Mailfeld steht keine einzelne gültige Adresse"
@@ -656,8 +659,8 @@ def versandadresse(cfg: dict, bill_no: int, name_id) -> tuple[str | None, str | 
     Ein Datenbankaussetzer legte sonst den halben Tagesbestand vor."""
     feld_profil, feld_resv = mailfelder(cfg)
     try:
-        werte = [("am Profil", opera.profil_udf_streng(name_id, feld_profil) if feld_profil else ""),
-                 ("an der Reservierung", opera.reservierung_udf(bill_no, feld_resv) if feld_resv else "")]
+        werte = [("an der Reservierung", opera.reservierung_udf(bill_no, feld_resv) if feld_resv else ""),
+                 ("am Profil", opera.profil_udf_streng(name_id, feld_profil) if feld_profil else "")]
     except Exception:
         log.exception("Mailfelder nicht lesbar (%s)", bill_no)
         return None, None
@@ -674,18 +677,19 @@ def versandadresse(cfg: dict, bill_no: int, name_id) -> tuple[str | None, str | 
 
 
 def adressen_zur_auswahl(cfg: dict, bill_no: int, name_id) -> list[dict]:
-    """Alle Adressen fuer die Auswahl von Hand: die Mailfelder zuerst, dann die
+    """Alle Adressen fuer die Auswahl von Hand: die Mailfelder zuerst (Reservierung
+    vor Profil, wie beim Versand), dann die
     bisherigen Kandidaten, zuletzt die des Gastes an der Reservierung. Doppelte
     nur einmal, an der ersten Stelle."""
     liste: list[dict] = []
     feld_profil, feld_resv = mailfelder(cfg)
     try:
-        if feld_profil and name_id:
-            liste.append({"email": opera.profil_udf_streng(name_id, feld_profil),
-                          "quelle": "Mailfeld", "rolle": "Profil", "primaer": "Y"})
         if feld_resv:
             liste.append({"email": opera.reservierung_udf(bill_no, feld_resv),
                           "quelle": "Mailfeld", "rolle": "Reservierung", "primaer": "Y"})
+        if feld_profil and name_id:
+            liste.append({"email": opera.profil_udf_streng(name_id, feld_profil),
+                          "quelle": "Mailfeld", "rolle": "Profil", "primaer": "Y"})
     except Exception:
         log.exception("Mailfelder nicht lesbar (%s)", bill_no)
     liste += opera.empfaenger(bill_no)

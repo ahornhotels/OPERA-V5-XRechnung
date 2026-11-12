@@ -3,7 +3,7 @@
 --
 -- Fuer die Versand-Mailadresse (property.udf_mail_reservierung): Was der
 -- Empfang in der Reservierungsmaske als Rechnungsadresse eintraegt, geht vor
--- der automatischen Auswahl — aber nach dem Mailfeld am Profil.
+-- allem anderen, auch vor dem Mailfeld am Profil (seit 1.2.0).
 --
 -- Wie profil_udf.sql eine Vorlage: Der SPALTENNAME wird in app/opera.py
 -- eingesetzt, nicht gebunden, und nur UDFC01..UDFC40 kommen durch.

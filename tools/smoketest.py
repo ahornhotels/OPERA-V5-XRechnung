@@ -6449,18 +6449,23 @@ try:
     pruefe(not _ab.mailfelder_aktiv(cfg) and _ab.mailfelder_aktiv(_mcfg),
            "ohne eingestellte Felder bleibt die bisherige Auswahl")
     _werte.update(profil="rechnung@firma.example", resv="empfang@firma.example")
-    pruefe(_ab.versandadresse(_mcfg, 1, 7) == ("rechnung@firma.example", "Mailfeld am Profil"),
-           "das Mailfeld am Profil geht vor")
-    _werte.update(profil="")
     pruefe(_ab.versandadresse(_mcfg, 1, 7) == ("empfang@firma.example", "Mailfeld an der Reservierung"),
-           "ist es leer, gilt das an der Reservierung")
+           "das Mailfeld an der Reservierung hat Vorrang vor dem am Profil")
+    _werte.update(resv="")
+    pruefe(_ab.versandadresse(_mcfg, 1, 7) == ("rechnung@firma.example", "Mailfeld am Profil"),
+           "ist es leer, gilt das am Profil")
+    _werte.update(profil="")
     _werte.update(resv="")
     pruefe(_ab.versandadresse(_mcfg, 1, 7) == (None, _ab.HINWEIS_MAILFELD_LEER),
            "sind beide leer: Sichtpruefung, keine eigene Wahl")
-    _werte.update(profil="a@firma.example; b@firma.example", resv="empfang@firma.example")
+    _werte.update(profil="a@firma.example; b@firma.example", resv="")
     _adr, _grund = _ab.versandadresse(_mcfg, 1, 7)
     pruefe(_adr is None and _grund.startswith(_ab.HINWEIS_MAILFELD_UNGUELTIG) and "am Profil" in _grund,
            "ein gefuelltes, unbrauchbares Profilfeld wird nicht still uebergangen")
+    _werte.update(profil="rechnung@firma.example", resv="empfang@firma.example; x@firma.example")
+    _adr, _grund = _ab.versandadresse(_mcfg, 1, 7)
+    pruefe(_adr is None and "an der Reservierung" in (_grund or ""),
+           "ein unbrauchbares Reservierungsfeld faellt nicht still auf das Profil zurueck")
     _werte.update(fehler=True)
     pruefe(_ab.versandadresse(_mcfg, 1, 7) == (None, None),
            "nicht lesbar ist nicht leer: keine Sichtpruefung wegen eines Aussetzers")
@@ -6470,7 +6475,7 @@ try:
     opera.gast_mails = lambda bill_no: [{"email": "gast@privat.example", "quelle": "Gast an der Reservierung",
                                          "rolle": "Gast"}]
     _liste = [x["email"].lower() for x in _ab.adressen_zur_auswahl(_mcfg, 1, 7)]
-    pruefe(_liste == ["rechnung@firma.example", "empfang@firma.example", "ap@firma.example",
+    pruefe(_liste == ["empfang@firma.example", "rechnung@firma.example", "ap@firma.example",
                       "gast@privat.example"],
            f"zur Auswahl: Mailfelder zuerst, dann die bisherigen, zuletzt der Gast, ohne Doppelte ({_liste})")
     pruefe("gast@privat.example" not in [x["email"] for x in _ab.adressen_zur_auswahl(cfg, 1, 7)],

@@ -13,6 +13,19 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.2.0] – 2026-11-12
+
+**Versandadresse: Das Mailfeld an der Reservierung hat Vorrang**
+- Neue Reihenfolge, wenn Mailfelder eingestellt sind: 1. Mailfeld an der
+  Reservierung, 2. Mailfeld am Profil des Rechnungsempfängers, 3. ist keines
+  gefüllt, Sichtprüfung mit allen Adressen aus den Profilen zur Auswahl.
+  Bisher galt das Profil zuerst.
+- Wirkt sich nur aus, wenn **beide** Felder gefüllt sind: Dann geht die
+  Rechnung jetzt an die Adresse an der Reservierung. Schon versendete
+  Rechnungen bleiben, wie sie sind.
+- Die Konfigurationsseite nennt die Reihenfolge und führt die Felder in dieser
+  Reihenfolge auf. Handbuch und Hinweise sind angepasst.
+
 ## [1.1.0] – 2026-11-10
 
 **Multiproperty: eine Installation je Hotelcode, mehrere auf einem Rechner**

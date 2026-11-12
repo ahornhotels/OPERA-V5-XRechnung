@@ -52,7 +52,7 @@
     "mitgliedschaftstyp_erechnung": "ERECHNUNG",
     "_udf_hinweis": "Benutzerdefiniertes Feld der FIRMENkartei (ACC_MAIN), in dem die Leitweg-ID steht — etwa 'UDFC05'. Leer lassen schaltet die Stufe ab; dann gilt die Kette wie bisher. Mitgliedschaften taugen dafuer NICHT: OPERA bietet sie nur an der Individualkartei an, von 130.846 liegt keine einzige auf einer Firmenkartei. Siehe docs/09_UDF_LEITWEG_ID.md.",
     "udf_leitweg": "",
-    "_udf_mail_hinweis": "Benutzerdefinierte Felder mit der Versand-Mailadresse: udf_mail_profil an der Kartei des Rechnungsempfaengers, udf_mail_reservierung an der Reservierung (je UDFC01-UDFC40). Ist mindestens eines eingestellt, geht die Rechnung an das Profilfeld, sonst an das Reservierungsfeld, und ist keines gefuellt, zur Sichtpruefung. Leer lassen: die bisherige automatische Auswahl.",
+    "_udf_mail_hinweis": "Benutzerdefinierte Felder mit der Versand-Mailadresse: udf_mail_profil an der Kartei des Rechnungsempfaengers, udf_mail_reservierung an der Reservierung (je UDFC01-UDFC40). Ist mindestens eines eingestellt, geht die Rechnung an das Reservierungsfeld (es hat Vorrang), sonst an das Profilfeld, und ist keines gefuellt, zur Sichtpruefung mit allen Adressen zur Auswahl. Leer lassen: die bisherige automatische Auswahl.",
     "udf_mail_profil": "",
     "udf_mail_reservierung": "",
     "_udf_erechnung_hinweis": "Benutzerdefiniertes Feld der Firmenkartei als E-Rechnungs-Kennzeichen. Leer lassen schaltet die Stufe ab. Was ein Eintrag BEDEUTET, sagt udf_erechnung_bedeutung: 'schliesst_aus' (Vorgabe) nimmt gekennzeichnete Karteien heraus, 'erlaubt' nimmt nur gekennzeichnete auf. Bei einem gewachsenen Karteibestand ist 'erlaubt' erst praktikabel, wenn jemand ihn gepflegt hat — sonst geht gar nichts hinaus.",

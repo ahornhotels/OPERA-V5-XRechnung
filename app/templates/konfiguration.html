@@ -149,16 +149,20 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   {# Versandadresse aus zwei benutzerdefinierten Feldern (seit 03.11.2026). #}
   <section class="karte">
     <h2>Versandadresse aus OPERA-Feldern</h2>
-    <label>Mailfeld am Profil des Rechnungsempfängers
-      {{ tipp('property.udf_mail_profil') }}<input name="property.udf_mail_profil" value="{{ cfg.property.udf_mail_profil or '' }}"
-             placeholder="z. B. UDFC06" title="UDFC01 bis UDFC40, oder leer lassen"></label>
-    <label>Mailfeld an der Reservierung
+    <p class="klein">Reihenfolge der Versandadresse:
+      <strong>1.</strong> Mailfeld an der Reservierung (hat Vorrang),
+      <strong>2.</strong> Mailfeld am Profil des Rechnungsempfängers,
+      <strong>3.</strong> ist keines gefüllt: Sichtprüfung mit allen Adressen aus den Profilen zur Auswahl.</p>
+    <label>1. Mailfeld an der Reservierung (hat Vorrang)
       {{ tipp('property.udf_mail_reservierung') }}<input name="property.udf_mail_reservierung" value="{{ cfg.property.udf_mail_reservierung or '' }}"
              placeholder="z. B. UDFC10" title="UDFC01 bis UDFC40, oder leer lassen"></label>
+    <label>2. Mailfeld am Profil des Rechnungsempfängers
+      {{ tipp('property.udf_mail_profil') }}<input name="property.udf_mail_profil" value="{{ cfg.property.udf_mail_profil or '' }}"
+             placeholder="z. B. UDFC06" title="UDFC01 bis UDFC40, oder leer lassen"></label>
     {% if cfg.property.udf_mail_profil or cfg.property.udf_mail_reservierung %}
-    <p class="hinweis">Versendet wird an das Mailfeld am Profil, sonst an das an der
-      Reservierung. <strong>Ist keines gefüllt, geht die Rechnung zur Sichtprüfung</strong>
-      — mit allen Adressen an Profil und Reservierung zur Auswahl.</p>
+    <p class="hinweis">Versendet wird an das Mailfeld an der Reservierung, sonst an das am
+      Profil. <strong>Ist keines gefüllt, geht die Rechnung zur Sichtprüfung</strong>
+      — mit allen Adressen aus den Profilen und der Reservierung zur Auswahl.</p>
     {% else %}
     <p class="klein">Kein Feld eingestellt: Die Anwendung wählt die Adresse wie bisher
       selbst (Debitorenkonto, dann die primäre Adresse des Zahlers).</p>
