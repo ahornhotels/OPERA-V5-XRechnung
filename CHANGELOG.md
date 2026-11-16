@@ -13,6 +13,21 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.3.1] – 2026-11-16
+
+**Windows-Installer: Python sicherer gewählt**
+- Ein vorhandenes Python wird nur noch genommen, wenn es für alle Benutzer
+  installiert ist und das venv-Modul mitbringt. Gesehen auf einem frischen
+  Windows 11: `C:\Python314` ohne venv-Modul, die Einrichtung brach mit „Die
+  Umgebung liess sich nicht anlegen“ ab. Ein Python nur im Benutzerprofil
+  (Install Manager, Microsoft Store) taugt nicht für den Dienst, der als SYSTEM
+  läuft. In beiden Fällen installiert der Installer Python 3.12 für alle
+  Benutzer; das vorhandene Python bleibt unangetastet.
+- Gefundenes Python wird mit festem Pfad verwendet, nicht über `py`.
+- Scheitert das Anlegen der Umgebung trotzdem, zeigt der Installer jetzt die
+  Ausgabe von Python mit dem Grund. Ein halber `.venv`-Ordner aus einem
+  abgebrochenen Versuch wird vorher entfernt.
+
 ## [1.3.0] – 2026-11-12
 
 **Dritte Rolle „bearbeiten“ und Rollenwechsel**

@@ -239,11 +239,14 @@ function PythonDirekt {
 # Nach einer Installation: zuerst der Starter py, dann der feste Ort einer
 # Installation fuer alle Benutzer. Den kennt der Suchpfad dieses Prozesses
 # auch nach PfadNeuLaden nicht immer (etwa bei Rueckgabewert 3010).
+#
+# Der feste Ort kommt zuerst: 'py' waehlt das NEUESTE Python, und das kann ein
+# 3.14 im Benutzerprofil sein, das gerade bewusst uebergangen wurde.
 function PythonNachInstallation {
     PfadNeuLaden
-    if (Vorhanden "py") { return "py" }
     $fest = Join-Path $env:ProgramFiles ("Python" + ($PythonFassung -replace '^(\d+)\.(\d+).*$', '$1$2') + "\python.exe")
     if (Test-Path $fest) { return $fest }
+    if (Vorhanden "py") { return "py" }
     return $null
 }
 
@@ -368,7 +371,27 @@ foreach ($kandidat in @("py", "python")) {
             try {
                 $version = (Nativ $kandidat --version) -join " "
                 if ($version -match "Python 3\.(\d+)" -and [int]$Matches[1] -ge 11) {
-                    $Python = $kandidat; Gut "$version gefunden"; break
+                    # Wo liegt das Python wirklich? Install Manager und Store legen
+                    # unter 'py'/'python' nur Verweise an; das Python selbst liegt
+                    # dann im Profil EINES Benutzers. Daraus liess sich auf einem
+                    # frischen Windows 11 (3.14) aus dem Admin-Fenster keine
+                    # Umgebung anlegen, und der Dienst laeuft als SYSTEM, nicht als
+                    # dieser Benutzer. Genommen wird nur ein Python fuer alle
+                    # Benutzer, und zwar mit festem Pfad statt ueber den Verweis.
+                    $ort = (Nativ $kandidat -c "import sys; print(getattr(sys, '_base_executable', '') or sys.executable)") |
+                           Where-Object { $_ -match '\.exe$' } | Select-Object -Last 1
+                    if (-not $ort -or -not (Test-Path $ort)) {
+                        Info "$version gefunden, aber der Ort laesst sich nicht feststellen - wird nicht genommen"
+                    } elseif ($ort -match '\\WindowsApps\\|\\Users\\') {
+                        Info "$version liegt nur im Benutzerprofil ($ort) - fuer den Dienst ungeeignet, bleibt aber unangetastet"
+                    } elseif (-not (Nativ $ort -c "import venv, ensurepip; print('venv-ok')" | Where-Object { $_ -eq 'venv-ok' })) {
+                        # Gesehen auf einem frischen Windows 11: C:\Python314 ohne
+                        # venv-Modul (entpackte Embeddable-Fassung). Daraus laesst
+                        # sich keine Umgebung anlegen.
+                        Info "$version ($ort) hat kein venv-Modul (abgespeckte Fassung) - wird nicht genommen, bleibt aber unangetastet"
+                    } else {
+                        $Python = $ort; Gut "$version gefunden ($ort)"; break
+                    }
                 } elseif ($version -match "Python \d") {
                     Info "$version ist zu alt (gebraucht wird 3.11 oder neuer)"
                 } else {
@@ -546,11 +569,34 @@ foreach ($kandidat in @("py", "python")) {
     Ansage "Python-Bausteine laden (FastAPI, uvicorn, oracledb, lxml ...)" "pypi.org" `
            "Webserver, Oracle-Zugriff und XML-Verarbeitung"
     if (Frage) {
+        $VenvOrdner = Join-Path $Basis ".venv"
+        $venvAusgabe = @()
         if (-not (Test-Path $VenvPython)) {
-            if ($Python -eq "py") { $null = Nativ $Python -3 -m venv (Join-Path $Basis ".venv") }
-            if (-not (Test-Path $VenvPython)) { $null = Nativ $Python -m venv (Join-Path $Basis ".venv") }
+            # Ein abgebrochener frueherer Versuch hinterlaesst einen halben
+            # Ordner ohne python.exe - der stoert venv, also weg damit.
+            if (Test-Path $VenvOrdner) { Remove-Item $VenvOrdner -Recurse -Force -ErrorAction SilentlyContinue }
+            # Der Reihe nach: Starter py, das gefundene Python, der feste Ort
+            # einer Installation fuer alle Benutzer. Jede Ausgabe wird
+            # gesammelt, damit eine Fehlermeldung den Grund nennt.
+            $versuche = @()
+            if ($Python -eq "py") { $versuche += ,@("py", "-3") }
+            $versuche += ,@($Python)
+            $fest = Join-Path $env:ProgramFiles ("Python" + ($PythonFassung -replace '^(\d+)\.(\d+).*$', '$1$2') + "\python.exe")
+            if ((Test-Path $fest) -and $fest -ne $Python) { $versuche += ,@($fest) }
+            foreach ($v in $versuche) {
+                if (Test-Path $VenvPython) { break }
+                $prog = $v[0]; $vorne = @($v | Select-Object -Skip 1)
+                $aus = Nativ $prog @vorne -m venv $VenvOrdner
+                $venvAusgabe += "[$($v -join ' ') -m venv] Rueckgabewert $script:NativCode"
+                $venvAusgabe += $aus
+            }
         }
-        if (-not (Test-Path $VenvPython)) { Schlecht "Die Umgebung liess sich nicht anlegen."; exit 1 }
+        if (-not (Test-Path $VenvPython)) {
+            Schlecht "Die Umgebung liess sich nicht anlegen ($VenvOrdner)."
+            $venvAusgabe | Select-Object -Last 15 | ForEach-Object { Info $_ }
+            Info "Haeufige Ursachen: Virenschutz/Ueberwachter Ordnerzugriff sperrt den Ordner, Installationsordner unter OneDrive oder ohne Schreibrecht, Python ohne venv-Modul."
+            exit 1
+        }
         $null = Nativ $VenvPython -m pip install --upgrade pip --quiet
         $pipAusgabe = Nativ $VenvPython -m pip install -r (Join-Path $Basis "requirements.txt") --quiet
         if ($script:NativCode -ne 0) {
