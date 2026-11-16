@@ -327,6 +327,15 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   <section class="karte">
     <h2>Verbindung prüfen</h2>
     <form method="post" action="/konfiguration/dbtest"><button>Datenbank testen</button></form>
+    {# Fehler DPY-3015: altes Passwortverfahren, der Thin-Modus kommt nicht
+       hinein. Ein Klick sucht oder laedt den Client (samt Visual-C++-Laufzeit),
+       probiert ihn mit echter Anmeldung und traegt ihn erst dann ein. #}
+    <form method="post" action="/konfiguration/oracle_client"
+          onsubmit="return confirm({{ oracle_ansage|tojson|forceescape }} + '\n\nFortfahren? Das kann einige Minuten dauern.')">
+      <button{% if 'DPY-3015' in meldung %} class="haupt"{% endif %}>Oracle-Client einrichten</button>
+      <span class="klein">nur bei Fehler <code>DPY-3015</code>{% if cfg.datenbank.thick_mode %} —
+      Thick-Modus ist an{% if cfg.datenbank.oracle_client_pfad %} ({{ cfg.datenbank.oracle_client_pfad }}){% endif %}{% endif %}</span>
+    </form>
     {# Die Anzahlungserkennung hat eine eigene Seite: Dort steht, was das
        eigene Haus tut, und die Codes lassen sich auswaehlen statt abtippen. #}
     <p class="hinweis"><a href="/einrichtung/anzahlungen">Anzahlungen einrichten</a> —

@@ -6594,6 +6594,150 @@ finally:
     auth.loeschen("sachbearbeiter")
     auth.loeschen("zweiter_verw")
 
+print("8v) Oracle-Client fuer DPY-3015 suchen, laden, probieren, eintragen")
+import time as _time_up
+from app import oracle_client as _oc
+import struct as _struct, tempfile as _tf_oc
+from pathlib import Path as _P_oc
+def _pe(maschine):
+    kopf = bytearray(512); kopf[:2] = b"MZ"; _struct.pack_into("<I", kopf, 0x3C, 0x80)
+    kopf[0x80:0x84] = b"PE\0\0"; _struct.pack_into("<H", kopf, 0x84, maschine); return bytes(kopf)
+with _tf_oc.TemporaryDirectory() as _d_oc:
+    _d_oc = _P_oc(_d_oc)
+    for _n, _inhalt in (("x64.dll", _pe(0x8664)), ("x86.dll", _pe(0x14C)),
+                        ("elf64.so", b"\x7fELF\x02" + bytes(60)), ("elf32.so", b"\x7fELF\x01" + bytes(60)),
+                        ("murks.dll", b"kein Programm")):
+        (_d_oc / _n).write_bytes(_inhalt)
+    pruefe(_oc.ist_64bit(_d_oc / "x64.dll") and _oc.ist_64bit(_d_oc / "elf64.so"),
+           "64-Bit-Client wird am Dateikopf erkannt (PE x64, ELF 64)")
+    pruefe(not _oc.ist_64bit(_d_oc / "x86.dll") and not _oc.ist_64bit(_d_oc / "elf32.so")
+           and not _oc.ist_64bit(_d_oc / "murks.dll") and not _oc.ist_64bit(_d_oc / "fehlt.dll"),
+           "32-Bit-Client, fremde und fehlende Dateien gelten nicht als brauchbar")
+    # Suche: der eigene Ordner unter BASIS/oracle kommt zuerst
+    _echt_ziel = _oc.ZIEL
+    try:
+        _oc.ZIEL = _d_oc / "oracle"
+        (_oc.ZIEL / "instantclient_23_0").mkdir(parents=True)
+        (_oc.ZIEL / "instantclient_23_0" / _oc.BIBLIOTHEK).write_bytes(
+            _pe(0x8664) if _oc.WINDOWS else b"\x7fELF\x02" + bytes(60))
+        _gef = _oc.suchen()
+        pruefe(bool(_gef) and _gef[0][0].name == "instantclient_23_0" and _gef[0][1],
+               "die Suche findet den eigenen Client unter BASIS/oracle zuerst, als 64 Bit")
+    finally:
+        _oc.ZIEL = _echt_ziel
+    # Probe in eigenem Prozess: ein Ordner ohne Client scheitert mit Grund,
+    # ohne den laufenden Prozess auf den Thick-Modus festzulegen.
+    try:
+        _oc.probieren({"datenbank": {"host": "127.0.0.1", "port": 1, "service_name": "X",
+                                     "benutzer": "u", "passwort": "p"}}, _d_oc / "leer")
+        pruefe(False, "Probe mit leerem Ordner muss scheitern")
+    except RuntimeError as _e_oc:
+        pruefe(bool(str(_e_oc)), f"Probe mit leerem Ordner scheitert mit Grund ({str(_e_oc)[:60]})")
+    from app import db as _db_oc
+    pruefe(not _db_oc._thick, "die Probe legt den Dienst selbst nicht auf den Thick-Modus fest")
+# Ablauf: 32 Bit wird uebergangen, der erste 64-Bit-Client mit gelungener
+# Anmeldung gewinnt; ohne Client unter Linux kommt die Anleitung.
+_echt_suchen, _echt_prob, _echt_vc = _oc.suchen, _oc.probieren, _oc.vc_laufzeit_da
+try:
+    _oc.vc_laufzeit_da = lambda: True
+    _oc.suchen = lambda: [(_P_oc("/x/client32"), False), (_P_oc("/x/kaputt"), True), (_P_oc("/x/gut"), True)]
+    def _prob(cfg, p):
+        if p.name == "kaputt":
+            raise RuntimeError("DPI-1047: Cannot locate a 64-bit Oracle Client library")
+        return "19.0.0.0.0"
+    _oc.probieren = _prob
+    _ord, _schr = _oc.einrichten({})
+    pruefe(_ord == _P_oc("/x/gut") and any("32 Bit" in s for s in _schr) and any("DPI-1047" in s for s in _schr),
+           "einrichten nimmt den ersten 64-Bit-Client, mit dem die Anmeldung gelingt, und nennt die anderen")
+    if not _oc.WINDOWS:
+        _oc.suchen = lambda: []
+        _ord, _schr = _oc.einrichten({})
+        pruefe(_ord is None and any("dnf install" in s for s in _schr),
+               "ohne Client unter Linux: nichts geladen, die Meldung sagt, was zu tun ist")
+finally:
+    _oc.suchen, _oc.probieren, _oc.vc_laufzeit_da = _echt_suchen, _echt_prob, _echt_vc
+# Zip-Pruefung: Oracle signiert das Zip (JAR-Signatur), nicht die DLLs.
+import base64 as _b64, hashlib as _hl, zipfile as _zf
+def _zip_bauen(pfad, dateien, extra=None, sf_falsch=False):
+    mf = "Manifest-Version: 1.0\r\n\r\n" + "".join(
+        f"Name: {n}\r\nSHA-256-Digest: {_b64.b64encode(_hl.sha256(d).digest()).decode()}\r\n\r\n"
+        for n, d in dateien.items())
+    sfd = _b64.b64encode(_hl.sha256(mf.encode()).digest()).decode()
+    sf = f"Signature-Version: 1.0\r\nSHA-256-Digest-Manifest: {'AAAA' if sf_falsch else sfd}\r\n\r\n"
+    with _zf.ZipFile(pfad, "w") as z:
+        z.writestr("META-INF/MANIFEST.MF", mf); z.writestr("META-INF/X.SF", sf); z.writestr("META-INF/X.RSA", b"p7")
+        for n, d in {**dateien, **(extra or {})}.items():
+            z.writestr(n, d)
+_cms_ok = lambda sf, p7: None
+with _tf_oc.TemporaryDirectory() as _d_z:
+    _d_z = _P_oc(_d_z); _inh = {"ic/oci.dll": _pe(0x8664), "ic/oraociei.dll": b"x" * 5000}
+    _zip_bauen(_d_z / "gut.zip", _inh)
+    try:
+        _oc._zip_pruefen(_d_z / "gut.zip", _cms_ok); _ok_z = True
+    except Exception as _e_z:
+        _ok_z = str(_e_z)
+    pruefe(_ok_z is True, f"signiertes Zip mit passendem Manifest wird angenommen ({_ok_z})")
+    for _art, _kw, _erw in (("veraendert", {"extra": {"ic/oci.dll": _pe(0x14C)}}, "veraendert"),
+                            ("dazu", {"extra": {"ic/boese.dll": b"MZ"}}, "nicht im signierten Manifest"),
+                            ("sf", {"sf_falsch": True}, "passt nicht zur Signaturdatei")):
+        _zip_bauen(_d_z / f"{_art}.zip", _inh, **_kw)
+        try:
+            _oc._zip_pruefen(_d_z / f"{_art}.zip", _cms_ok); _m_z = ""
+        except Exception as _e_z:
+            _m_z = str(_e_z)
+        pruefe(_erw in _m_z, f"Zip abgelehnt: {_art} ({_m_z[:50]})")
+    with _zf.ZipFile(_d_z / "ohne.zip", "w") as _z:
+        _z.writestr("ic/oci.dll", _pe(0x8664))
+    try:
+        _oc._zip_pruefen(_d_z / "ohne.zip", _cms_ok); _m_z = ""
+    except Exception as _e_z:
+        _m_z = str(_e_z)
+    pruefe("nicht signiert" in _m_z, "unsigniertes Zip wird abgelehnt")
+pruefe(_oc.unterzeichner_ok('CN="Oracle America, Inc.", O="Oracle America, Inc.", L=Redwood City, C=US')
+       and _oc.unterzeichner_ok("CN=Oracle America, Inc., O=Oracle America, Inc., C=US"),
+       "Unterzeichner Oracle America wird erkannt (mit und ohne Anfuehrungszeichen)")
+pruefe(not _oc.unterzeichner_ok("CN=x, O=Oracle America Fake Ltd")
+       and not _oc.unterzeichner_ok("CN=x, O=Evil, OU=Oracle America, Inc."),
+       "fremde Unterzeichner mit aehnlichem Namen werden abgelehnt")
+# Route und Seite
+_quelle_oc = (BASE / "app" / "main.py").read_text(encoding="utf-8")
+_stueck_oc = _quelle_oc.split('@app.post("/konfiguration/oracle_client")', 1)[1].split("@app.", 1)[0]
+pruefe("_darf_verwalten(request)" in _stueck_oc and "laeuft_gerade()" in _stueck_oc,
+       "Oracle-Client einrichten nur fuer Verwalter und nicht waehrend eines Automatiklaufs")
+_stueck_db = _quelle_oc.split('@app.post("/konfiguration/dbtest")', 1)[1].split("@app.", 1)[0]
+pruefe("ist_dpy3015" in _stueck_db and "Oracle-Client einrichten" in _stueck_db,
+       "Datenbank testen verweist bei DPY-3015 auf den Knopf")
+_echt_einr, _echt_ns_oc = _oc.einrichten, updater.neustart
+_vorher_db = dict(config.laden()["datenbank"])
+_ns_oc = []
+try:
+    updater.neustart = lambda *a, **k: _ns_oc.append(1)
+    with TestClient(app, client=("127.0.0.1", 50000)) as _ko:
+        _ko.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+        _seite_oc = _ko.get("/konfiguration?meldung=Fehler: DPY-3015: password verifier type 0x939").text
+        pruefe('action="/konfiguration/oracle_client"' in _seite_oc and "Visual-C++" in _seite_oc,
+               "die Konfigurationsseite bietet Oracle-Client einrichten mit Ansage (auch Visual C++)")
+        _oc.einrichten = lambda cfg: (None, ["/x/client32: 32 Bit, nicht verwendbar"])
+        _a = _ko.post("/konfiguration/oracle_client", follow_redirects=False)
+        _time_up.sleep(1.2)
+        pruefe(_a.status_code == 303 and "nicht eingerichtet" in _uq(_a.headers.get("location", ""))
+               and config.laden()["datenbank"].get("thick_mode") == _vorher_db.get("thick_mode")
+               and not _ns_oc, "scheitert die Probe, bleibt die Konfiguration unveraendert und kein Neustart")
+        _oc.einrichten = lambda cfg: (_P_oc("C:/XRechnung/oracle/instantclient_23_0"), ["Anmeldung gelungen"])
+        _a = _ko.post("/konfiguration/oracle_client", follow_redirects=False)
+        _time_up.sleep(1.5)
+        _db_neu = config.laden()["datenbank"]
+        pruefe(_a.status_code == 200 and "startet jetzt neu" in _a.text and _db_neu.get("thick_mode") is True
+               and _db_neu.get("oracle_client_pfad", "").endswith("instantclient_23_0") and _ns_oc == [1],
+               "gelingt die Probe: Thick-Modus und Pfad eingetragen, Dienst startet neu")
+        pruefe(_db_neu.get("passwort") == _vorher_db.get("passwort"), "das DB-Passwort bleibt dabei erhalten")
+finally:
+    _oc.einrichten, updater.neustart = _echt_einr, _echt_ns_oc
+    _cfg_oc = config.laden()
+    _cfg_oc["datenbank"]["thick_mode"] = _vorher_db.get("thick_mode", False)
+    _cfg_oc["datenbank"]["oracle_client_pfad"] = _vorher_db.get("oracle_client_pfad", "")
+    config.speichern(_cfg_oc)
+
 print()
 if fehler:
     print(f"{len(fehler)} Punkt(e) offen:")

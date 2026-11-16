@@ -25,6 +25,7 @@ from fastapi.templating import Jinja2Templates
 from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, opera, store, updater, validate, xml_build
 
 from . import pfade
+from . import oracle_client
 # Programm: Handbuch und Vorlagen wechseln mit jeder Aktualisierung.
 BASE = pfade.PROGRAMM
 # Das Verzeichnis muss VOR der Protokollierung stehen — sie wird beim Import
@@ -904,6 +905,7 @@ def konfiguration(request: Request, meldung: str = ""):
         erklaerungen=einstellungen.erklaerungen(),
         schreibbar=schreibbar, schreibgrund=schreibgrund,
         validator=validate.zustand(cfg), version=updater.version(),
+        oracle_ansage=oracle_client.ANSAGE,
         xrechnung_versionen=list(xml_build.VERSIONEN),
         quelle_repo=_quelle[0], quelle_zweig=_quelle[1], quelle_festgenagelt=_quelle[2],
         freigaben=[f.name for f in updater.freigaben()],
@@ -1374,7 +1376,53 @@ def dbtest(request: Request):
                        f"OPERA-Datenbank.{modus}")
     except Exception as e:
         meldung = f"Fehler: {e}"
+        if oracle_client.ist_dpy3015(str(e)):
+            meldung += (" — Die Datenbank nutzt ein altes Passwortverfahren. Abhilfe: unten "
+                        "„Oracle-Client einrichten“ drücken.")
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+
+
+@app.post("/konfiguration/oracle_client")
+def oracle_client_einrichten(request: Request):
+    """Fehler DPY-3015 beheben: Client suchen oder laden, mit echter Anmeldung
+    probieren, erst dann Thick-Modus und Pfad eintragen und neu starten.
+    Siehe app/oracle_client.py."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
+    if automatik.laeuft_gerade():
+        return RedirectResponse("/konfiguration?meldung=" + BESCHAEFTIGT, status_code=303)
+    cfg = config.laden()
+    try:
+        ordner, schritte = oracle_client.einrichten(cfg)
+    except Exception as e:  # noqa: BLE001 — Grund in die Meldung
+        log.exception("Oracle-Client einrichten")
+        ordner, schritte = None, [str(e)]
+    verlauf = " · ".join(schritte) or "kein Oracle-Client gefunden"
+    if not ordner:
+        store.protokoll("konfiguration", "Oracle-Client nicht eingerichtet: " + verlauf,
+                        benutzer=request.state.benutzer, erfolg=False)
+        return RedirectResponse("/konfiguration?meldung=Oracle-Client nicht eingerichtet: "
+                                + verlauf, status_code=303)
+    cfg.setdefault("datenbank", {})["thick_mode"] = True
+    cfg["datenbank"]["oracle_client_pfad"] = str(ordner)
+    try:
+        config.speichern(cfg)
+    except config.KonfigFehler as e:
+        return RedirectResponse(f"/konfiguration?meldung=Fehler: {e}", status_code=303)
+    store.protokoll("konfiguration", f"Oracle-Client eingerichtet, Thick-Modus mit {ordner}: "
+                    + verlauf, benutzer=request.state.benutzer)
+    store.protokoll("neustart", "nach Einrichten des Oracle-Clients ausgelöst",
+                    benutzer=request.state.benutzer)
+    from threading import Timer
+    from html import escape
+    Timer(1.0, updater.neustart).start()
+    return HTMLResponse(
+        "<!doctype html><meta charset=utf-8><meta http-equiv=refresh content='8;url=/konfiguration'>"
+        "<title>Neustart</title><body style='font-family:sans-serif;max-width:40rem;margin:3rem auto'>"
+        "<h1>Oracle-Client eingerichtet</h1>"
+        f"<p>{escape(verlauf)}</p><p>Thick-Modus ist eingetragen mit <code>{escape(str(ordner))}</code>.</p>"
+        "<p><strong>Der Dienst startet jetzt neu.</strong> Diese Seite lädt in einigen Sekunden die "
+        "Konfiguration; danach „Datenbank testen“.</p><p><a href='/konfiguration'>Zur Konfiguration</a></p>")
 
 
 @app.get("/einrichtung/anzahlungen", response_class=HTMLResponse)

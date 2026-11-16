@@ -13,6 +13,23 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.4.0] – 2026-11-16
+
+**Fehler DPY-3015: Oracle-Client mit einem Klick**
+- Neuer Knopf „Oracle-Client einrichten“ in der Konfiguration unter
+  „Verbindung prüfen“. „Datenbank testen“ weist bei `DPY-3015` darauf hin.
+- Der Knopf sucht einen Oracle-Client mit 64 Bit auf dem Rechner. Ein
+  32-Bit-Client, wie er für OPERA oft installiert ist, wird erkannt und
+  übergangen. Findet sich keiner, lädt die Anwendung unter Windows den Oracle
+  Instant Client (Basic Light) von oracle.com nach `oracle\` im
+  Installationsordner. Fehlt die Visual-C++-Laufzeit, installiert sie diese von
+  Microsoft. Die Signaturen von Oracle und Microsoft werden vorher geprüft.
+- Eingetragen wird erst nach einer gelungenen Probeanmeldung, in einem
+  eigenen Prozess. Danach startet der Dienst neu. Scheitert die Probe, bleibt
+  die Konfiguration unverändert und die Meldung nennt den Grund je Client.
+- Unter Linux wird nichts geladen; die Meldung nennt die dnf-Befehle.
+- Der Ordner `oracle\` übersteht Aktualisierungen.
+
 ## [1.3.1] – 2026-11-16
 
 **Windows-Installer: Python sicherer gewählt**

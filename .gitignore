@@ -28,3 +28,6 @@ install/nssm.exe
 # Zusammen 14 MB, die im Programm-Repository nichts zu suchen haben.
 reference/
 .DS_Store
+
+# Oracle Instant Client fuer den Thick-Modus (DPY-3015), von der Anwendung geladen
+oracle/
