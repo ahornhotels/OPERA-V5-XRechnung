@@ -13,6 +13,19 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.4.1] – 2026-11-18
+
+**Korrektur: Hinweis „vor der Umstellung“ in älterer OPERA**
+- In einer OPERA ohne Belegart (`DOCUMENT_TYPE`) stand an jedem Altbeleg
+  „Voraus-, Zwischen- oder Anzahlungsrechnung von vor der Umstellung“, auch an
+  gewöhnlichen Endrechnungen. Dort heißt der Hinweis jetzt „Beleg von vor dem
+  ersten Einlesen — die Belegart ist in dieser OPERA-Version nicht erkennbar“;
+  Anzahlungsbelege (Status DEPOSIT) heißen „Anzahlungsrechnung von vor dem
+  ersten Einlesen“.
+- Schon gesetzte Hinweise stellt das nächste Einlesen auf den passenden Text
+  um. Andere Gründe am selben Beleg bleiben stehen.
+- Mit bekannter Belegart ändert sich nichts.
+
 ## [1.4.0] – 2026-11-16
 
 **Fehler DPY-3015: Oracle-Client mit einem Klick**

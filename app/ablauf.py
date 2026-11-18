@@ -113,6 +113,19 @@ HINWEIS_OHNE_TSE = ("Beleg ohne TSE-Nummer — er war nie beim Fiskalsystem. Bit
 HINWEIS_VOR_UMSTELLUNG = ("Voraus-, Zwischen- oder Anzahlungsrechnung von vor der Umstellung — "
                           "eine spätere Rechnung kann sie schon verrechnet haben. Ansehen, "
                           "bevor sie nachträglich hinausgeht")
+# Dasselbe in einer OPERA ohne DOCUMENT_TYPE (docs/16_OPERA_OHNE_DOCUMENT_TYPE.md).
+# Dort ist die Belegart unbekannt, und jeder Altbeleg faellt unter die Regel,
+# auch die gewoehnliche Endrechnung. Der Text oben behauptete dann eine Voraus-,
+# Zwischen- oder Anzahlungsrechnung, die es nicht gab (gesehen 17.11.2026 im
+# neu eingerichteten Haus). Erkennbar bleibt dort nur die Anzahlung, am Status.
+HINWEIS_VOR_ERSTEM_EINLESEN = ("Beleg von vor dem ersten Einlesen — die Belegart ist in dieser "
+                               "OPERA-Version nicht erkennbar. Ansehen, bevor er nachträglich "
+                               "hinausgeht")
+HINWEIS_ANZAHLUNG_VOR_ERSTEM = ("Anzahlungsrechnung von vor dem ersten Einlesen — eine spätere "
+                                "Rechnung kann sie schon verrechnet haben. Ansehen, bevor sie "
+                                "nachträglich hinausgeht")
+HINWEISE_VOR_UMSTELLUNG = (HINWEIS_VOR_UMSTELLUNG, HINWEIS_VOR_ERSTEM_EINLESEN,
+                           HINWEIS_ANZAHLUNG_VOR_ERSTEM)
 # Seit wann jeder gueltige Beleg eingelesen wird, nicht nur die Endrechnung.
 # Beim ersten Einlesen danach festgehalten (Protokoll), damit der Altbestand
 # des Zeitfensters nicht auf einen Schlag automatisch hinausgeht.
@@ -140,6 +153,48 @@ def _neue_belegart(r: dict) -> bool:
     return ("beleg_status" in r and status != "OK") or ("document_type" in r and art != "INVOICE")
 
 
+def belegart_bekannt(gelesen: list[dict]) -> bool:
+    """Fuehrt diese OPERA eine Belegart? Ohne DOCUMENT_TYPE ersetzt die
+    Abfrage die Spalte durch NULL — dann ist sie an keinem Beleg gefuellt."""
+    return any(str(r.get("document_type") or "").strip() for r in gelesen)
+
+
+def hinweis_vor_umstellung(cfg: dict, r: dict, bekannt: bool) -> str:
+    """Der passende Text fuer einen Altbeleg: genau, wenn die Belegart
+    bekannt ist; sonst ehrlich, und die Anzahlung am Status erkannt."""
+    if bekannt:
+        return HINWEIS_VOR_UMSTELLUNG
+    status = str(r.get("beleg_status") or "").strip().upper()
+    if status and status == opera.anzahlung_status(cfg).upper():
+        return HINWEIS_ANZAHLUNG_VOR_ERSTEM
+    return HINWEIS_VOR_ERSTEM_EINLESEN
+
+
+def _vor_umstellung_text(fehler: str | None) -> str | None:
+    teile = [x.strip() for x in (fehler or "").split(TRENNER)]
+    return next((h for h in HINWEISE_VOR_UMSTELLUNG if h in teile), None)
+
+
+def vor_umstellung_texte_angleichen(cfg: dict, gelesen: list[dict], bekannt: bool) -> int:
+    """Schon gesetzte Hinweise auf den passenden Text umstellen. Belege, die
+    gerade nicht im Zeitfenster stehen, bekommen den allgemeinen Text der
+    unbekannten Belegart. Gibt die Anzahl zurueck."""
+    if bekannt:
+        return 0
+    nach_nummer = {int(r["bill_no"]): r for r in gelesen if r.get("bill_no") is not None}
+    zahl = 0
+    for rec in store.liste("pruefung", limit=100000):
+        alt = _vor_umstellung_text(rec.get("fehler"))
+        if not alt:
+            continue
+        neu = hinweis_vor_umstellung(cfg, nach_nummer.get(int(rec["bill_no"]), {}), False)
+        if neu == alt:
+            continue
+        store.setzen(rec["bill_no"], fehler=hinweis_dazu(hinweis_weg(rec.get("fehler"), alt), neu))
+        zahl += 1
+    return zahl
+
+
 def vor_umstellung_aufraeumen(umstellung: str) -> int:
     """Den Hinweis "vor der Umstellung" dort entfernen, wo er nie hingehoerte:
     an Belegen vom Tag der Umstellung, die erst NACH dem ersten Lauf erstmals
@@ -155,12 +210,13 @@ def vor_umstellung_aufraeumen(umstellung: str) -> int:
         return 0
     zahl = 0
     for r in store.liste("pruefung", limit=100000):
-        if HINWEIS_VOR_UMSTELLUNG not in (r.get("fehler") or ""):
+        alt = _vor_umstellung_text(r.get("fehler"))
+        if not alt:
             continue
         if not ((r.get("zuerst_gesehen") or "") > ende_erstlauf
                 and str(r.get("issuedate") or "")[:10] >= tag):
             continue
-        rest = hinweis_weg(r.get("fehler"), HINWEIS_VOR_UMSTELLUNG)
+        rest = hinweis_weg(r.get("fehler"), alt)
         felder: dict = {"fehler": rest}
         if not rest:
             felder["status"] = "neu"
@@ -235,13 +291,17 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
     _tse_im_haus = tse_im_haus
     umstellung = store.erste_aktion(UMSTELLUNG_BELEGARTEN)
     erstlauf = not umstellung
+    bekannt = belegart_bekannt(gelesen)
     if erstlauf:
         store.protokoll(UMSTELLUNG_BELEGARTEN, "Ab jetzt wird jeder gültige Beleg eingelesen, "
-                        "nicht nur die Endrechnung. Ältere Voraus-, Zwischen- und "
-                        "Anzahlungsrechnungen gehen zur Sichtprüfung.")
+                        "nicht nur die Endrechnung. " + (
+                            "Ältere Voraus-, Zwischen- und Anzahlungsrechnungen gehen zur Sichtprüfung."
+                            if bekannt else "Die Belegart ist in dieser OPERA-Version nicht "
+                            "erkennbar: Belege von vor dem ersten Einlesen gehen zur Sichtprüfung."))
         umstellung = store.jetzt()
     umstellungstag = umstellung[:10]
     vor_umstellung_aufraeumen(umstellung)
+    vor_umstellung_texte_angleichen(cfg, gelesen, bekannt)
     for r in gelesen:
         bezug = r.get("firmenbezug") or "-"
 
@@ -329,7 +389,7 @@ def einlesen(cfg: dict, tage: int | None = None) -> dict:
             # des Tages, auch ganz gewoehnliche.
             tag = str(satz.get("issuedate") or "")[:10]
             if _neue_belegart(r) and (tag < umstellungstag or (erstlauf and tag == umstellungstag)):
-                gruende.append(HINWEIS_VOR_UMSTELLUNG)
+                gruende.append(hinweis_vor_umstellung(cfg, r, bekannt))
             for grund in gruende:
                 zur_pruefung(satz["bill_no"], grund)
                 store.protokoll("pruefung", grund, bill_no=satz["bill_no"])

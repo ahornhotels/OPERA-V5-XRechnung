@@ -25,7 +25,12 @@ nicht mehr nötig):
 - **Vorsicht beim Start:** Beim ersten Einlesen gehen alle Belege des
   Zeitfensters, die nicht als Endrechnung erkennbar sind, mit dem Hinweis
   „vor der Umstellung“ in die Sichtprüfung. Ohne `DOCUMENT_TYPE` ist das jeder
-  Beleg des Altbestands — gewollt.
+  Beleg des Altbestands — gewollt. Der Hinweis sagt das dann auch so („Beleg
+  von vor dem ersten Einlesen — die Belegart ist in dieser OPERA-Version nicht
+  erkennbar“); Anzahlungsbelege (Status `DEPOSIT`) heißen „Anzahlungsrechnung
+  von vor dem ersten Einlesen“. Bis 1.4.0 stand an jedem Beleg „Voraus-,
+  Zwischen- oder Anzahlungsrechnung“, auch an gewöhnlichen Endrechnungen;
+  solche Texte stellt das nächste Einlesen um.
 - **Geprüft:** Alle 19 Abfragen nach dem Ersatz gegen den Strukturexport des
   Zielhauses abgeglichen: keine fehlende Spalte (ohne Ersatz scheitern 8).
   Selbsttest deckt Erkennung, Ersatz und unveränderte Abfragen bei

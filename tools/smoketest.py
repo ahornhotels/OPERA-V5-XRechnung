@@ -5220,6 +5220,60 @@ finally:
     with store.verbindung() as con:
         con.execute("DELETE FROM rechnungen WHERE bill_no = 960034")
 
+# Der Text passt zur Lage. Ohne DOCUMENT_TYPE behauptete er eine Voraus-,
+# Zwischen- oder Anzahlungsrechnung auch an gewoehnlichen Endrechnungen.
+_ac = {"property": {}, "auswahl": {}}
+pruefe(ablauf.hinweis_vor_umstellung(_ac, {"beleg_status": "OK", "document_type": "PROFORMA"}, True)
+       == ablauf.HINWEIS_VOR_UMSTELLUNG, "Belegart bekannt: Text wie bisher")
+pruefe(ablauf.hinweis_vor_umstellung(_ac, {"beleg_status": "OK", "document_type": None}, False)
+       == ablauf.HINWEIS_VOR_ERSTEM_EINLESEN
+       and "Voraus" not in ablauf.HINWEIS_VOR_ERSTEM_EINLESEN,
+       "Belegart unbekannt: Beleg von vor dem ersten Einlesen, ohne Voraus/Zwischen zu behaupten")
+pruefe(ablauf.hinweis_vor_umstellung(_ac, {"beleg_status": "DEPOSIT", "document_type": None}, False)
+       == ablauf.HINWEIS_ANZAHLUNG_VOR_ERSTEM, "Belegart unbekannt, Status DEPOSIT: Anzahlungsrechnung")
+pruefe(ablauf.belegart_bekannt([{"document_type": "INVOICE"}, {"document_type": None}])
+       and not ablauf.belegart_bekannt([{"document_type": None}, {}]),
+       "Belegart gilt als bekannt, sobald ein Beleg sie traegt")
+# Erstlauf in einer OPERA ohne DOCUMENT_TYPE, und Umschreiben alter Texte
+_gestern_a = (_d9.today() - _tdd9(days=3)).isoformat()
+_kand9[:] = [{"bill_no": 960040, "issuedate": _gestern_a, "total_net": 100.0, "total_gross": 107.0,
+              "beleg_status": "OK", "document_type": None, "fiscal_bill_no": "900040",
+              "company_name": "Alt GmbH", "name_id": 6, "empfaenger_typ": "COMPANY",
+              "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"},
+             {"bill_no": 960041, "issuedate": _gestern_a, "total_net": 50.0, "total_gross": 53.5,
+              "beleg_status": "DEPOSIT", "document_type": None, "fiscal_bill_no": "900041",
+              "company_name": "Alt GmbH", "name_id": 6, "empfaenger_typ": "COMPANY",
+              "empfaenger_land": "DE", "firmenbezug": "EMPFAENGER", "ohne_anzahlung": "J"}]
+opera.kandidaten = lambda cfg, tage=None: [dict(k) for k in _kand9]
+opera.empfaenger = lambda bill_no: [{"email": "rechnung@firma.example"}]
+try:
+    ablauf.einlesen(_bcfg)
+    _e40, _e41 = store.rechnung(960040), store.rechnung(960041)
+    pruefe(_e40["status"] == "pruefung" and ablauf.HINWEIS_VOR_ERSTEM_EINLESEN in (_e40["fehler"] or "")
+           and "Voraus" not in (_e40["fehler"] or ""),
+           f"aeltere OPERA: Altbeleg mit ehrlichem Text in der Sichtpruefung ({_e40['fehler']})")
+    pruefe(ablauf.HINWEIS_ANZAHLUNG_VOR_ERSTEM in (_e41["fehler"] or ""),
+           f"aeltere OPERA: Anzahlungsbeleg als Anzahlungsrechnung benannt ({_e41['fehler']})")
+    # Alte Texte, wie sie bis 1.4.0 gesetzt wurden, werden umgestellt —
+    # andere Gruende daneben bleiben stehen.
+    store.setzen(960040, status="pruefung",
+                 fehler=ablauf.hinweis_dazu("Firma hängt an der Reservierung", ablauf.HINWEIS_VOR_UMSTELLUNG))
+    store.setzen(960041, status="pruefung", fehler=ablauf.HINWEIS_VOR_UMSTELLUNG)
+    ablauf.einlesen(_bcfg)
+    _e40, _e41 = store.rechnung(960040), store.rechnung(960041)
+    pruefe(ablauf.HINWEIS_VOR_ERSTEM_EINLESEN in _e40["fehler"] and ablauf.HINWEIS_VOR_UMSTELLUNG not in _e40["fehler"]
+           and "Firma hängt an der Reservierung" in _e40["fehler"] and _e40["status"] == "pruefung",
+           f"alter Text wird umgestellt, der andere Grund bleibt ({_e40['fehler']})")
+    pruefe(_e41["fehler"] == ablauf.HINWEIS_ANZAHLUNG_VOR_ERSTEM,
+           f"alter Text am Anzahlungsbeleg wird zur Anzahlungsrechnung ({_e41['fehler']})")
+    # Mit bekannter Belegart bleibt der bisherige Text unangetastet.
+    pruefe(ablauf.vor_umstellung_texte_angleichen(_ac, [{"bill_no": 960041, "document_type": "INVOICE"}], True) == 0,
+           "bei bekannter Belegart wird nichts umgestellt")
+finally:
+    opera.kandidaten, opera.empfaenger = _echt_k9, _echt_e9
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no IN (960040, 960041)")
+
 # --- Leistungszeitraum eines PM-Kontos ----------------------------------------
 _pm = {"startdate": "2026-01-01", "enddate": "2026-12-31", "pseudozimmer": "Y"}
 opera.rechnungszeitraum_erweitern(_pm, [{"zeitraum_beginn": "2026-10-20", "zeitraum_ende": "2026-10-23"},

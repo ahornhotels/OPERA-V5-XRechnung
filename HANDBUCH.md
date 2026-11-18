@@ -321,6 +321,15 @@ eine spätere Rechnung längst verrechnet. Sie gehen nicht automatisch hinaus,
 sondern einmalig zur Sichtprüfung („von vor der Umstellung“). Ab dem Tag der
 Umstellung laufen sie wie jede andere Rechnung.
 
+Ältere OPERA-Versionen führen **keine Belegart**. Dort ist nicht erkennbar,
+ob ein Beleg eine Voraus-, Zwischen- oder Endrechnung ist, und beim ersten
+Einlesen geht **jeder** Beleg aus dem Zeitfenster einmalig zur Sichtprüfung,
+mit dem Hinweis „Beleg von vor dem ersten Einlesen — die Belegart ist in
+dieser OPERA-Version nicht erkennbar“. Anzahlungsbelege erkennt die Anwendung
+dort am Status; sie heißen „Anzahlungsrechnung von vor dem ersten Einlesen“.
+Was der Kunde schon auf anderem Weg hat, wird zurückgelegt; der Rest
+freigegeben. Belege nach dem ersten Einlesen laufen normal.
+
 Für Anzahlungsrechnungen kennt die europäische Codeliste einen eigenen Typ
 (386). XRechnung lässt ihn nicht zu (Regel BR-DE-17); die Anzahlungsrechnung
 geht deshalb als Typ 380 mit dem Vermerk hinaus.
