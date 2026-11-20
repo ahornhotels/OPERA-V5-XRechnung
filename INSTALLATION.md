@@ -115,31 +115,43 @@ Für mehrere Häuser laufen mehrere Installationen, auf Wunsch auf demselben
 Rechner. Jede bekommt einen **eigenen Ordner**, einen **eigenen Namen** und
 einen **eigenen Port**:
 
-| Haus | Ordner | Aufruf (PowerShell als Administrator) | Oberfläche |
-|---|---|---|---|
-| erstes | `C:\XRechnung` | `install\installieren.ps1` | `http://<rechner>:8022/` |
-| zweites | `C:\XRechnung-NORD` | `install\installieren.ps1 -Instanz NORD -Port 8023` | `http://<rechner>:8023/` |
-| drittes | `C:\XRechnung-SUED` | `install\installieren.ps1 -Instanz SUED -Port 8024` | `http://<rechner>:8024/` |
+| Haus | Ordner | Name | Port | Oberfläche |
+|---|---|---|---|---|
+| erstes | `C:\XRechnung` | – | 8022 | `http://<rechner>:8022/` |
+| zweites | `C:\XRechnung-NORD` | `NORD` | 8023 | `http://<rechner>:8023/` |
+| drittes | `C:\XRechnung-SUED` | `SUED` | 8024 | `http://<rechner>:8024/` |
 
 So geht es:
 
-1. Den Projektordner für jedes weitere Haus in einen **eigenen Ordner**
-   kopieren.
-2. Dort den Installer mit `-Instanz` und `-Port` starten. Der Dienst heißt
-   dann `OperaXRechnung-NORD`, in der Diensteverwaltung „OPERA XRechnung NORD“.
+1. Das Programm für jedes weitere Haus in einen **eigenen Ordner**
+   auspacken, frisch aus dem Release. Keine Kopie eines schon eingerichteten
+   Ordners: Darin stecken Konfiguration, Benutzer und Daten des anderen Hauses.
+2. Dort wie gewohnt `install\INSTALLIEREN.cmd` doppelklicken. Beim ersten
+   Lauf in einem Ordner fragt der Installer nach **Name** und **Port**. Er
+   zeigt die Installationen, die es auf dem Rechner schon gibt, und schlägt
+   freie Werte vor; Enter übernimmt sie. Nach dem Namen fragt er nur, wenn es
+   schon eine andere Installation gibt. Der Name darf Buchstaben, Ziffern,
+   `-` und `_` enthalten, höchstens 20 Zeichen. Der Dienst heißt dann
+   `OperaXRechnung-NORD`, in der Diensteverwaltung „OPERA XRechnung NORD“.
 3. In der Oberfläche dieser Installation unter „Konfiguration“ den
-   **Hotelcode** des Hauses eintragen und „Verbindung testen“. Die Meldung
+   **Hotelcode** des Hauses eintragen und „Verbindung prüfen“. Die Meldung
    nennt das Haus zum Code. Ist der Code unbekannt, nennt sie die Codes, die
    es in der Datenbank gibt.
 
+Für unbeaufsichtigte Läufe gibt es die Schalter weiterhin, dann fragt der
+Installer nicht (PowerShell als Administrator):
+`install\installieren.ps1 -Instanz NORD -Port 8023`
+
 Name und Port merkt sich der Installer in `config\instanz.cmd`. Ein erneuter
-Lauf, `run.cmd`, `dienst_einrichten.cmd` und `dienst_entfernen.cmd` nehmen sie
-von dort, ohne dass man sie wieder angeben muss.
+Lauf fragt nicht noch einmal; er, `run.cmd`, `dienst_einrichten.cmd` und
+`dienst_entfernen.cmd` nehmen beides von dort.
 
 **Der Installer schützt die anderen Installationen.** Gehört der Dienstname
-schon einer Installation in einem anderen Ordner, oder belegt ein anderes
-Programm den Port, bricht er ab, bevor er etwas lädt oder ändert, und nennt
-den Grund. Früher hätte eine zweite Kopie mit den Vorgaben den Dienst der
+schon einer Installation in einem anderen Ordner, oder ist der Port belegt
+(von einem anderen Programm oder einer anderen Installation, auch einer
+angehaltenen), fragt er nach neuen Werten. Mit Schaltern oder
+`-OhneRueckfrage` bricht er stattdessen ab, bevor er etwas lädt oder ändert,
+und nennt den Grund. Früher hätte eine zweite Kopie mit den Vorgaben den Dienst der
 ersten stillschweigend auf sich umgelegt.
 
 Jede Installation hat ihre eigene Konfiguration, eigene Benutzer, eigene

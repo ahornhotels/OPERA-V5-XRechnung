@@ -17,7 +17,9 @@
 #                    Zusammen mit -Port und einem eigenen Ordner.
 #
 # Mehrere Installationen auf einem Rechner: jede in ihrem eigenen Ordner, mit
-# eigenem -Instanz und eigenem -Port. Name und Port merkt sich der Installer in
+# eigenem Namen und Port. Beim ersten Lauf in einem Ordner fragt der Installer
+# danach und schlaegt freie Werte vor (Enter genuegt); -Instanz und -Port sind
+# nur fuer unbeaufsichtigte Laeufe noetig. Name und Port merkt sich der Installer in
 # config\instanz.cmd; ein erneuter Lauf, run.cmd und die Dienst-Skripte lesen
 # sie dort. Gehoert der Dienst schon einem anderen Ordner oder ist der Port
 # belegt, bricht er ab, bevor er etwas laedt oder aendert.
@@ -271,14 +273,10 @@ if (Test-Path $InstanzDatei) {
         if ($eintrag -match '^\s*set\s+(INSTANZ|PORT)=(.*)$') { $Gemerkt[$Matches[1].ToUpper()] = $Matches[2].Trim() }
     }
 }
-if (-not $PSBoundParameters.ContainsKey("Instanz") -and $Gemerkt["INSTANZ"]) { $Instanz = $Gemerkt["INSTANZ"] }
-if (-not $PSBoundParameters.ContainsKey("Port") -and "$($Gemerkt["PORT"])" -match '^\d+$') { $Port = [int]$Gemerkt["PORT"] }
-if ($Instanz -and $Instanz -notmatch '^[A-Za-z0-9_-]{1,20}$') {
-    Write-Host "  -Instanz darf nur Buchstaben, Ziffern, - und _ enthalten, hoechstens 20 Zeichen." -ForegroundColor Yellow
-    exit 1
-}
-$Dienst = if ($Instanz) { "OperaXRechnung-$Instanz" } else { "OperaXRechnung" }
-$Anzeigename = if ($Instanz) { "OPERA XRechnung $Instanz" } else { "OPERA XRechnung" }
+$NameGegeben = $PSBoundParameters.ContainsKey("Instanz")
+$PortGegeben = $PSBoundParameters.ContainsKey("Port")
+if (-not $NameGegeben -and $Gemerkt["INSTANZ"]) { $Instanz = $Gemerkt["INSTANZ"] }
+if (-not $PortGegeben -and "$($Gemerkt["PORT"])" -match '^\d+$') { $Port = [int]$Gemerkt["PORT"] }
 
 # Gehoert ein Pfad zu diesem Ordner? Ohne Wildcards (Ordnernamen mit [ ]) und
 # ohne Gross/Klein. Der abschliessende \ verhindert, dass C:\XRechnung als Teil
@@ -287,51 +285,184 @@ function InDiesemOrdner($pfad) {
     if (-not $pfad) { return $false }
     return ("$pfad".IndexOf(($Basis.TrimEnd('\') + '\'), [StringComparison]::OrdinalIgnoreCase) -ge 0)
 }
-$DienstFremd = ""
-try {
-    $vorhanden = Get-CimInstance -ClassName Win32_Service -Filter "Name='$Dienst'" -ErrorAction Stop
-    if ($vorhanden) {
-        # Zu welcher Installation ein Dienst gehoert, sagt das Arbeitsverzeichnis,
-        # das NSSM in der Registry ablegt; Rueckfall ist der Pfad der nssm.exe.
-        $arbeitsordner = (Get-ItemProperty -Path ("HKLM:\SYSTEM\CurrentControlSet\Services\$Dienst\Parameters") `
-                          -Name AppDirectory -ErrorAction SilentlyContinue).AppDirectory
-        $eigen = if ($arbeitsordner) { "$arbeitsordner".TrimEnd('\') -eq $Basis.TrimEnd('\') }
-                 else { InDiesemOrdner $vorhanden.PathName }
-        if (-not $eigen) { $DienstFremd = if ($arbeitsordner) { "$arbeitsordner" } else { "$($vorhanden.PathName)" } }
+
+# Die Installationen in ANDEREN Ordnern auf diesem Rechner: Dienstname, Ordner
+# und Port. Den Port liest NSSM aus AppParameters ("--port 8023") - so zaehlt
+# auch ein angehaltener Dienst, dessen Port gerade niemand belegt.
+function AndereInstallationen {
+    $liste = @()
+    try {
+        $dienste = Get-CimInstance -ClassName Win32_Service -Filter "Name LIKE 'OperaXRechnung%'" -ErrorAction Stop
+    } catch { return $liste }
+    foreach ($d in $dienste) {
+        $param = Get-ItemProperty -Path ("HKLM:\SYSTEM\CurrentControlSet\Services\$($d.Name)\Parameters") `
+                                  -ErrorAction SilentlyContinue
+        $ordner = if ($param -and $param.AppDirectory) { "$($param.AppDirectory)".TrimEnd('\') } else { "$($d.PathName)" }
+        if ($param -and $param.AppDirectory) {
+            if ($ordner -eq $Basis.TrimEnd('\')) { continue }
+        } elseif (InDiesemOrdner $d.PathName) { continue }
+        $p = if ($param -and "$($param.AppParameters)" -match '--port\s+(\d+)') { [int]$Matches[1] } else { 0 }
+        $liste += New-Object PSObject -Property @{ Name = $d.Name; Ordner = $ordner; Port = $p }
     }
-} catch { }
+    return $liste
+}
+
+# Gehoert der Dienst schon einer anderen Installation? Gibt deren Ordner
+# zurueck, sonst "". Zu welcher Installation ein Dienst gehoert, sagt das
+# Arbeitsverzeichnis, das NSSM in der Registry ablegt; Rueckfall ist der Pfad
+# der nssm.exe.
+function DienstFremdFuer($name) {
+    try {
+        $vorhanden = Get-CimInstance -ClassName Win32_Service -Filter "Name='$name'" -ErrorAction Stop
+        if (-not $vorhanden) { return "" }
+        $arbeitsordner = (Get-ItemProperty -Path ("HKLM:\SYSTEM\CurrentControlSet\Services\$name\Parameters") `
+                          -Name AppDirectory -ErrorAction SilentlyContinue).AppDirectory
+        if ($arbeitsordner) {
+            if ("$arbeitsordner".TrimEnd('\') -eq $Basis.TrimEnd('\')) { return "" }
+            return "$arbeitsordner"
+        }
+        if (InDiesemOrdner $vorhanden.PathName) { return "" }
+        return "$($vorhanden.PathName)"
+    } catch { return "" }
+}
+
+# Belegt schon ein anderes Programm oder eine andere Installation den Port?
+# Gibt eine Beschreibung zurueck, sonst "". Die eigene Anwendung (erneuter
+# Lauf) zaehlt nicht. Get-NetTCPConnection gibt es ab Server 2012 / Windows 8;
+# fehlt es, bleibt dieser Teil der Pruefung aus.
+function PortFremdFuer($p) {
+    foreach ($a in @(AndereInstallationen)) {
+        if ($a.Port -eq $p) { return "Installation $($a.Name) in $($a.Ordner)" }
+    }
+    try {
+        $lauscher = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction Stop | Select-Object -First 1
+        if ($lauscher) {
+            # Die python.exe einer venv ist unter Windows nur ein Starter: Sie
+            # startet den eigentlichen Interpreter (etwa C:\Program Files\Python312)
+            # als Kindprozess, und DER haelt den Port. Deshalb zaehlt auch der
+            # Elternprozess - sonst hielte ein erneuter Lauf den eigenen Dienst
+            # fuer ein fremdes Programm.
+            $prozess = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($lauscher.OwningProcess)" -ErrorAction Stop
+            $eltern = if ($prozess) { Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($prozess.ParentProcessId)" -ErrorAction SilentlyContinue }
+            if ($prozess -and -not (InDiesemOrdner $prozess.ExecutablePath) -and -not (InDiesemOrdner $eltern.ExecutablePath)) {
+                return "$($prozess.Name) ($($prozess.ExecutablePath))"
+            }
+        }
+    } catch { }
+    return ""
+}
+
+function DienstName($name) { if ($name) { return "OperaXRechnung-$name" } else { return "OperaXRechnung" } }
+
+# Eine Eingabe mit Vorschlag; Enter uebernimmt ihn. Laesst sich nichts lesen,
+# gilt der Vorschlag - er ist so gewaehlt, dass er frei ist.
+function Eingabe($text, $vorschlag) {
+    if (-not [Environment]::UserInteractive) { return "$vorschlag" }
+    try   { $antwort = Read-Host "  $text [$vorschlag]" }
+    catch { return "$vorschlag" }
+    $antwort = "$antwort".Trim()
+    if ($antwort) { return $antwort } else { return "$vorschlag" }
+}
+
+# ------------------------------------------- Name und Port abfragen
+# Beim ersten Lauf in diesem Ordner - oder wenn Name oder Port schon einer
+# anderen Installation gehoeren - fragt der Installer nach, statt Schalter zu
+# verlangen. Vorgeschlagen wird, was frei ist; Enter genuegt. Wer -Instanz
+# oder -Port angibt oder -OhneRueckfrage, wird nicht gefragt.
+$Konflikt = (DienstFremdFuer (DienstName $Instanz)) -or (PortFremdFuer $Port)
+$Fragen = -not $OhneRueckfrage -and -not $NameGegeben -and -not $PortGegeben `
+          -and (-not (Test-Path $InstanzDatei) -or $Konflikt)
+if ($Fragen) {
+    $andere = @(AndereInstallationen)
+    Write-Host ""
+    Write-Host "  OPERA XRechnung - Name und Port dieser Installation" -ForegroundColor White
+    Write-Host "  Zielordner: $Basis"
+    if ($andere.Count) {
+        Write-Host ""
+        Write-Host "  Auf diesem Rechner gibt es schon:"
+        foreach ($a in $andere) {
+            $pt = if ($a.Port) { "Port $($a.Port)" } else { "Port ?" }
+            Write-Host ("    {0,-30} {1,-10} {2}" -f $a.Name, $pt, $a.Ordner)
+        }
+    }
+    Write-Host ""
+
+    # Vorschlag fuer den Namen: leer, solange der Standarddienst frei ist;
+    # sonst der letzte Teil des Ordnernamens (C:\XRechnung-NORD -> NORD).
+    $vorschlagName = if ($Instanz -and -not (DienstFremdFuer (DienstName $Instanz))) { $Instanz } else { "" }
+    if (-not $vorschlagName -and (DienstFremdFuer "OperaXRechnung")) {
+        $blatt = Split-Path -Leaf $Basis
+        $vorschlagName = (($blatt -split '[-_ .]')[-1]) -replace '[^A-Za-z0-9_-]', ''
+        if (-not $vorschlagName -or $vorschlagName -match '^(?i)(xrechnung|opera)') { $vorschlagName = "HAUS" }
+        if ($vorschlagName.Length -gt 16) { $vorschlagName = $vorschlagName.Substring(0, 16) }
+        $stamm = $vorschlagName; $n = 2
+        while (DienstFremdFuer (DienstName $vorschlagName)) { $vorschlagName = "$stamm$n"; $n++ }
+    }
+    $vorschlagPort = if (-not (PortFremdFuer $Port)) { $Port } else { 8022 }
+    while ($vorschlagPort -lt 65535 -and (PortFremdFuer $vorschlagPort)) { $vorschlagPort++ }
+
+    # Nach dem Namen nur fragen, wenn es mehr als eine Installation gibt -
+    # beim einzigen Haus auf dem Rechner bleibt es beim Standarddienst.
+    if ($andere.Count -or $vorschlagName) {
+        Write-Host "  Jede Installation braucht einen eigenen Namen, etwa das Kuerzel des Hauses"
+        Write-Host "  (Buchstaben, Ziffern, - und _, hoechstens 20 Zeichen)."
+        while ($true) {
+            $eingabe = Eingabe "Name" $vorschlagName
+            if ($eingabe -and $eingabe -notmatch '^[A-Za-z0-9_-]{1,20}$') {
+                Write-Host -ForegroundColor Yellow "  Nur Buchstaben, Ziffern, - und _, hoechstens 20 Zeichen."; continue
+            }
+            $belegt = DienstFremdFuer (DienstName $eingabe)
+            if ($belegt) {
+                Write-Host -ForegroundColor Yellow "  Der Dienst $(DienstName $eingabe) gehoert schon zur Installation in $belegt."
+                if ($eingabe -eq $vorschlagName) { $vorschlagName = "" }
+                continue
+            }
+            $Instanz = $eingabe; break
+        }
+    }
+    while ($true) {
+        $eingabe = Eingabe "Port" $vorschlagPort
+        if ("$eingabe" -notmatch '^\d{1,5}$' -or [int]$eingabe -lt 1024 -or [int]$eingabe -gt 65535) {
+            Write-Host -ForegroundColor Yellow "  Bitte eine Zahl zwischen 1024 und 65535."; continue
+        }
+        $belegt = PortFremdFuer ([int]$eingabe)
+        if ($belegt) {
+            Write-Host -ForegroundColor Yellow "  Port $eingabe ist schon belegt: $belegt"
+            if ([int]$eingabe -eq $vorschlagPort) {
+                while ($vorschlagPort -lt 65535 -and (PortFremdFuer $vorschlagPort)) { $vorschlagPort++ }
+            }
+            continue
+        }
+        $Port = [int]$eingabe; break
+    }
+}
+
+if ($Instanz -and $Instanz -notmatch '^[A-Za-z0-9_-]{1,20}$') {
+    Write-Host "  -Instanz darf nur Buchstaben, Ziffern, - und _ enthalten, hoechstens 20 Zeichen." -ForegroundColor Yellow
+    exit 1
+}
+$Dienst = DienstName $Instanz
+$Anzeigename = if ($Instanz) { "OPERA XRechnung $Instanz" } else { "OPERA XRechnung" }
+
+# Vorher hiess der Dienst immer OperaXRechnung, und eine zweite Kopie legte
+# den Dienst der ersten still auf sich um. Kein Dienst, der einem anderen
+# Ordner gehoert, wird angefasst - auch nicht mit Schaltern.
+$DienstFremd = DienstFremdFuer $Dienst
 if ($DienstFremd -and -not $OhneDienst) {
     Write-Host ""
     Write-Host "  Den Dienst '$Dienst' gibt es schon - er gehoert zu einer anderen Installation:" -ForegroundColor Yellow
     Write-Host "    $DienstFremd" -ForegroundColor Yellow
-    Write-Host "  Fuer eine weitere Installation auf diesem Rechner einen eigenen Namen und Port angeben," -ForegroundColor Yellow
-    Write-Host "  zum Beispiel:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
+    Write-Host "  Den Installer ohne Schalter starten (INSTALLIEREN.cmd), dann fragt er nach Name und" -ForegroundColor Yellow
+    Write-Host "  Port - oder beides angeben:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
     Write-Host "  Es wurde nichts geaendert." -ForegroundColor Yellow
     Write-Host ""; exit 1
 }
-# Belegt schon ein anderes Programm den Port? Die eigene Anwendung (erneuter
-# Lauf) zaehlt nicht. Get-NetTCPConnection gibt es ab Server 2012 / Windows 8;
-# fehlt es, bleibt die Pruefung aus.
-$PortFremd = ""
-try {
-    $lauscher = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop | Select-Object -First 1
-    if ($lauscher) {
-        # Die python.exe einer venv ist unter Windows nur ein Starter: Sie
-        # startet den eigentlichen Interpreter (etwa C:\Program Files\Python312)
-        # als Kindprozess, und DER haelt den Port. Deshalb zaehlt auch der
-        # Elternprozess - sonst hielte ein erneuter Lauf den eigenen Dienst
-        # fuer ein fremdes Programm.
-        $prozess = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($lauscher.OwningProcess)" -ErrorAction Stop
-        $eltern = if ($prozess) { Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$($prozess.ParentProcessId)" -ErrorAction SilentlyContinue }
-        if ($prozess -and -not (InDiesemOrdner $prozess.ExecutablePath) -and -not (InDiesemOrdner $eltern.ExecutablePath)) {
-            $PortFremd = "$($prozess.Name) ($($prozess.ExecutablePath))"
-        }
-    }
-} catch { }
+$PortFremd = PortFremdFuer $Port
 if ($PortFremd) {
     Write-Host ""
     Write-Host "  Port $Port ist schon belegt: $PortFremd" -ForegroundColor Yellow
-    Write-Host "  Einen freien Port angeben, zum Beispiel:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
+    Write-Host "  Den Installer ohne Schalter starten (INSTALLIEREN.cmd), dann fragt er nach einem freien" -ForegroundColor Yellow
+    Write-Host "  Port - oder ihn angeben:  install\installieren.ps1 -Instanz NORD -Port 8023" -ForegroundColor Yellow
     Write-Host "  Es wurde nichts geaendert." -ForegroundColor Yellow
     Write-Host ""; exit 1
 }

@@ -13,6 +13,18 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.4.2] – 2026-11-20
+
+**Windows-Installer fragt nach Name und Port**
+- Für ein weiteres Haus auf demselben Rechner sind keine Schalter mehr nötig.
+  Beim ersten Lauf in einem Ordner fragt der Installer nach dem Port und,
+  wenn es schon eine andere Installation gibt, nach einem Namen. Er zeigt die
+  vorhandenen Installationen und schlägt freie Werte vor; Enter genügt.
+- Belegt eine angehaltene Installation einen Port, gilt er jetzt auch als
+  belegt. Bisher zählte nur ein Port, an dem gerade ein Programm lauscht.
+- `-Instanz`, `-Port` und `-OhneRueckfrage` wirken wie bisher, dann fragt
+  der Installer nicht.
+
 ## [1.4.1] – 2026-11-18
 
 **Korrektur: Hinweis „vor der Umstellung“ in älterer OPERA**
