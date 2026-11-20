@@ -390,7 +390,7 @@ if ($Fragen) {
     # Vorschlag fuer den Namen: leer, solange der Standarddienst frei ist;
     # sonst der letzte Teil des Ordnernamens (C:\XRechnung-NORD -> NORD).
     $vorschlagName = if ($Instanz -and -not (DienstFremdFuer (DienstName $Instanz))) { $Instanz } else { "" }
-    if (-not $vorschlagName -and (DienstFremdFuer "OperaXRechnung")) {
+    if (-not $vorschlagName -and (DienstFremdFuer (DienstName ""))) {
         $blatt = Split-Path -Leaf $Basis
         $vorschlagName = (($blatt -split '[-_ .]')[-1]) -replace '[^A-Za-z0-9_-]', ''
         if (-not $vorschlagName -or $vorschlagName -match '^(?i)(xrechnung|opera)') { $vorschlagName = "HAUS" }

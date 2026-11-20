@@ -511,8 +511,15 @@ pruefe("$q.sha256 -and" not in ps1_text, "keine NSSM-Quelle wird ungeprueft geno
 # =========================================================================
 print("6b) Mehrere Installationen auf einem Rechner (je Hotelcode eine)")
 pruefe(re.search(r"\[string\]\$Instanz", ps1_text) is not None
-       and '"OperaXRechnung-$Instanz"' in ps1_text,
+       and '"OperaXRechnung-$name"' in ps1_text and "$Dienst = DienstName $Instanz" in ps1_text,
        "Schalter -Instanz, Dienstname OperaXRechnung-<Instanz>")
+# 1.4.2: ohne Schalter fragt der Installer beim ersten Lauf nach Name und Port.
+pruefe('Eingabe "Port" $vorschlagPort' in ps1_text and 'Eingabe "Name" $vorschlagName' in ps1_text
+       and "-not $OhneRueckfrage -and -not $NameGegeben -and -not $PortGegeben" in ps1_text
+       and "-not (Test-Path $InstanzDatei) -or $Konflikt" in ps1_text,
+       "ohne Schalter: Abfrage von Name und Port beim ersten Lauf oder bei Ueberschneidung")
+pruefe("AppParameters" in ps1_text and "--port" in ps1_text and "function PortFremdFuer" in ps1_text,
+       "Port einer angehaltenen Installation gilt als belegt")
 pruefe(ps1_text.count('"OperaXRechnung"') == 1 and "Get-Service -Name $Dienst" in ps1_text
        and "Stop-Service -Name $Dienst" in ps1_text,
        "der Dienstname steht nur noch als Vorgabe im Text, alle Zugriffe ueber $Dienst")
