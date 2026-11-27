@@ -47,7 +47,11 @@ StandardError=append:@BASIS@/logs/dienst.log
 
 # Der Dienst darf ausschliesslich in seinen eigenen Baum schreiben — und das
 # gilt unabhaengig von Dateirechten. 'strict' macht das gesamte Dateisystem
-# schreibgeschuetzt, ReadWritePaths nimmt genau die fuenf Ordner aus.
+# schreibgeschuetzt, ReadWritePaths nimmt genau die sechs Ordner aus.
+#
+# branding/ gehoert dazu, weil das Logo der Zahlungsanforderung ueber die
+# Oberflaeche dorthin hochgeladen wird. Bis 1.5.0 fehlte der Eintrag: Das
+# Hochladen endete mit 'Internal Server Error' (Read-only file system).
 #
 # .venv gehoert dazu, obwohl es nach Programm aussieht: Bringt eine
 # Aktualisierung neue Abhaengigkeiten mit, installiert der Updater sie VOR dem
@@ -66,7 +70,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=@BASIS@/programm @BASIS@/config @BASIS@/data @BASIS@/logs @BASIS@/.venv
+ReadWritePaths=@BASIS@/programm @BASIS@/config @BASIS@/data @BASIS@/logs @BASIS@/branding @BASIS@/.venv
 
 [Install]
 WantedBy=multi-user.target

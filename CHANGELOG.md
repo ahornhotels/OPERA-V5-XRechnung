@@ -13,6 +13,26 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.5.1] – 2026-11-27
+
+**Logo der Zahlungsanforderung ließ sich unter Rocky Linux nicht hochladen**
+- Das Hochladen endete mit „Internal Server Error“. Der Ordner `branding/`,
+  in den das Logo gehört, fehlte in der Schreibfreigabe der systemd-Unit
+  (`ReadWritePaths`). Der Dienst durfte dort nicht schreiben, gleich welche
+  Dateirechte gesetzt waren.
+- Die Unit-Vorlage nennt `branding/` jetzt mit. Installation, Dienst-
+  Einrichtung und Umstellung auf Freigaben legen den Ordner an und geben ihn
+  dem Dienstkonto.
+- Scheitert das Ablegen trotzdem, erscheint eine Meldung mit der Ursache statt
+  eines nackten Serverfehlers. Der Dienst startet auch, wenn der Ordner nicht
+  angelegt werden kann.
+- **Einmal von Hand auf bestehenden Linux-Installationen:** Die Unit gehört
+  root, eine Aktualisierung ändert sie nicht. Nach dem Einspielen:
+  `sudo /opt/xrechnung/programm/aktuell/install/dienst_einrichten.sh BENUTZER PORT`
+  (Dienstkonto und Port wie bisher, Vorgabe `xrechnung` und `8022`).
+  Repository und Zweig bleiben dabei, wie sie in der Unit stehen. Windows ist
+  nicht betroffen.
+
 ## [1.5.0] – 2026-11-27
 
 **Empfängername vollständig: zweite und dritte Namenszeile am Profil**

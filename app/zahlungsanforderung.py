@@ -487,14 +487,31 @@ def logo_speichern(daten: bytes) -> None:
     if not (bild["breite"] and bild["hoehe"]):
         raise Eingabefehler("Das Logo hat keine Größe.")
     endung = ".jpg" if daten[:3] == b"\xff\xd8\xff" else ".png"
-    pfade.BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-    logo_entfernen()
-    (pfade.BRANDING_DIR / (LOGO_NAME + endung)).write_bytes(daten)
+    try:
+        pfade.BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+        logo_entfernen()
+        (pfade.BRANDING_DIR / (LOGO_NAME + endung)).write_bytes(daten)
+    except OSError as e:
+        raise Eingabefehler(_ablage_fehler(e)) from e
 
 
 def logo_entfernen() -> None:
-    for endung in (".png", ".jpg"):
-        (pfade.BRANDING_DIR / (LOGO_NAME + endung)).unlink(missing_ok=True)
+    """Wirft Eingabefehler, wenn der Ordner nicht beschreibbar ist."""
+    try:
+        for endung in (".png", ".jpg"):
+            (pfade.BRANDING_DIR / (LOGO_NAME + endung)).unlink(missing_ok=True)
+    except OSError as e:
+        raise Eingabefehler(_ablage_fehler(e)) from e
+
+
+def _ablage_fehler(e: OSError) -> str:
+    """Klartext statt 'Internal Server Error'. Auf Rocky Linux lag der Ordner
+    branding/ ausserhalb der ReadWritePaths der systemd-Unit (bis 1.5.0): Der
+    Dienst durfte dort nicht schreiben, gleich welche Dateirechte galten, und
+    das Hochladen endete mit einem nackten 500."""
+    return (f"Das Logo lässt sich nicht ablegen: Der Ordner {pfade.BRANDING_DIR} ist für den "
+            f"Dienst nicht beschreibbar ({e.strerror or e}). Unter Linux: einmal "
+            f"„sudo install/dienst_einrichten.sh“ ausführen (siehe CHANGELOG 1.5.1).")
 
 
 def platzhalter_werte(eingabe: dict, k: dict, heute: date, cfg: dict | None = None) -> dict:

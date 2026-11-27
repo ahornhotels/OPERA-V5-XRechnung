@@ -191,10 +191,12 @@ chown -R "$DIENSTBENUTZER":"$DIENSTBENUTZER" "$BASIS/programm"
 # Rueckgabewert eines nicht zutreffenden [[ ]] gleich 1 — fehlt die venv,
 # zuende der trap mitten in einer fehlerfreien Umstellung.
 [[ -d "$BASIS/.venv" ]] && chown -R "$DIENSTBENUTZER":"$DIENSTBENUTZER" "$BASIS/.venv" || true
-for ordner in config data logs; do
+# branding/ steht in ReadWritePaths und muss deshalb existieren (226/NAMESPACE).
+mkdir -p "$BASIS/branding"
+for ordner in config data logs branding; do
     [[ -d "$BASIS/$ordner" ]] && chown -R "$DIENSTBENUTZER":"$DIENSTBENUTZER" "$BASIS/$ordner" || true
 done
-gut "Eigentuemer gesetzt: programm, .venv, config, data, logs -> $DIENSTBENUTZER"
+gut "Eigentuemer gesetzt: programm, .venv, config, data, logs, branding -> $DIENSTBENUTZER"
 info "$BASIS selbst bleibt bei root, ebenso die systemd-Unit."
 info "install/ liegt IM Programm und gehoert deshalb dem Dienst — es wird bei"
 info "jeder Aktualisierung mitersetzt, das ist so gewollt."

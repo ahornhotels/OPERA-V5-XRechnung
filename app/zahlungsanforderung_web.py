@@ -233,7 +233,10 @@ async def vorlage_logo(request: Request):
         return RedirectResponse("/zahlungsanforderung?meldung=Keine Berechtigung", status_code=303)
     form = await request.form()
     if form.get("aktion") == "entfernen":
-        za.logo_entfernen()
+        try:
+            za.logo_entfernen()
+        except za.Eingabefehler as e:
+            return _vorlage_seite(request, fehler=str(e))
         meldung = "Logo entfernt."
     else:
         datei = form.get("logo")
