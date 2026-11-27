@@ -126,6 +126,14 @@
     "max_pro_lauf": 20,
     "testlauf": true
   },
+  "bericht": {
+    "_hinweis": "Monatlicher Statusbericht per Mail: wie viele XRechnungen im VORMONAT erstellt und versendet wurden, mit dem Namen des Betriebs. Geht am eingestellten Tag (1-28) ab der eingestellten Stunde hinaus; lief der Dienst da nicht, wird er bis Monatsende nachgeholt. Ohne Blindkopie; die Liste erlaubter Empfaenger gilt auch hier. Laeuft unabhaengig von der Automatik.",
+    "aktiv": false,
+    "empfaenger": [],
+    "tag": 1,
+    "stunde": 6,
+    "betriebsname": ""
+  },
   "ablage": {
     "xml_ordner": "data/xml",
     "archiv_ordner": "data/archiv"

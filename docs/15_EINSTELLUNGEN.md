@@ -103,6 +103,16 @@ zweiten Haus anders sein wird als hier.
 | `max_pro_lauf` | Obergrenze für Versände je Durchlauf |
 | `testlauf` | **Erzeugt und prüft, verschickt aber nichts.** Beim Einrichten eine Woche anlassen |
 
+## `bericht` — der monatliche Statusbericht
+
+| Einstellung | Bedeutung |
+|---|---|
+| `aktiv` | Schaltet den Monatsbericht ein. Läuft unabhängig von der Automatik |
+| `empfaenger` | **An wen der Bericht geht**, mehrere durch Komma getrennt. Ohne Blindkopie; die Liste erlaubter Empfänger gilt auch hier |
+| `tag` | Tag im Monat, an dem der Bericht über den **Vormonat** hinausgeht (1 bis 28). Lief der Dienst an dem Tag nicht, wird er bis Monatsende nachgeholt |
+| `stunde` | Ab welcher vollen Stunde an diesem Tag (0 bis 23) |
+| `betriebsname` | Name im Bericht. Leer: der Name des Hauses (`property.haus`, sonst aus OPERA) |
+
 ## `ablage` — wo die Rechnungen liegen
 
 | Einstellung | Bedeutung |

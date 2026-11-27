@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import asyncio
 import ipaddress
+import json
 import re
 from urllib.parse import urlencode
 from contextlib import asynccontextmanager
@@ -22,7 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, opera, store, updater, validate, xml_build
+from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, monatsbericht, opera, store, updater, validate, xml_build
 
 from . import pfade
 from . import oracle_client
@@ -76,6 +77,9 @@ async def lebenszyklus(app: FastAPI):
     _thr.Thread(target=_hotel_aus_opera, args=(cfg,), daemon=True, name="hotelname").start()
     if cfg["automatik"].get("aktiv"):
         automatik.starten()
+    # Der Monatsbericht hat einen eigenen Takt: Er soll auch in einem Haus
+    # hinausgehen, das von Hand versendet.
+    monatsbericht.starten()
     # Nachsehen, ob ein neuerer Stand bereitliegt — unabhaengig von der
     # Automatik, weil auch ein Haus ohne Automatik davon erfahren soll.
     # Eingespielt wird weiterhin nur auf Knopfdruck.
@@ -83,6 +87,7 @@ async def lebenszyklus(app: FastAPI):
     yield
     wache.cancel()
     automatik.stoppen()
+    monatsbericht.stoppen()
     # Der Validator-Daemon ist ein Kindprozess. Ohne dieses Beenden bliebe er
     # nach einem Neustart des Dienstes stehen und haelt seinen Port besetzt.
     validate.daemon_stoppen()
@@ -162,11 +167,13 @@ ROLLEN = ("ansehen", "bearbeiten", "verwalten")
 ROLLEN_BEARBEITEN = ("bearbeiten", "verwalten")
 
 
-def _ansicht(status: str, suche: str, sortieren: str, richtung: str, tage: str = "") -> str:
+def _ansicht(status: str, suche: str, sortieren: str, richtung: str, tage: str = "",
+             von: str = "", bis: str = "") -> str:
     """Die aktuelle Ansicht der Liste als Adresse — Filter, Suche, Sortierung."""
     teile = [(name, wert) for name, wert in
              (("status", status), ("suche", suche),
-              ("sortieren", sortieren), ("richtung", richtung), ("tage", tage)) if wert]
+              ("sortieren", sortieren), ("richtung", richtung), ("tage", tage),
+              ("von", von), ("bis", bis)) if wert]
     return "/" + ("?" + urlencode(teile) if teile else "")
 
 
@@ -267,12 +274,33 @@ def _anzeige_tage(wert) -> int:
         return 0
 
 
+def _datum(wert) -> str:
+    """Ein Datum aus dem Feld als JJJJ-MM-TT, sonst "". Das Datumsfeld des
+    Browsers schickt JJJJ-MM-TT; von Hand getippt kommt auch TT.MM.JJJJ."""
+    from datetime import datetime as _dt
+    text = str(wert or "").strip()
+    for muster in ("%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y"):
+        try:
+            return _dt.strptime(text, muster).date().isoformat()
+        except ValueError:
+            pass
+    return ""
+
+
 @app.get("/", response_class=HTMLResponse)
 def uebersicht(request: Request, status: str = "", meldung: str = "",
                      sortieren: str = "", richtung: str = "", suche: str = "",
-                     tage: str | None = None):
+                     tage: str | None = None, von: str = "", bis: str = ""):
     cfg = config.laden()
     suche = (suche or "").strip()
+    # Ein Zeitraum von/bis geht vor "letzte N Tage". Vertauschte Grenzen
+    # werden gedreht, statt eine leere Liste zu zeigen.
+    von, bis = _datum(von), _datum(bis)
+    if von and bis and von > bis:
+        von, bis = bis, von
+    zeitraum_gesetzt = bool(von or bis)
+    if zeitraum_gesetzt:
+        tage = "0"
     # Wie weit zurueck die Liste ANZEIGT (nicht: einliest). Ohne Angabe gilt
     # die Vorgabe der Konfiguration; "0" oder leer im Feld heisst: alle.
     # Eine Suche geht immer ueber den ganzen Bestand — wer eine Nummer hat,
@@ -284,8 +312,11 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
     from datetime import date as _date, timedelta as _td
     ab_datum = ((_date.today() - _td(days=tage_wert)).isoformat()
                 if tage_wert and not suche else "")
+    bis_datum = ""
+    if zeitraum_gesetzt and not suche:
+        ab_datum, bis_datum = von, bis
     alle = store.liste(status or None, sortieren=sortieren, richtung=richtung, suche=suche,
-                       ab_datum=ab_datum, limit=ANZEIGE_HOECHSTENS)
+                       ab_datum=ab_datum, bis_datum=bis_datum, limit=ANZEIGE_HOECHSTENS)
 
     # Die Suche geht ueber die Arbeitsliste UND ueber OPERA. Sonst waere eine
     # Rechnung, die nie eingelesen wurde, in dieser Anwendung unauffindbar —
@@ -299,7 +330,9 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
     # anklicken, um zu sehen, ob dort etwas liegt.
     # Die Zahlen an den Reitern gelten fuer dasselbe Fenster wie die Liste —
     # sonst stuende "Neu 40" ueber einer Liste mit drei Zeilen.
-    im_fenster = [r for r in bestand if not ab_datum or (r.get("issuedate") or "") >= ab_datum]
+    im_fenster = [r for r in bestand
+                  if (not ab_datum or (r.get("issuedate") or "") >= ab_datum)
+                  and (not bis_datum or (r.get("issuedate") or "")[:10] <= bis_datum)]
     zaehler = {"": len(im_fenster)}
     for r in im_fenster:
         zaehler[r.get("status") or ""] = zaehler.get(r.get("status") or "", 0) + 1
@@ -321,9 +354,17 @@ def uebersicht(request: Request, status: str = "", meldung: str = "",
         request, rechnungen=alle, status=status, meldung=meldung,
         suche=suche, in_opera=in_opera, opera_fehler=opera_fehler, zaehler=zaehler,
         zurueck_ziel=_ansicht(status, suche, sortieren, richtung,
-                              "" if tage is None else str(tage_wert)),
-        anzeige_tage=tage_wert, anzeige_ab=ab_datum, anzeige_hoechstens=ANZEIGE_HOECHSTENS,
+                              "" if tage is None or zeitraum_gesetzt else str(tage_wert),
+                              von, bis),
+        anzeige_tage=0 if zeitraum_gesetzt else tage_wert, anzeige_ab=ab_datum,
+        anzeige_bis=bis_datum, anzeige_hoechstens=ANZEIGE_HOECHSTENS,
         tage_gesetzt=tage is not None, gesamt=len(bestand),
+        von=von, bis=bis, zeitraum_gesetzt=zeitraum_gesetzt,
+        # Das Anzeigefenster als Teil einer Adresse — fuer Reiter und Sortierung,
+        # damit ein Klick dort den gewaehlten Zeitraum nicht verliert.
+        fenster_param=urlencode([(k, v) for k, v in (("von", von), ("bis", bis)) if v])
+                      if zeitraum_gesetzt else
+                      (f"tage={tage_wert}" if tage is not None else ""),
         status_namen=store.STATUS_NAMEN, status_reihe=store.STATUS_REIHE,
         sortieren=sortieren if sortieren in store.SORTIERBAR else "",
         richtung=("auf" if (richtung or "").lower() == "auf" else "ab"),
@@ -911,6 +952,8 @@ def konfiguration(request: Request, meldung: str = ""):
         haus_eigen=opera.eigener_hausname(p),
         vorlage_platzhalter=opera.VORLAGE_PLATZHALTER,
         schalter=[f"{s}.{f}" for s, f in SCHALTER],
+        bericht_zuletzt=store.letzte_aktion(monatsbericht.AKTION),
+        bericht_monat=monatsbericht.monat_text(monatsbericht.vormonat()[0]),
         # Tooltips aus docs/15_EINSTELLUNGEN.md, siehe app/einstellungen.py
         erklaerungen=einstellungen.erklaerungen(),
         schreibbar=schreibbar, schreibgrund=schreibgrund,
@@ -1082,7 +1125,7 @@ SCHALTER = (("datenbank", "thick_mode"), ("mail", "aktiv"),
             ("automatik", "city_ledger_versenden"),
             ("automatik", "empfaenger_automatisch"),
             ("validierung", "aktiv"), ("validierung", "pflicht"),
-            ("update", "aktiv"), ("server", "netzfilter_aktiv"))
+            ("update", "aktiv"), ("server", "netzfilter_aktiv"), ("bericht", "aktiv"))
 
 
 @app.post("/konfiguration")
@@ -1182,6 +1225,13 @@ async def konfiguration_speichern(request: Request):
             cfg["property"].get("udf_mail_profil") == cfg["property"].get("udf_leitweg")):
         ungueltig.append("Mailfeld am Profil und Leitweg-Feld dürfen nicht dasselbe Feld sein")
 
+    if any(k.startswith("bericht.") for k in formular):
+        # Der Schalter wird erst weiter unten ausgewertet; fuer die Pruefung
+        # zaehlt, was das Formular sagt.
+        probe = json.loads(json.dumps(cfg))
+        if "bericht.aktiv" in (formular.get("_schalter") or "") and "bericht.aktiv" not in formular:
+            probe["bericht"]["aktiv"] = False
+        ungueltig += monatsbericht.pruefen(probe)
     if ungueltig:
         return RedirectResponse("/konfiguration?meldung=NICHT GESPEICHERT — " + "; ".join(ungueltig),
                                 status_code=303)
@@ -1525,6 +1575,38 @@ def mailtest(request: Request, an: str = Form(...)):
                             benutzer=request.state.benutzer, erfolg=False)
         else:
             meldung = f"Testmail an {an} verschickt (BCC inbegriffen)"
+    except Exception as e:
+        meldung = f"Fehler: {e}"
+    return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+
+
+# ------------------------------------------------------------ Monatsbericht
+@app.get("/bericht/vorschau")
+def bericht_vorschau(request: Request):
+    """Der Bericht ueber den Vormonat, wie er hinausginge. Schreibt nichts."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
+    cfg = config.laden()
+    betreff, inhalt = monatsbericht.text(cfg, *monatsbericht.vormonat())
+    return Response(f"Betreff: {betreff}\n\n{inhalt}", media_type="text/plain; charset=utf-8")
+
+
+@app.post("/bericht/senden")
+def bericht_senden(request: Request, an: str = Form("")):
+    """Den Bericht ueber den Vormonat sofort senden. Mit 'an' als Probe an eine
+    Adresse — das zaehlt nicht als Monatsbericht. Ohne 'an' an alle
+    eingetragenen Empfaenger; dann geht er an dem Versandtag nicht noch einmal."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
+    cfg = config.laden()
+    ziel = (an or "").strip()
+    try:
+        gegangen = monatsbericht.senden(cfg, *monatsbericht.vormonat(),
+                                        benutzer=request.state.benutzer,
+                                        an=[ziel] if ziel else None)
+        meldung = (f"Monatsbericht {monatsbericht.monat_text(monatsbericht.vormonat()[0])} "
+                   f"an {', '.join(gegangen)} verschickt"
+                   + (" (Probe — der regulaere Bericht geht trotzdem)" if ziel else ""))
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)

@@ -1025,6 +1025,11 @@ def xml_erzeugen(cfg: dict, bill_no: int, ersetzen: bool = False,
     # Gruende fuer die Sichtpruefung, und die ueberschrieb jedes Erzeugen.
     store.setzen(bill_no, xml_pfad=str(pfad), xrechnung_version=version,
                  pruefbefund="; ".join(hinweise) if hinweise else None)
+    # Fuer den Monatsbericht (app/monatsbericht.py): WANN eine XRechnung
+    # abgelegt wurde. 'geprueft' steht nur ohne Befund im Protokoll und taugt
+    # dafuer allein nicht.
+    store.protokoll("xml_erzeugt", f"XRechnung {version} abgelegt"
+                    + (f", {len(hinweise)} Befund(e)" if hinweise else ""), bill_no=bill_no)
     vorpruefung_bereinigen(bill_no, hinweise)
     if not hinweise:
         store.protokoll("geprueft",

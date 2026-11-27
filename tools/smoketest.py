@@ -2255,6 +2255,32 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                     follow_redirects=False)
         from app.main import _anzeige_tage as _at
         pruefe(_at("abc") == 0 and _at("-3") == 0 and _at(" 14 ") == 14, "Unsinn im Feld heisst: alle")
+        # Zeitraum von/bis nach Rechnungsdatum: geht vor "letzte N Tage",
+        # beide Grenzen einschliesslich, Reiter und Sortierung behalten ihn.
+        _v = (_heute - _td_anz(days=30)).isoformat()
+        _b = (_heute - _td_anz(days=10)).isoformat()
+        _sz = klient.get(f"/?von={_v}&bis={_b}&tage=7").text
+        pruefe("Fenster 20 GmbH" in _sz and "Fenster 2 GmbH" not in _sz and "Fenster 60 GmbH" not in _sz,
+               "der Zeitraum von/bis zeigt nur, was dazwischen liegt - und geht vor den Tagen")
+        _grenze = (_heute - _td_anz(days=20)).isoformat()
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_grenze}&bis={_grenze}").text,
+               "beide Grenzen zaehlen mit")
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_b}&bis={_v}").text,
+               "vertauschte Grenzen werden gedreht")
+        _nur_bis = klient.get(f"/?bis={_b}").text
+        pruefe("Fenster 60 GmbH" in _nur_bis and "Fenster 2 GmbH" not in _nur_bis,
+               "eine Grenze allein genuegt")
+        _tmj = (_heute - _td_anz(days=20)).strftime("%d.%m.%Y")
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_tmj}&bis={_tmj}").text,
+               "TT.MM.JJJJ von Hand getippt geht auch")
+        _sz2 = _sz.replace("&amp;", "&")
+        pruefe(f'href="/?status=neu&von={_v}&bis={_b}"' in _sz2
+               and f"&von={_v}&bis={_b}" in _sz2.split("sortieren=issuedate", 1)[-1][:120]
+               and 'type="date" name="von"' in _sz,
+               "Reiter und Sortierung behalten den Zeitraum")
+        from app.main import _datum as _dt_f
+        pruefe(_dt_f("abc") == "" and _dt_f("2026-02-30") == "" and _dt_f("01.03.2026") == "2026-03-01",
+               "Unsinn im Datumsfeld heisst: keine Grenze")
     finally:
         with store.verbindung() as con:
             con.execute("DELETE FROM rechnungen WHERE bill_no BETWEEN 960001 AND 960003")
@@ -6875,6 +6901,134 @@ finally:
     _cfg_oc["datenbank"]["thick_mode"] = _vorher_db.get("thick_mode", False)
     _cfg_oc["datenbank"]["oracle_client_pfad"] = _vorher_db.get("oracle_client_pfad", "")
     config.speichern(_cfg_oc)
+
+# --------------------------------------------------------- Monatsbericht
+# Einmal im Monat eine Mail ueber den VORMONAT: erstellt, versendet, Name des
+# Betriebs. Gezaehlt aus der Arbeitsliste; jede Rechnung einmal.
+from app import monatsbericht as _mb
+from datetime import date as _d_mb, datetime as _dt_mb
+pruefe(_mb.vormonat(_d_mb(2031, 1, 15)) == (_d_mb(2030, 12, 1), _d_mb(2030, 12, 31))
+       and _mb.vormonat(_d_mb(2031, 3, 1)) == (_d_mb(2031, 2, 1), _d_mb(2031, 2, 28)),
+       "Monatsbericht: berichtet wird immer der vorhergehende Kalendermonat")
+_mb_nr = (971001, 971002, 971003, 971004, 971005)
+def _mb_aufraeumen():
+    with store.verbindung() as con:
+        con.execute("DELETE FROM rechnungen WHERE bill_no BETWEEN 971001 AND 971005")
+        con.execute("DELETE FROM protokoll WHERE bill_no BETWEEN 971001 AND 971005")
+        con.execute("DELETE FROM protokoll WHERE aktion LIKE 'monatsbericht%' AND text LIKE '2031-%'")
+_mb_aufraeumen()
+for _nr in _mb_nr:
+    store.rechnung_anlegen({"bill_no": _nr, "resort": "IHRHAUS", "invoice_no": f"M{_nr}",
+                            "issuedate": "2031-02-10", "total_net": 10.0, "total_gross": 11.9,
+                            "kunde": "Bericht GmbH", "city_ledger": 0.0, "firmenbezug": "EMPFAENGER"}, 0)
+store.setzen(971001, status="gesendet", gesendet_am="2031-02-11T10:00:00", zuerst_gesehen="2031-02-10T09:00:00")
+store.setzen(971002, status="gesendet", gesendet_am="2031-02-28T23:59:00", zuerst_gesehen="2031-02-10T09:00:00")
+store.setzen(971003, status="pruefung", zuerst_gesehen="2031-02-10T09:00:00")
+store.setzen(971004, status="gesendet", gesendet_am="2031-03-01T00:00:01", zuerst_gesehen="2031-01-31T09:00:00")
+store.setzen(971005, status="bereit", issuedate="2031-01-20", zuerst_gesehen="2031-01-20T09:00:00")
+with store.verbindung() as con:
+    for _z, _nr, _ben, _akt, _txt in (
+            ("2031-02-11T09:59:00", 971001, "system", "xml_erzeugt", "XRechnung 3.0.2 abgelegt"),
+            ("2031-02-11T10:00:00", 971001, "automatik", "versand", "XRechnung 3.0.2 an a@b.example"),
+            ("2031-02-28T23:59:00", 971002, "pruefer", "versand", "XRechnung 3.0.2 an a@b.example"),
+            ("2031-02-12T08:00:00", 971003, "system", "xml_erzeugt", "XRechnung 3.0.2 abgelegt"),
+            ("2031-02-13T08:00:00", 971003, "system", "xml_erzeugt", "XRechnung 3.0.2 abgelegt"),
+            ("2031-02-14T08:00:00", 971005, "system", "geprueft", "alt"),
+            ("2031-03-01T00:00:00", 971004, "system", "xml_erzeugt", "XRechnung 3.0.2 abgelegt")):
+        con.execute("INSERT INTO protokoll (zeit, bill_no, benutzer, aktion, erfolg, text) "
+                    "VALUES (?,?,?,?,1,?)", (_z, _nr, _ben, _akt, _txt))
+try:
+    _zmb = _mb.zahlen(_d_mb(2031, 2, 1), _d_mb(2031, 2, 28))
+    pruefe(_zmb["erstellt"] == 4, f"Monatsbericht: erstellt zaehlt jede Rechnung einmal, ohne Folgemonat ({_zmb})")
+    pruefe(_zmb["versendet"] == 2 and _zmb["automatisch"] == 1 and _zmb["von_hand"] == 1,
+           f"Monatsbericht: versendet mit Monatsgrenzen, automatisch und von Hand getrennt ({_zmb})")
+    pruefe(_zmb["offen"] == 1 and _zmb["eingelesen"] == 3,
+           f"Monatsbericht: noch offen und eingelesen ({_zmb})")
+    _cfg_mb = json.loads(json.dumps(config.laden()))
+    _cfg_mb["bericht"] = {"aktiv": True, "empfaenger": ["chef@haus.example", "buero@haus.example"],
+                          "tag": 5, "stunde": 6, "betriebsname": "Musterhotel Mitte"}
+    _jetzt_mb = _dt_mb(2031, 3, 5, 7, 0)
+    pruefe(_mb.faellig(_cfg_mb, _jetzt_mb) == (_d_mb(2031, 2, 1), _d_mb(2031, 2, 28))
+           and _mb.faellig(_cfg_mb, _dt_mb(2031, 3, 5, 5, 0)) is None
+           and _mb.faellig(_cfg_mb, _dt_mb(2031, 3, 4, 23, 0)) is None
+           and _mb.faellig(_cfg_mb, _dt_mb(2031, 3, 20, 3, 0)) is not None,
+           "Monatsbericht: faellig ab Tag und Stunde, danach bis Monatsende nachgeholt")
+    pruefe(_mb.faellig(dict(_cfg_mb, bericht=dict(_cfg_mb["bericht"], aktiv=False)), _jetzt_mb) is None,
+           "Monatsbericht: abgeschaltet geht nichts")
+    _mb_mails = []
+    _echt_send_mb = _mailer.senden
+    _mailer.senden = lambda cfg, **k: _mb_mails.append(k) or "<id@mb>"
+    try:
+        _mb.senden(_cfg_mb, _d_mb(2031, 2, 1), _d_mb(2031, 2, 28), an=["probe@haus.example"])
+        pruefe(len(_mb_mails) == 1 and _mb.faellig(_cfg_mb, _jetzt_mb) is not None,
+               "Monatsbericht: eine Probe an eine Adresse zaehlt nicht als versendet")
+        _mb_mails.clear()
+        pruefe(_mb.pruefen_und_senden(_cfg_mb, _jetzt_mb) is True
+               and [m["an"] for m in _mb_mails] == ["chef@haus.example", "buero@haus.example"],
+               "Monatsbericht: geht an alle eingetragenen Empfaenger")
+        _b0 = _mb_mails[0]
+        pruefe(_b0.get("ohne_bcc") is True and _b0.get("xml") is None
+               and "Februar 2031" in _b0["vorlage"][0] and "Musterhotel Mitte" in _b0["vorlage"][0]
+               and "XRechnungen erstellt:" in _b0["vorlage"][1] and "01.02.2031 bis 28.02.2031" in _b0["vorlage"][1],
+               "Monatsbericht: Betreff mit Monat und Betrieb, Zahlen im Text, ohne Blindkopie und Anhang")
+        _mb_mails.clear()
+        pruefe(_mb.pruefen_und_senden(_cfg_mb, _dt_mb(2031, 3, 6, 7, 0)) is False and not _mb_mails,
+               "Monatsbericht: derselbe Monat geht nicht ein zweites Mal")
+        # Scheitert der Versand (Januar, gemeldet im Februar), nicht bei jedem Takt erneut.
+        _mailer.senden = lambda cfg, **k: (_ for _ in ()).throw(_mailer.MailFehler("Server weg"))
+        _gescheitert = (_mb.pruefen_und_senden(_cfg_mb, _dt_mb(2031, 2, 5, 7, 0)) is False
+                        and _mb.faellig(_cfg_mb, _dt_mb(2031, 2, 5, 8, 0)) is None)
+        from datetime import timedelta as _td_mb
+        with store.verbindung() as con:
+            con.execute("UPDATE protokoll SET zeit = ? WHERE aktion = 'monatsbericht' AND erfolg = 0 "
+                        "AND text LIKE '2031-01:%'",
+                        ((_dt_mb.now() - _td_mb(hours=7)).isoformat(timespec="seconds"),))
+        pruefe(_gescheitert and _mb.faellig(_cfg_mb, _dt_mb(2031, 2, 5, 9, 0)) is not None,
+               "Monatsbericht: nach einem Fehlschlag erst nach einigen Stunden erneut")
+    finally:
+        _mailer.senden = _echt_send_mb
+    _cfg_mb2 = json.loads(json.dumps(_cfg_mb))
+    _cfg_mb2["bericht"].update(tag=29, empfaenger=["kein-mail"])
+    _fmb = _mb.pruefen(_cfg_mb2)
+    pruefe(any("1 bis 28" in f for f in _fmb) and any("kein-mail" in f for f in _fmb),
+           f"Monatsbericht: Tag ueber 28 und ungueltige Adresse werden abgelehnt ({_fmb})")
+    _cfg_mb2["bericht"].update(tag=3, empfaenger=[])
+    pruefe(any("kein Empfänger" in f for f in _mb.pruefen(_cfg_mb2)),
+           "Monatsbericht: eingeschaltet ohne Empfaenger wird abgelehnt")
+    _cfg_mb3 = json.loads(json.dumps(_cfg_mb)); _cfg_mb3["bericht"]["betriebsname"] = ""
+    _cfg_mb3["property"]["haus"] = "Haus aus der Konfiguration"
+    pruefe(_mb.betriebsname(_cfg_mb3) == "Haus aus der Konfiguration",
+           "Monatsbericht: ohne eigenen Namen gilt der Name des Hauses")
+    # Ohne Blindkopie auch wirklich: durch den echten Mailer, mit falschem Server.
+    _smtp_protokoll.clear()
+    _smtplib.SMTP = _smtplib.SMTP_SSL = _FalscherServer
+    _FalscherServer.ablehnen = set()
+    try:
+        _mcfg_mb = json.loads(json.dumps(_mcfg)); _mcfg_mb["mail"]["erlaubte_empfaenger"] = []
+        _mailer.senden(_mcfg_mb, an="chef@haus.example", bill_no=0, issuedate="", xml=None, xml_name="",
+                       vorlage=("Betreff", "Text"), ohne_bcc=True)
+    finally:
+        _smtplib.SMTP, _smtplib.SMTP_SSL = _echt_smtp, _echt_smtp_ssl
+    pruefe([e[1] for e in _smtp_protokoll if e[0] == "senden"] == [["chef@haus.example"]],
+           "Monatsbericht: der Mailer laesst die Blindkopie des Rechnungspostfachs weg")
+    with store.verbindung() as con:
+        _xe = con.execute("SELECT COUNT(*) FROM protokoll WHERE aktion = 'xml_erzeugt' "
+                          "AND bill_no NOT BETWEEN 971001 AND 971005").fetchone()[0]
+    pruefe(_xe > 0, "Monatsbericht: das Ablegen einer XRechnung steht als xml_erzeugt im Protokoll")
+    with TestClient(app, client=("127.0.0.1", 50000)) as _kmb:
+        _kmb.post("/login", data={"benutzer": "pruefer", "passwort": "Geheim!123"})
+        _smb = _kmb.get("/konfiguration").text
+        pruefe('name="bericht.tag"' in _smb and 'name="bericht.empfaenger"' in _smb
+               and 'action="/bericht/senden"' in _smb, "Monatsbericht: Einstellungen auf der Konfigurationsseite")
+        _rmb = _kmb.post("/konfiguration", data={"bericht.tag": "31", "_schalter": "bericht.aktiv"},
+                         follow_redirects=False)
+        pruefe("NICHT GESPEICHERT" in _uq(_rmb.headers.get("location", "")),
+               "Monatsbericht: Versandtag 31 wird nicht gespeichert")
+        _vmb = _kmb.get("/bericht/vorschau")
+        pruefe(_vmb.status_code == 200 and "XRechnungen versendet:" in _vmb.text,
+               "Monatsbericht: Vorschau zeigt den Bericht ueber den Vormonat")
+finally:
+    _mb_aufraeumen()
 
 print()
 if fehler:
