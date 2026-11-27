@@ -27,8 +27,10 @@ REPO_ARG=()
 [[ -x "$BASIS/.venv/bin/python" ]] || { echo "Programmumgebung fehlt - zuerst installieren.sh ausfuehren."; exit 1; }
 
 id "$BENUTZER" >/dev/null 2>&1 || useradd --system --home-dir "$BASIS" --shell /sbin/nologin "$BENUTZER"
-mkdir -p "$BASIS/config" "$BASIS/data" "$BASIS/logs"
-chown -R "$BENUTZER":"$BENUTZER" "$BASIS/config" "$BASIS/data" "$BASIS/logs"
+# branding/ muss existieren, bevor die Unit es in ReadWritePaths nennt —
+# ein fehlender Pfad dort laesst systemd den Start mit 226/NAMESPACE verweigern.
+mkdir -p "$BASIS/config" "$BASIS/data" "$BASIS/logs" "$BASIS/branding"
+chown -R "$BENUTZER":"$BENUTZER" "$BASIS/config" "$BASIS/data" "$BASIS/logs" "$BASIS/branding"
 chmod 700 "$BASIS/config"
 # Die venv gehoert dem Dienst: Bei einer Aktualisierung mit neuen
 # Abhaengigkeiten muss pip dort schreiben duerfen (siehe xrechnung.service,
@@ -43,7 +45,11 @@ trap 'rm -f "$NEU"' EXIT
     "${REPO_ARG[@]+"${REPO_ARG[@]}"}" > "$NEU"
 install -m 0644 -o root -g root "$NEU" /etc/systemd/system/xrechnung.service
 systemctl daemon-reload
-systemctl enable --now xrechnung
+systemctl enable xrechnung
+# restart statt 'enable --now': Laeuft der Dienst schon, liesse --now ihn
+# mit der alten Unit weiterlaufen, und eine geaenderte ReadWritePaths
+# wirkte erst beim naechsten Neustart.
+systemctl restart xrechnung
 
 if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
     firewall-cmd --permanent --add-port="$PORT"/tcp >/dev/null

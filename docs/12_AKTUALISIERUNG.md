@@ -212,7 +212,8 @@ gewollt. Geschützt ist die Unit selbst, also *wie* der Dienst startet und
 sie dann nur noch angezeigt. Kein zweiter Dienst, keine sudoers-Regel — die
 Unit ist die root-eigene Datei, die es dafür braucht.
 
-Dazu `ProtectSystem=strict` mit `ReadWritePaths` auf die vier Ordner: Der
+Dazu `ProtectSystem=strict` mit `ReadWritePaths` auf die Ordner des Baums
+(`programm`, `config`, `data`, `logs`, `branding`, `.venv`): Der
 Dienst kann außerhalb seines Baums nichts schreiben, unabhängig von
 Dateirechten.
 

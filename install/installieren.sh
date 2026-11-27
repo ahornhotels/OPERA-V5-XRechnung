@@ -289,7 +289,7 @@ fi
 
 # ------------------------------------------------------------ 5. Konfiguration
 titel "Konfiguration"
-mkdir -p "$BASIS/config" "$BASIS/data/xml" "$BASIS/data/archiv" "$BASIS/logs"
+mkdir -p "$BASIS/config" "$BASIS/data/xml" "$BASIS/data/archiv" "$BASIS/logs" "$BASIS/branding"
 if [[ -f "$BASIS/config/app.json" ]]; then
     gut "vorhandene Konfiguration bleibt unveraendert"
 else
@@ -309,7 +309,7 @@ else
             useradd --system --home-dir "$BASIS" --shell /sbin/nologin "$DIENSTBENUTZER"
             info "Dienstkonto '$DIENSTBENUTZER' angelegt"
         fi
-        chown -R "$DIENSTBENUTZER":"$DIENSTBENUTZER" "$BASIS/config" "$BASIS/data" "$BASIS/logs"
+        chown -R "$DIENSTBENUTZER":"$DIENSTBENUTZER" "$BASIS/config" "$BASIS/data" "$BASIS/logs" "$BASIS/branding"
         chmod 700 "$BASIS/config"
         # Die venv gehoert dem Dienst: Bei einer Aktualisierung mit neuen
         # Abhaengigkeiten muss pip dort schreiben duerfen, ohne root.

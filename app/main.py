@@ -103,8 +103,15 @@ app.mount("/static", StaticFiles(directory=str(Path(__file__).resolve().parent /
 # gehoert dem Haus und soll eine Aktualisierung ueberstehen. Das Verzeichnis
 # wird angelegt, damit die Einbindung immer traegt; ist es leer, sieht die
 # Anwendung so aus, wie sie ausgeliefert wird.
-pfade.BRANDING_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/branding", StaticFiles(directory=str(pfade.BRANDING_DIR)), name="branding")
+# Laesst sich der Ordner nicht anlegen (Unit ohne branding/ in ReadWritePaths,
+# bis 1.5.0), soll der Dienst trotzdem starten: check_dir=False, sonst
+# bricht StaticFiles den Start ab.
+try:
+    pfade.BRANDING_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
+app.mount("/branding", StaticFiles(directory=str(pfade.BRANDING_DIR), check_dir=False),
+          name="branding")
 
 
 def eigenes_branding() -> bool:

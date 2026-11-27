@@ -307,6 +307,14 @@ rw = zeilen.get("ReadWritePaths", "").split()
 pruefe(zeilen.get("ProtectSystem") != "strict" or
        any(venv == p.lstrip("-") or venv.startswith(p.lstrip("-") + "/") for p in rw),
        f"die venv des Dienstes ({venv}) steht in ReadWritePaths ({' '.join(rw)})")
+# Das Logo der Zahlungsanforderung wird nach branding/ hochgeladen. Fehlte der
+# Ordner hier, endete das Hochladen auf Rocky Linux mit 'Internal Server
+# Error' (Read-only file system) — bis 1.5.0 genau so geschehen.
+pruefe(zeilen.get("ProtectSystem") != "strict" or "@BASIS@/branding" in [p.lstrip("-") for p in rw],
+       f"branding/ (Logo-Ablage) steht in ReadWritePaths ({' '.join(rw)})")
+for _skript in ("installieren.sh", "dienst_einrichten.sh", "umstellen_freigaben.sh"):
+    pruefe('"$BASIS/branding"' in (WURZEL / "install" / _skript).read_text(encoding="utf-8"),
+           f"{_skript} legt branding/ an (sonst 226/NAMESPACE wegen ReadWritePaths)")
 try:
     ort = _sandkasten / "pip"
     ort.mkdir()
@@ -637,7 +645,7 @@ else:
             shutil.copytree(WURZEL / "install", basis / "programm" / "freigaben" / A / "install")
             (basis / "programm" / "aktuell").symlink_to(pathlib.Path("freigaben") / A)
             start = basis / "programm" / "aktuell" / "install" / "unit_erzeugen.sh"
-        for ordner in ("config", "data", "logs", ".venv/bin"):
+        for ordner in ("config", "data", "logs", "branding", ".venv/bin"):
             (basis / ordner).mkdir(parents=True, exist_ok=True)
         (basis / "config" / "app.json").write_text(json.dumps({"update": {"repo": "ahorn/xr", "zweig": "prod"}}))
         code, werte, text = _unit(start)

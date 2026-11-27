@@ -6504,6 +6504,22 @@ try:
         _lf = _ka.post("/zahlungsanforderung/vorlage/logo", files={"logo": ("x.gif", b"GIF89a", "image/gif")})
         pruefe("Nur PNG oder JPG" in _lf.text and _za.logo_pfad().read_bytes() == _lp,
                "ein fremdes Format wird abgelehnt, das bisherige Logo bleibt")
+        # Nicht beschreibbare Ablage (Rocky: branding/ fehlte in ReadWritePaths):
+        # Klartext statt 500, das bisherige Logo bleibt. Ein Pfad unter einer
+        # DATEI scheitert auf jedem System mit OSError, auch als root.
+        _br_alt = pfade.BRANDING_DIR
+        _br_sperre = _sandkasten / "branding_ist_datei"
+        _br_sperre.write_text("x")
+        pfade.BRANDING_DIR = _br_sperre / "branding"
+        try:
+            _lr = _ka.post("/zahlungsanforderung/vorlage/logo", files={"logo": ("logo.png", _lp, "image/png")})
+            _le = _ka.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"})
+        finally:
+            pfade.BRANDING_DIR = _br_alt
+        pruefe(_lr.status_code == 200 and "nicht beschreibbar" in _lr.text
+               and _le.status_code == 200 and "nicht beschreibbar" in _le.text
+               and _za.logo_pfad().read_bytes() == _lp,
+               "Logo-Ablage nicht beschreibbar: Meldung statt Internal Server Error")
         _ka.post("/zahlungsanforderung/vorlage/logo", data={"aktion": "entfernen"})
         _ka.post("/zahlungsanforderung/vorlage", data={"aktion": "vorgabe"})
         pruefe(_za.logo_pfad() is None and _za.vorlage_laden() == _za.VORLAGE_VORGABE,
