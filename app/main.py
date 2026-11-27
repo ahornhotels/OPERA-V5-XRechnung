@@ -118,7 +118,10 @@ def eigenes_branding() -> bool:
 async def zugang(request: Request, call_next):
     cfg = config.laden()
     ip = request.client.host if request.client else ""
-    if not auth.netz_erlaubt(ip, cfg["server"].get("erlaubte_netze") or []):
+    # Der Netzfilter ist abschaltbar (server.netzfilter_aktiv) — fuer
+    # Haeuser, deren Kollegen aus wechselnden Netzen oder per VPN kommen. Die
+    # Anmeldung samt Sperre nach Fehlversuchen gilt davon unberuehrt immer.
+    if not auth.zugang_aus_netz(ip, cfg["server"]):
         return HTMLResponse("Zugriff aus diesem Netz ist nicht erlaubt.", status_code=403)
     pfad = request.url.path
     if any(pfad.startswith(p) for p in OEFFENTLICH):
@@ -1072,7 +1075,7 @@ SCHALTER = (("datenbank", "thick_mode"), ("mail", "aktiv"),
             ("automatik", "city_ledger_versenden"),
             ("automatik", "empfaenger_automatisch"),
             ("validierung", "aktiv"), ("validierung", "pflicht"),
-            ("update", "aktiv"))
+            ("update", "aktiv"), ("server", "netzfilter_aktiv"))
 
 
 @app.post("/konfiguration")
@@ -1085,6 +1088,7 @@ async def konfiguration_speichern(request: Request):
                    (cfg.get("mail") or {}).get("smtp_port"))
     vorher_update = dict(cfg.get("update") or {})
     vorher_automatik = bool(cfg["automatik"].get("aktiv"))
+    vorher_netzfilter = auth.netzfilter_aktiv(cfg["server"])
     vorher_udf = cfg["property"].get("udf_leitweg") or ""
     ungueltig: list[str] = []
     # Felder, die ohne Inhalt wertlos sind: Ein leeres Feld laesst den
@@ -1184,11 +1188,6 @@ async def konfiguration_speichern(request: Request):
         except ValueError:
             return RedirectResponse(f"/konfiguration?meldung=NICHT GESPEICHERT — „{netz}“ ist "
                                     "kein gültiges Netz (z. B. 10.0.0.0/8)", status_code=303)
-    ip = request.client.host if request.client else ""
-    if netze and not auth.netz_erlaubt(ip, netze):
-        return RedirectResponse(f"/konfiguration?meldung=NICHT GESPEICHERT — Ihre Adresse {ip} "
-                                "läge außerhalb der erlaubten Netze; Sie hätten sich ausgesperrt",
-                                status_code=303)
 
     # Eine unbekannte XRechnung-Version wird nicht gespeichert: Ab dem naechsten
     # Lauf liesse sich sonst keine einzige Rechnung mehr erzeugen.
@@ -1203,6 +1202,17 @@ async def konfiguration_speichern(request: Request):
         name = f"{sektion}.{feld}"
         if name in gezeigt and name not in formular:
             cfg[sektion][feld] = False
+
+    # Selbst aussperren: ERST NACH den Schaltern pruefen. Ob der Netzfilter
+    # an ist, steht erst jetzt fest — wer ihn im selben Zug einschaltet und
+    # von ausserhalb der Liste kommt, wuerde sich sonst aussperren. Ist er
+    # aus, gibt es nichts auszusperren; die Liste wird trotzdem auf gueltige
+    # Netze geprueft (oben), damit sie beim Wiedereinschalten traegt.
+    ip = request.client.host if request.client else ""
+    if not auth.zugang_aus_netz(ip, cfg["server"]):
+        return RedirectResponse(f"/konfiguration?meldung=NICHT GESPEICHERT — Ihre Adresse {ip} "
+                                "läge außerhalb der erlaubten Netze; Sie hätten sich ausgesperrt",
+                                status_code=303)
 
     # ERST NACH dem Auswerten der Schalter: Ein nicht angehakter Schalter kommt
     # gar nicht im Formular an; davor stand hier noch der alte Wert, und die
@@ -1223,6 +1233,13 @@ async def konfiguration_speichern(request: Request):
         return RedirectResponse(f"/konfiguration?meldung=NICHT GESPEICHERT — {e}",
                                 status_code=303)
     store.protokoll("konfiguration", "geaendert", benutzer=request.state.benutzer)
+    # Das Oeffnen fuer alle Netze ist eine Sicherheitsentscheidung — wer sie
+    # wann getroffen hat, soll sich nachlesen lassen.
+    if auth.netzfilter_aktiv(cfg["server"]) != vorher_netzfilter:
+        store.protokoll("konfiguration", "Netzfilter " + (
+            "eingeschaltet — nur erlaubte Netze" if auth.netzfilter_aktiv(cfg["server"])
+            else "ausgeschaltet — Zugriff aus allen Netzen, nur die Anmeldung schützt"),
+            benutzer=request.state.benutzer)
     if (cfg["property"].get("udf_leitweg") or "") != vorher_udf:
         store.protokoll("einrichtung", "Leitweg-Feld gesetzt auf "
                         f"{cfg['property'].get('udf_leitweg') or '(keines)'}",

@@ -3,6 +3,8 @@
   "server": {
     "host": "0.0.0.0",
     "port": 8022,
+    "netzfilter_aktiv": true,
+    "_netzfilter_hinweis": "true: nur Anfragen aus erlaubte_netze kommen herein. false: aus jedem Netz, das den Server erreicht (andere Haeuser, VPN) - dann schuetzt nur noch die Anmeldung. Die Liste bleibt beim Abschalten gespeichert.",
     "erlaubte_netze": [
       "127.0.0.1/32",
       "10.0.0.0/8",

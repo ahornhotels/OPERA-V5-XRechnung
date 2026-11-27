@@ -1,5 +1,28 @@
 # OPERA V5 XRechnung
 
+> [!WARNING]
+> **Zweig `NoNetworkCheck_dangerous` — nicht der Standard.**
+>
+> Dieser Zweig ist `main` mit **einer** Änderung: Unter Konfiguration → „Netz
+> und Ablage“ lässt sich die Netzprüfung abschalten (Schalter „Zugriff nur aus
+> erlaubten Netzen“, `server.netzfilter_aktiv`). Ausgeschaltet ist die
+> Oberfläche aus **jedem** Netz erreichbar, das den Server erreicht. Dann
+> schützt sie nur noch die Anmeldung — vor Rechnungen, Kundendaten,
+> Mailversand und den Zugangsdaten zur Datenbank.
+>
+> **Gedacht nur für** Häuser, deren Kollegen aus wechselnden Netzen kommen
+> (mehrere Häuser auf einer Installation, VPN mit wechselnden Adressen) und
+> bei denen sich das nicht mit „Erlaubte Netze“ lösen lässt. **Vorher
+> prüfen:** Lässt sich das VPN- oder Standortnetz nicht einfach in die Liste
+> eintragen? Das ist fast immer die bessere Lösung.
+>
+> Wer diesen Zweig nutzt: Die Vorgabe ist weiterhin **an**; abgeschaltet wird
+> von Hand, und das Umschalten steht im Protokoll. Starke Passwörter, keine
+> Freigabe ins Internet. Der Zweig wird nach jeder Änderung auf `main`
+> nachgezogen, hat also dieselbe Version. Zum Wechseln unter Konfiguration →
+> Aktualisierung den Zweig `NoNetworkCheck_dangerous` eintragen; zurück mit
+> `main`.
+
 **Macht aus einer abgeschlossenen OPERA-Rechnung eine XRechnung und verschickt
 sie.** Für Oracle OPERA V5 on premise, Standard XRechnung 3.0.2 (EN 16931 /
 UBL 2.1), mit Weboberfläche und Automatikbetrieb.

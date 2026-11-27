@@ -314,6 +314,12 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
 
   <section class="karte">
     <h2>Netz und Ablage</h2>
+    <label class="schalter"><input type="checkbox" name="server.netzfilter_aktiv" value="1"
+      {{ 'checked' if cfg.server.netzfilter_aktiv is not false }}> Zugriff nur aus erlaubten Netzen{{ tipp('server.netzfilter_aktiv') }}</label>
+    {% if cfg.server.netzfilter_aktiv is false %}
+    <p class="klein">Netzfilter ist <strong>aus</strong>: Die Seite ist aus jedem Netz erreichbar,
+      das den Server erreicht. Geschützt ist sie dann nur durch die Anmeldung.</p>
+    {% endif %}
     <label>Erlaubte Netze (Komma)
       {{ tipp('server.erlaubte_netze') }}<input name="server.erlaubte_netze" value="{{ cfg.server.erlaubte_netze|join(', ') }}"></label>
     <label>XML-Ordner{{ tipp('ablage.xml_ordner') }}<input name="ablage.xml_ordner" value="{{ cfg.ablage.xml_ordner }}"></label>

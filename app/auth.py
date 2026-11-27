@@ -279,6 +279,26 @@ def abmelden(token: str) -> None:
         con.execute("DELETE FROM sitzungen WHERE token = ?", (token,))
 
 
+def netzfilter_aktiv(server: dict | None) -> bool:
+    """Ist die Netzpruefung eingeschaltet? Vorgabe: ja.
+
+    Abschaltbar fuer Haeuser, deren Kollegen aus wechselnden Netzen kommen —
+    andere Standorte, VPN mit wechselndem Adressbereich —, die sich in einer
+    Positivliste nicht sinnvoll fassen lassen. Die Liste bleibt dabei
+    gespeichert; wer wieder einschaltet, hat sie unveraendert zurueck.
+
+    Nur ein ausdrueckliches False schaltet ab. Ein fehlender oder kaputter
+    Eintrag laesst den Filter an: Im Zweifel sperren, nicht oeffnen."""
+    return (server or {}).get("netzfilter_aktiv", True) is not False
+
+
+def zugang_aus_netz(ip: str, server: dict | None) -> bool:
+    """Darf eine Anfrage von dieser Adresse herein? Netzfilter aus: ja."""
+    if not netzfilter_aktiv(server):
+        return True
+    return netz_erlaubt(ip, (server or {}).get("erlaubte_netze") or [])
+
+
 def netz_erlaubt(ip: str, netze: list[str]) -> bool:
     if not netze:
         return True

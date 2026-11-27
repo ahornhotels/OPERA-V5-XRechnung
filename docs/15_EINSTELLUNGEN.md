@@ -16,6 +16,7 @@ zweiten Haus anders sein wird als hier.
 |---|---|
 | `host` | Adresse, auf der gelauscht wird. `0.0.0.0` heißt: im ganzen Hausnetz erreichbar |
 | `port` | Vorgabe 8022 |
+| `netzfilter_aktiv` | **Ein/Aus für die Netzprüfung**, Vorgabe an. Aus: Die Seite ist aus jedem Netz erreichbar, das den Server erreicht — für mehrere Häuser aus verschiedenen Netzen oder per VPN. Dann schützt nur noch die Anmeldung (mit Sperre nach Fehlversuchen). Die Liste der erlaubten Netze bleibt gespeichert. Das Umschalten steht im Protokoll |
 | `erlaubte_netze` | **Positivliste in CIDR-Schreibweise.** Anfragen von außerhalb werden abgewiesen, bevor die Anmeldung greift. Eine leere Liste lässt alles zu — die Anwendung weigert sich, sich selbst auszusperren |
 
 ## `datenbank` — der lesende Zugang zu OPERA

@@ -326,6 +326,13 @@ token = auth.anmelden("pruefer", "Geheim!123", "127.0.0.1")
 pruefe(bool(token), "richtiges Passwort meldet an")
 pruefe(auth.netz_erlaubt("10.0.5.7", ["10.0.0.0/8"]), "Netzfilter laesst Hausnetz durch")
 pruefe(not auth.netz_erlaubt("8.8.8.8", ["10.0.0.0/8"]), "Netzfilter sperrt fremdes Netz")
+pruefe(not auth.zugang_aus_netz("8.8.8.8", {"erlaubte_netze": ["10.0.0.0/8"]}),
+       "Netzfilter ohne Schalter-Eintrag ist an (Vorgabe: sperren)")
+pruefe(auth.zugang_aus_netz("8.8.8.8", {"netzfilter_aktiv": False, "erlaubte_netze": ["10.0.0.0/8"]}),
+       "Netzfilter aus: fremdes Netz kommt herein")
+pruefe(not auth.zugang_aus_netz("8.8.8.8", {"netzfilter_aktiv": "nein", "erlaubte_netze": ["10.0.0.0/8"]})
+       and not auth.zugang_aus_netz("8.8.8.8", {"netzfilter_aktiv": None, "erlaubte_netze": ["10.0.0.0/8"]}),
+       "Netzfilter: nur ein echtes false schaltet ab, ein kaputter Eintrag laesst ihn an")
 
 print("3) XML-Bau mit Beispieldaten (Beleg 1400003 aus der Live-Pruefung)")
 rechnung = {
@@ -2544,6 +2551,36 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
         pruefe("ausgesperrt" in _uq(_a.headers.get("location", ""))
                and config.laden()["server"]["erlaubte_netze"] == _vor["server"]["erlaubte_netze"],
                "B36: wer sich selbst aussperren wuerde, speichert nicht")
+        # Netzfilter abschaltbar (mehrere Haeuser, VPN). Der Test laeuft als
+        # 127.0.0.1 — "10.0.0.0/8" schliesst ihn also aus.
+        _s = klient.get("/konfiguration")
+        pruefe('name="server.netzfilter_aktiv"' in _s.text and "server.netzfilter_aktiv" in _s.text.split('name="_schalter"')[1][:2000],
+               "Netzfilter: Schalter steht auf der Seite und in der Schalterliste")
+        _a = klient.post("/konfiguration", data={"_schalter": "server.netzfilter_aktiv",
+                                                 "server.erlaubte_netze": "10.0.0.0/8"},
+                         follow_redirects=False)
+        _n = config.laden()["server"]
+        pruefe("ausgesperrt" not in _uq(_a.headers.get("location", ""))
+               and _n["netzfilter_aktiv"] is False and _n["erlaubte_netze"] == ["10.0.0.0/8"],
+               "Netzfilter aus: eine Liste ohne die eigene Adresse wird gespeichert, nicht ausgesperrt")
+        pruefe(klient.get("/konfiguration").status_code == 200,
+               "Netzfilter aus: Zugriff von ausserhalb der Liste geht")
+        pruefe("Netzfilter ausgeschaltet" in str(store.protokoll_lesen(20)),
+               "Netzfilter aus: das Abschalten steht im Protokoll")
+        _a = klient.post("/konfiguration", data={"_schalter": "server.netzfilter_aktiv",
+                                                 "server.netzfilter_aktiv": "1"},
+                         follow_redirects=False)
+        pruefe("ausgesperrt" in _uq(_a.headers.get("location", ""))
+               and config.laden()["server"]["netzfilter_aktiv"] is False,
+               "Netzfilter: Einschalten, das den Speichernden aussperren wuerde, wird abgelehnt")
+        _a = klient.post("/konfiguration", data={"_schalter": "server.netzfilter_aktiv",
+                                                 "server.netzfilter_aktiv": "1",
+                                                 "server.erlaubte_netze": ", ".join(_vor["server"]["erlaubte_netze"])},
+                         follow_redirects=False)
+        pruefe(config.laden()["server"]["netzfilter_aktiv"] is True
+               and config.laden()["server"]["erlaubte_netze"] == _vor["server"]["erlaubte_netze"]
+               and "Netzfilter eingeschaltet" in str(store.protokoll_lesen(20)),
+               "Netzfilter: wieder eingeschaltet mit der alten Liste, steht im Protokoll")
         # Befund 16: Automatik folgt dem Schalter der Konfigurationsseite
         _automatik.stoppen()
         klient.post("/konfiguration", data={"_schalter": "automatik.aktiv", "automatik.aktiv": "1",
