@@ -741,6 +741,37 @@ _vorhanden = opera.gastzeile({"gastname": "Mustermann", "note": "Bereits bezahlt
 pruefe(_vorhanden["note"].startswith("Bereits bezahlt"),
        f"ein vorhandener Hinweis bleibt stehen — BT-22 gibt es nur einmal ({_vorhanden['note']})")
 
+# Empfaengername mit NAME2/NAME3. Der Name auf dem Beleg ist COMPANY ohne diese
+# Zeilen. Uebernommen wird ungefiltert (Entscheidung 27.11.2026).
+def _en(**w):
+    k = {"customername": "Bundesamt fuer Beispiele", "customerregistrationname": "Bundesamt fuer Beispiele",
+         "kunde_company": "Bundesamt fuer Beispiele"}
+    k.update(w)
+    return opera.empfaengername(k)
+_k = _en(kunde_name2="und Muster", kunde_name3="GmbH & Co. KG")
+pruefe(_k["customername"] == "Bundesamt fuer Beispiele und Muster GmbH & Co. KG"
+       and _k["customerregistrationname"] == _k["customername"],
+       f"NAME2/NAME3: Fortsetzung und Rechtsform werden angehaengt, BT-44 und BT-45 ({_k['customername']})")
+for _zusatz in ("Reisestelle", "VAT: DE123456789", "z.Hd. Erika Mustermann"):
+    _k = _en(kunde_name2=_zusatz)
+    pruefe(_k["customername"] == f"Bundesamt fuer Beispiele {_zusatz}",
+           f"NAME2 '{_zusatz}' wird ungefiltert uebernommen — korrigiert wird am Profil")
+_k = opera.empfaengername({"customername": "Beispiel Medical GmbH", "kunde_company": "Beispiel Medical GmbH",
+                           "kunde_name2": "Medical GmbH"})
+pruefe(_k["customername"] == "Beispiel Medical GmbH", "NAME2, das schon im Namen steht, kommt nicht doppelt")
+_k = _en(customername="Konzernmutter Beispiel AG", customerregistrationname="Konzernmutter Beispiel AG",
+         kunde_name2="und Muster")
+pruefe(_k["customername"] == "Konzernmutter Beispiel AG",
+       "NAME2 einer anderen Firma als der auf dem Beleg wird nicht angehaengt")
+_k = _en(kunde_name2="und Muster", customerregistrationname="Bundesamt fuer Beispiele (Register)")
+pruefe(_k["customerregistrationname"] == "Bundesamt fuer Beispiele (Register)",
+       "eine eigene Firmierung (LEGAL_COMPANY) bleibt unberuehrt")
+_k = _en(kunde_name2="  und   Muster ", kunde_name3=None)
+pruefe(_k["customername"] == "Bundesamt fuer Beispiele und Muster" and not _en()["customername"].endswith(" "),
+       "Leerraum wird bereinigt, ohne NAME2/NAME3 bleibt alles, wie es war")
+pruefe(opera.empfaengername({"customername": None, "kunde_company": None, "kunde_name2": "GmbH"})
+       .get("customername") is None, "ohne Namen auf dem Beleg wird nichts erfunden")
+
 # Die beiden Fehler, die diese Zeile im Echtbetrieb mitgebracht hat, an der
 # Stelle geprueft, an der sie entstehen — in der ABFRAGE.
 _kopf_sql = (BASE / "sql" / "opera" / "invoice_header.sql").read_text(encoding="utf-8")

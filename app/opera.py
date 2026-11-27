@@ -1296,6 +1296,57 @@ _GUTSCHRIFT_SUMMEN = ("invoicenet", "invoicegross", "invoicetaxtotal", "prepaida
                       "payableamount", "spay_cl")
 
 
+# --- Empfaengername: NAME2 / NAME3 -------------------------------------------
+# NAME2/NAME3 werden ungefiltert uebernommen (Entscheidung 27.11.2026). In rund
+# vier von fuenf Profilen sind sie ein Teil des Namens (umgebrochene Fortsetzung,
+# Rechtsform). Der Rest — USt-Nummer, Abteilung, Person — steht dann ebenfalls im
+# Empfaengernamen; das ist am Profil zu korrigieren, nicht hier.
+
+
+def _nur_text(wert) -> str:
+    return " ".join(str(wert or "").split())
+
+
+def _vergleich(wert) -> str:
+    return _nur_text(wert).casefold()
+
+
+def empfaengername(kopf: dict) -> dict:
+    """BT-44/BT-45: NAME2 und NAME3 des Profils an den Empfaengernamen haengen.
+
+    Nur wenn der Name auf dem Beleg DIESE Firma ist (enthaelt COMPANY des
+    Profils). COMPANY_NAME ist oft eine andere Firma — ein Bundesamt als
+    Rechnungstraeger, eine Konzernmutter —, und deren Name bekaeme sonst die
+    Abteilung einer fremden Firma angehaengt.
+
+    Was schon im Namen steht, wird nicht noch einmal angehaengt (219 Profile
+    fuehren NAME2 bereits in COMPANY). Angehaengte Teile stehen zusaetzlich in
+    kopf['empfaengername_zusatz'] — zum Nachsehen, nicht fuer das Dokument.
+    Gefiltert wird der Inhalt nicht: Was am Profil steht, kommt in den Namen."""
+    basis = _nur_text(kopf.get("customername"))
+    firma = _vergleich(kopf.get("kunde_company"))
+    if not basis or not firma or firma not in _vergleich(basis):
+        return kopf
+    name, zusatz = basis, []
+    for roh in (kopf.get("kunde_name2"), kopf.get("kunde_name3")):
+        teil = _nur_text(roh)
+        if not teil:
+            continue
+        if _vergleich(teil) in _vergleich(name):
+            continue
+        name = f"{name} {teil}"
+        zusatz.append(teil)
+    if not zusatz:
+        return kopf
+    kopf["empfaengername_zusatz"] = zusatz
+    # BT-45 ist bisher derselbe Name (LEGAL_COMPANY ist im Haus nie gefuellt).
+    # Steht dort ein eigener Wert, bleibt er unberuehrt.
+    if _vergleich(kopf.get("customerregistrationname")) in ("", _vergleich(basis)):
+        kopf["customerregistrationname"] = name
+    kopf["customername"] = name
+    return kopf
+
+
 def _ohne_leerzeichen(wert) -> str:
     return "".join(str(wert or "").split())
 
@@ -1394,6 +1445,9 @@ def rechnung(cfg: dict, bill_no: int) -> dict:
     if not kopf_rows:
         raise LookupError(f"Rechnung {bill_no} nicht gefunden")
     kopf = kopf_rows[0]
+    # Vor allem anderen: Die BT-10-Vorlage ({kunde}) und die Anzeige sollen
+    # schon den vollstaendigen Namen sehen.
+    empfaengername(kopf)
 
     je_beleg = {"bill_no": bill_no, "resort": p["resort"], "folio_no": folio_no}
     zeilen = db.abfrage(_sql("invoice_lines.sql", cfg), je_beleg)

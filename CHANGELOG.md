@@ -13,6 +13,22 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.5.0] – 2026-11-27
+
+**Empfängername vollständig: zweite und dritte Namenszeile am Profil**
+- Die zweite und dritte Namenszeile des Firmenprofils (`NAME2`, `NAME3`)
+  kommen jetzt in den Empfängernamen der XRechnung (BT-44) und in die
+  Firmierung (BT-45). Bisher fehlten sie: Ein auf zwei Zeilen umgebrochener
+  Firmenname oder eine eigens gepflegte Rechtsform („GmbH & Co. KG“) war in
+  der XRechnung abgeschnitten.
+- Übernommen wird, was am Profil steht, ohne Filter. Steht dort eine
+  Abteilung, eine USt-Nummer oder ein Ansprechpartner, erscheint das ebenfalls
+  im Namen — das gehört am Profil in OPERA korrigiert.
+- Nicht angehängt wird, was schon im Namen steht, und nichts, wenn auf dem
+  Beleg eine andere Firma steht als die des Profils.
+- Eine gepflegte Firmierung (`LEGAL_COMPANY`) bleibt unverändert.
+- Es ist nichts einzustellen.
+
 ## [1.4.2] – 2026-11-20
 
 **Windows-Installer fragt nach Name und Port**

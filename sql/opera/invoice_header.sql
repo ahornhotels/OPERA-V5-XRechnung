@@ -159,6 +159,17 @@ SELECT f.bill_no                                              AS id,
        NVL(ar.account_name, NVL(f.payee_name, f.company_name)) AS customername,
        NVL(n.legal_company, NVL(ar.account_name,
            NVL(f.payee_name, f.company_name)))                AS customerregistrationname,
+       -- NAME2/NAME3: zweite und dritte Zeile des Firmennamens am Profil. Der
+       -- Name auf dem Beleg (PAYEE_NAME) ist COMPANY OHNE diese Zeilen — der
+       -- Empfaengername war damit oft abgeschnitten ("Bundesamt fuer Migration"
+       -- ohne "und Fluechtlinge"). Gemessen 27.11.2026: NAME2 an 14.194
+       -- Firmen-/Reisebueroprofilen, rund 38.000 Belegen. Angehaengt wird
+       -- ungefiltert in opera.empfaengername(). COMPANY dient dort als Bezug:
+       -- Nur wenn der Name auf dem Beleg diese Firma ist, gehoeren ihre
+       -- Zeilen dazu.
+       n.company                                              AS kunde_company,
+       n.name2                                                AS kunde_name2,
+       n.name3                                                AS kunde_name3,
        adr.address1                                           AS customerstreetname,
        adr.city                                               AS customercityname,
        NVL(adr.zip_code, f.payee_zip_code)                    AS customerpostalzone,
