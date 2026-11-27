@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import asyncio
 import ipaddress
+import json
 import re
 from urllib.parse import urlencode
 from contextlib import asynccontextmanager
@@ -22,7 +23,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, opera, store, updater, validate, xml_build
+from . import ablauf, auth, automatik, config, db, einstellungen, mailer, markdown, monatsbericht, opera, store, updater, validate, xml_build
 
 from . import pfade
 from . import oracle_client
@@ -76,6 +77,9 @@ async def lebenszyklus(app: FastAPI):
     _thr.Thread(target=_hotel_aus_opera, args=(cfg,), daemon=True, name="hotelname").start()
     if cfg["automatik"].get("aktiv"):
         automatik.starten()
+    # Der Monatsbericht hat einen eigenen Takt: Er soll auch in einem Haus
+    # hinausgehen, das von Hand versendet.
+    monatsbericht.starten()
     # Nachsehen, ob ein neuerer Stand bereitliegt — unabhaengig von der
     # Automatik, weil auch ein Haus ohne Automatik davon erfahren soll.
     # Eingespielt wird weiterhin nur auf Knopfdruck.
@@ -83,6 +87,7 @@ async def lebenszyklus(app: FastAPI):
     yield
     wache.cancel()
     automatik.stoppen()
+    monatsbericht.stoppen()
     # Der Validator-Daemon ist ein Kindprozess. Ohne dieses Beenden bliebe er
     # nach einem Neustart des Dienstes stehen und haelt seinen Port besetzt.
     validate.daemon_stoppen()
@@ -944,6 +949,8 @@ def konfiguration(request: Request, meldung: str = ""):
         haus_eigen=opera.eigener_hausname(p),
         vorlage_platzhalter=opera.VORLAGE_PLATZHALTER,
         schalter=[f"{s}.{f}" for s, f in SCHALTER],
+        bericht_zuletzt=store.letzte_aktion(monatsbericht.AKTION),
+        bericht_monat=monatsbericht.monat_text(monatsbericht.vormonat()[0]),
         # Tooltips aus docs/15_EINSTELLUNGEN.md, siehe app/einstellungen.py
         erklaerungen=einstellungen.erklaerungen(),
         schreibbar=schreibbar, schreibgrund=schreibgrund,
@@ -1115,7 +1122,7 @@ SCHALTER = (("datenbank", "thick_mode"), ("mail", "aktiv"),
             ("automatik", "city_ledger_versenden"),
             ("automatik", "empfaenger_automatisch"),
             ("validierung", "aktiv"), ("validierung", "pflicht"),
-            ("update", "aktiv"))
+            ("update", "aktiv"), ("bericht", "aktiv"))
 
 
 @app.post("/konfiguration")
@@ -1214,6 +1221,13 @@ async def konfiguration_speichern(request: Request):
             cfg["property"].get("udf_mail_profil") == cfg["property"].get("udf_leitweg")):
         ungueltig.append("Mailfeld am Profil und Leitweg-Feld dürfen nicht dasselbe Feld sein")
 
+    if any(k.startswith("bericht.") for k in formular):
+        # Der Schalter wird erst weiter unten ausgewertet; fuer die Pruefung
+        # zaehlt, was das Formular sagt.
+        probe = json.loads(json.dumps(cfg))
+        if "bericht.aktiv" in (formular.get("_schalter") or "") and "bericht.aktiv" not in formular:
+            probe["bericht"]["aktiv"] = False
+        ungueltig += monatsbericht.pruefen(probe)
     if ungueltig:
         return RedirectResponse("/konfiguration?meldung=NICHT GESPEICHERT — " + "; ".join(ungueltig),
                                 status_code=303)
@@ -1544,6 +1558,38 @@ def mailtest(request: Request, an: str = Form(...)):
                             benutzer=request.state.benutzer, erfolg=False)
         else:
             meldung = f"Testmail an {an} verschickt (BCC inbegriffen)"
+    except Exception as e:
+        meldung = f"Fehler: {e}"
+    return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)
+
+
+# ------------------------------------------------------------ Monatsbericht
+@app.get("/bericht/vorschau")
+def bericht_vorschau(request: Request):
+    """Der Bericht ueber den Vormonat, wie er hinausginge. Schreibt nichts."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
+    cfg = config.laden()
+    betreff, inhalt = monatsbericht.text(cfg, *monatsbericht.vormonat())
+    return Response(f"Betreff: {betreff}\n\n{inhalt}", media_type="text/plain; charset=utf-8")
+
+
+@app.post("/bericht/senden")
+def bericht_senden(request: Request, an: str = Form("")):
+    """Den Bericht ueber den Vormonat sofort senden. Mit 'an' als Probe an eine
+    Adresse — das zaehlt nicht als Monatsbericht. Ohne 'an' an alle
+    eingetragenen Empfaenger; dann geht er an dem Versandtag nicht noch einmal."""
+    if not _darf_verwalten(request):
+        return RedirectResponse("/konfiguration?meldung=Keine Berechtigung", status_code=303)
+    cfg = config.laden()
+    ziel = (an or "").strip()
+    try:
+        gegangen = monatsbericht.senden(cfg, *monatsbericht.vormonat(),
+                                        benutzer=request.state.benutzer,
+                                        an=[ziel] if ziel else None)
+        meldung = (f"Monatsbericht {monatsbericht.monat_text(monatsbericht.vormonat()[0])} "
+                   f"an {', '.join(gegangen)} verschickt"
+                   + (" (Probe — der regulaere Bericht geht trotzdem)" if ziel else ""))
     except Exception as e:
         meldung = f"Fehler: {e}"
     return RedirectResponse(f"/konfiguration?meldung={meldung}", status_code=303)

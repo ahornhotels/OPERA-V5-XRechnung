@@ -209,6 +209,23 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
   </section>
 
   <section class="karte">
+    <h2>Monatlicher Statusbericht</h2>
+    <p class="klein">Eine Mail mit der Zahl der im <strong>Vormonat</strong> erstellten und
+      versendeten XRechnungen und dem Namen des Betriebs — etwa für die Abrechnung.
+      Läuft unabhängig von der Automatik.</p>
+    <label class="schalter"><input type="checkbox" name="bericht.aktiv" value="1"
+      {{ 'checked' if cfg.bericht.aktiv }}> Monatsbericht senden{{ tipp('bericht.aktiv') }}</label>
+    <label class="hervor">Empfänger (Komma)
+      {{ tipp('bericht.empfaenger') }}<input name="bericht.empfaenger" value="{{ cfg.bericht.empfaenger|join(', ') }}"></label>
+    <label>Versandtag im Monat (1–28){{ tipp('bericht.tag') }}<input name="bericht.tag" value="{{ cfg.bericht.tag }}"></label>
+    <label>ab Stunde (0–23){{ tipp('bericht.stunde') }}<input name="bericht.stunde" value="{{ cfg.bericht.stunde }}"></label>
+    <label>Betriebsname im Bericht{{ tipp('bericht.betriebsname') }}<input name="bericht.betriebsname" value="{{ cfg.bericht.betriebsname }}"
+      placeholder="leer: Name des Hauses"></label>
+    <p class="klein">Zuletzt versendet: {{ bericht_zuletzt or 'noch nie' }} ·
+      <a href="/bericht/vorschau" target="_blank">Vorschau {{ bericht_monat }}</a></p>
+  </section>
+
+  <section class="karte">
     <h2>Auswahl — welche Rechnungen aufgenommen werden</h2>
     <label>Zeitraum beim Einlesen (Tage)
       {{ tipp('auswahl.zeitraum_tage') }}<input name="auswahl.zeitraum_tage" value="{{ cfg.auswahl.zeitraum_tage }}"></label>
@@ -375,6 +392,17 @@ angezeigt. Ein leeres Passwortfeld lässt den bisherigen Wert stehen.</p>
     <form method="post" action="/konfiguration/mailtest">
       <label>an<input name="an" placeholder="ich@haus.de"></label>
       <button>Testmail senden</button>
+    </form>
+  </section>
+
+  <section class="karte">
+    <h2>Monatsbericht jetzt senden</h2>
+    <p class="klein">Bericht über {{ bericht_monat }}. Mit Adresse: nur eine Probe an diese
+      Adresse. Ohne Adresse: an alle eingetragenen Empfänger — dann geht er am Versandtag
+      nicht noch einmal.</p>
+    <form method="post" action="/bericht/senden">
+      <label>an (optional)<input name="an" placeholder="leer: alle Empfänger"></label>
+      <button>Bericht senden</button>
     </form>
   </section>
 </div>

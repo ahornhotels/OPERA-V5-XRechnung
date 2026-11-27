@@ -13,6 +13,21 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [Zweig TBH] – 2026-11-27
+
+**Monatlicher Statusbericht per Mail**
+- Am eingestellten Tag (1–28, ab einer Stunde) geht eine Mail über den
+  **Vormonat** hinaus: wie viele XRechnungen erstellt und wie viele versendet
+  wurden (davon automatisch, von Hand), Stornorechnungen, eingelesene und
+  noch offene Rechnungen, mit dem Namen des Betriebs.
+- Einstellungen unter Konfiguration → „Monatlicher Statusbericht“
+  (`bericht.aktiv`, `empfaenger`, `tag`, `stunde`, `betriebsname`). Vorschau
+  und „Bericht senden“ (auch als Probe an eine Adresse) auf derselben Seite.
+- Läuft unabhängig von der Automatik. Lief der Dienst am Versandtag nicht,
+  wird der Bericht bis Monatsende nachgeholt; jeder Monat geht einmal.
+  Ohne Blindkopie; die Liste erlaubter Empfänger gilt auch hier.
+- Neu im Protokoll: `xml_erzeugt` bei jedem Ablegen einer XRechnung —
+  daraus zählt der Bericht „erstellt“.
 ## [1.5.2] – 2026-11-27
 
 **Übersicht nach Rechnungsdatum von/bis filtern**

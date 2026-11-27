@@ -197,7 +197,8 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
            city_ledger: bool = False, gutschrift: bool = False,
            bezug: str = "", storno: bool = False,
            vorlage: tuple[str, str] | None = None,
-           werte_dazu: dict | None = None) -> Versandergebnis:
+           werte_dazu: dict | None = None,
+           ohne_bcc: bool = False) -> Versandergebnis:
     """Verschickt eine Rechnung. Gibt die Message-ID zurueck, samt der
     Blindkopien, die der Server abgelehnt hat (Versandergebnis).
     Wirft MailFehler, wenn der Versand nicht moeglich ist."""
@@ -245,7 +246,9 @@ def senden(cfg: dict, *, an: str, bill_no: int, issuedate: str,
     nachricht = EmailMessage()
     nachricht["From"] = formataddr((m.get("absender_name") or "", m["absender"]))
     nachricht["To"] = an
-    bcc_liste = blindkopien(cfg, city_ledger)
+    # ohne_bcc: fuer Schreiben an das Haus selbst (Monatsbericht) — die
+    # Blindkopie ist das Rechnungspostfach, dort hat ein Bericht nichts verloren.
+    bcc_liste = [] if ohne_bcc else blindkopien(cfg, city_ledger)
     # Auch die Blindkopien gehen durch das Sicherheitsnetz: Ein Tippfehler in
     # der BCC-Adresse schickt eine Kundenrechnung an einen Fremden, und zwar
     # unbemerkt — genau deshalb ist es eine Blindkopie.
