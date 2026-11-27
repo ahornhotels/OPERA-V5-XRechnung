@@ -236,15 +236,21 @@ SORTIERBAR = {
 
 def liste(status: str | None = None, limit: int = 300,
           sortieren: str = "", richtung: str = "", suche: str = "",
-          ab_datum: str = "") -> list[dict]:
-    """ab_datum (JJJJ-MM-TT): nur Rechnungen mit Rechnungsdatum ab diesem Tag —
-    fuer die Anzeige "letzte N Tage". Leer: alle."""
+          ab_datum: str = "", bis_datum: str = "") -> list[dict]:
+    """ab_datum / bis_datum (JJJJ-MM-TT): nur Rechnungen mit Rechnungsdatum
+    ab bzw. bis einschliesslich diesem Tag — fuer die Anzeige "letzte N Tage"
+    und den Zeitraum von/bis. Leer: keine Grenze."""
     sql = "SELECT * FROM rechnungen"
     args: list = []
     bedingungen: list[str] = []
     if ab_datum:
         bedingungen.append("issuedate >= ?")
         args.append(ab_datum)
+    if bis_datum:
+        # Nur der Tag zaehlt: Steht im Feld je eine Uhrzeit dahinter, faellt
+        # der letzte Tag sonst heraus.
+        bedingungen.append("substr(issuedate, 1, 10) <= ?")
+        args.append(bis_datum)
     if status:
         bedingungen.append("status = ?")
         args.append(status)

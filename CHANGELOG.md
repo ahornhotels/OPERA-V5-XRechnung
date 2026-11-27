@@ -13,6 +13,18 @@ folgt dem Schema **Haupt.Neben.Korrektur**:
 Die Nummer steht in der Datei `VERSION`, in der Fußzeile der Oberfläche und
 unter „Konfiguration“. Zu jeder Version gibt es auf GitHub ein Release.
 
+## [1.5.2] – 2026-11-27
+
+**Übersicht nach Rechnungsdatum von/bis filtern**
+- Neben „Rechnungen der letzten … Tage“ gibt es zwei Datumsfelder „von“ und
+  „bis“. Beide Grenzen zählen mit; eine allein genügt. Vertauschte Grenzen
+  werden gedreht. Von Hand getippt geht auch TT.MM.JJJJ.
+- Ein Zeitraum geht vor „letzte N Tage“. Er bleibt beim Wechsel des Reiters,
+  beim Sortieren und auf dem Rückweg von der Detailseite erhalten — beim
+  Sortieren ging bisher auch das Tage-Fenster verloren.
+- Gefiltert wird nur die Anzeige der Arbeitsliste. Einlesen und Suche bleiben,
+  wie sie sind: Die Suche geht weiter über alles, eine Nummer auch in OPERA.
+
 ## [1.5.1] – 2026-11-27
 
 **Logo der Zahlungsanforderung ließ sich unter Rocky Linux nicht hochladen**

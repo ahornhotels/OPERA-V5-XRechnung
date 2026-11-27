@@ -2248,6 +2248,32 @@ with TestClient(app, client=("127.0.0.1", 50000)) as klient:
                     follow_redirects=False)
         from app.main import _anzeige_tage as _at
         pruefe(_at("abc") == 0 and _at("-3") == 0 and _at(" 14 ") == 14, "Unsinn im Feld heisst: alle")
+        # Zeitraum von/bis nach Rechnungsdatum: geht vor "letzte N Tage",
+        # beide Grenzen einschliesslich, Reiter und Sortierung behalten ihn.
+        _v = (_heute - _td_anz(days=30)).isoformat()
+        _b = (_heute - _td_anz(days=10)).isoformat()
+        _sz = klient.get(f"/?von={_v}&bis={_b}&tage=7").text
+        pruefe("Fenster 20 GmbH" in _sz and "Fenster 2 GmbH" not in _sz and "Fenster 60 GmbH" not in _sz,
+               "der Zeitraum von/bis zeigt nur, was dazwischen liegt - und geht vor den Tagen")
+        _grenze = (_heute - _td_anz(days=20)).isoformat()
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_grenze}&bis={_grenze}").text,
+               "beide Grenzen zaehlen mit")
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_b}&bis={_v}").text,
+               "vertauschte Grenzen werden gedreht")
+        _nur_bis = klient.get(f"/?bis={_b}").text
+        pruefe("Fenster 60 GmbH" in _nur_bis and "Fenster 2 GmbH" not in _nur_bis,
+               "eine Grenze allein genuegt")
+        _tmj = (_heute - _td_anz(days=20)).strftime("%d.%m.%Y")
+        pruefe("Fenster 20 GmbH" in klient.get(f"/?von={_tmj}&bis={_tmj}").text,
+               "TT.MM.JJJJ von Hand getippt geht auch")
+        _sz2 = _sz.replace("&amp;", "&")
+        pruefe(f'href="/?status=neu&von={_v}&bis={_b}"' in _sz2
+               and f"&von={_v}&bis={_b}" in _sz2.split("sortieren=issuedate", 1)[-1][:120]
+               and 'type="date" name="von"' in _sz,
+               "Reiter und Sortierung behalten den Zeitraum")
+        from app.main import _datum as _dt_f
+        pruefe(_dt_f("abc") == "" and _dt_f("2026-02-30") == "" and _dt_f("01.03.2026") == "2026-03-01",
+               "Unsinn im Datumsfeld heisst: keine Grenze")
     finally:
         with store.verbindung() as con:
             con.execute("DELETE FROM rechnungen WHERE bill_no BETWEEN 960001 AND 960003")
